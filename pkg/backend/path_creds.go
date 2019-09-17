@@ -38,10 +38,16 @@ func (b *backend) credsReadOperation(ctx context.Context, req *logical.Request, 
 		return logical.ErrorResponse("token expired"), nil
 	}
 
+	rd := map[string]interface{}{
+		"access_token": tok.AccessToken,
+	}
+
+	if !tok.Expiry.IsZero() {
+		rd["expire_time"] = tok.Expiry
+	}
+
 	resp := &logical.Response{
-		Data: map[string]interface{}{
-			"access_token": tok.AccessToken,
-		},
+		Data: rd,
 	}
 	return resp, nil
 }
