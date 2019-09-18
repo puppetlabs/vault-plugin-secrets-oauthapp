@@ -45,7 +45,7 @@ func (b *backend) refreshToken(ctx context.Context, storage logical.Storage, key
 		return nil, ErrNotConfigured
 	}
 
-	p, err := c.provider()
+	p, err := c.provider(b.providerRegistry)
 	if err != nil {
 		return nil, err
 	}

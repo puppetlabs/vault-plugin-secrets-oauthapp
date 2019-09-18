@@ -8,11 +8,13 @@ import (
 	"github.com/hashicorp/go-hclog"
 	"github.com/hashicorp/vault/sdk/framework"
 	"github.com/hashicorp/vault/sdk/logical"
+	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/pkg/provider"
 )
 
 type backend struct {
-	credMut sync.Mutex
-	logger  hclog.Logger
+	providerRegistry *provider.Registry
+	credMut          sync.Mutex
+	logger           hclog.Logger
 }
 
 const backendHelp = `
@@ -20,17 +22,24 @@ The OAuth app backend provides OAuth authorization tokens on demand given a secr
 `
 
 type Options struct {
-	Logger hclog.Logger
+	ProviderRegistry *provider.Registry
+	Logger           hclog.Logger
 }
 
 func New(opts Options) *framework.Backend {
+	providerRegistry := opts.ProviderRegistry
+	if providerRegistry == nil {
+		providerRegistry = provider.GlobalRegistry
+	}
+
 	logger := opts.Logger
 	if logger == nil {
 		logger = hclog.NewNullLogger()
 	}
 
 	b := &backend{
-		logger: logger,
+		providerRegistry: providerRegistry,
+		logger:           logger,
 	}
 
 	return &framework.Backend{

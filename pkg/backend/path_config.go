@@ -19,8 +19,8 @@ type config struct {
 	ProviderOptions map[string]string `json:"provider_options"`
 }
 
-func (c *config) provider() (provider.Provider, error) {
-	return provider.NewAt(c.ProviderName, c.ProviderVersion, c.ProviderOptions)
+func (c *config) provider(r *provider.Registry) (provider.Provider, error) {
+	return r.NewAt(c.ProviderName, c.ProviderVersion, c.ProviderOptions)
 }
 
 func getConfig(ctx context.Context, storage logical.Storage) (*config, error) {
@@ -51,7 +51,7 @@ func (b *backend) configReadOperation(ctx context.Context, req *logical.Request,
 		Data: map[string]interface{}{
 			"client_id":        c.ClientID,
 			"auth_url_params":  c.AuthURLParams,
-			"provider_name":    c.ProviderName,
+			"provider":         c.ProviderName,
 			"provider_version": c.ProviderVersion,
 			"provider_options": c.ProviderOptions,
 		},
@@ -77,7 +77,7 @@ func (b *backend) configUpdateOperation(ctx context.Context, req *logical.Reques
 
 	providerOptions := data.Get("provider_options").(map[string]string)
 
-	p, err := provider.New(providerName.(string), providerOptions)
+	p, err := b.providerRegistry.New(providerName.(string), providerOptions)
 	if err == provider.ErrNoSuchProvider {
 		return logical.ErrorResponse("provider %q does not exist", providerName), nil
 	} else if err != nil {
@@ -121,7 +121,7 @@ func (b *backend) configAuthCodeURLUpdateOperation(ctx context.Context, req *log
 		return logical.ErrorResponse("not configured"), nil
 	}
 
-	p, err := c.provider()
+	p, err := c.provider(b.providerRegistry)
 	if err != nil {
 		return nil, err
 	}
@@ -159,7 +159,10 @@ func (b *backend) configAuthCodeURLUpdateOperation(ctx context.Context, req *log
 	return resp, nil
 }
 
-const configPath = "config"
+const (
+	configPath            = "config"
+	configAuthCodeURLPath = configPath + "/auth_code_url"
+)
 
 var configFields = map[string]*framework.FieldSchema{
 	"client_id": {
@@ -250,7 +253,7 @@ endpoint to start managing authentication tokens.
 
 func pathConfigAuthCodeURL(b *backend) *framework.Path {
 	return &framework.Path{
-		Pattern: configPath + `/auth_code_url$`,
+		Pattern: configAuthCodeURLPath + `$`,
 		Fields:  configAuthCodeURLFields,
 		Operations: map[logical.Operation]framework.OperationHandler{
 			logical.UpdateOperation: &framework.PathOperation{

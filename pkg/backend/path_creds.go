@@ -60,7 +60,7 @@ func (b *backend) credsUpdateOperation(ctx context.Context, req *logical.Request
 		return logical.ErrorResponse("not configured"), nil
 	}
 
-	p, err := c.provider()
+	p, err := c.provider(b.providerRegistry)
 	if err != nil {
 		return nil, err
 	}

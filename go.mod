@@ -7,6 +7,7 @@ require (
 	github.com/hashicorp/golang-lru v0.5.3 // indirect
 	github.com/hashicorp/vault/api v1.0.4
 	github.com/hashicorp/vault/sdk v0.1.14-0.20190909201848-e0fbf9b652e2
+	github.com/stretchr/testify v1.3.0
 	golang.org/x/crypto v0.0.0-20190911031432-227b76d455e7 // indirect
 	golang.org/x/net v0.0.0-20190916140828-c8589233b77d // indirect
 	golang.org/x/oauth2 v0.0.0-20190604053449-0f29369cfe45

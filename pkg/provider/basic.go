@@ -13,13 +13,13 @@ import (
 )
 
 func init() {
-	registry["bitbucket"] = basicFactory(bitbucket.Endpoint)
-	registry["github"] = basicFactory(github.Endpoint)
-	registry["gitlab"] = basicFactory(gitlab.Endpoint)
-	registry["microsoft_azure_ad"] = azureADFactory
-	registry["slack"] = basicFactory(slack.Endpoint)
+	GlobalRegistry.MustRegister("bitbucket", basicFactory(bitbucket.Endpoint))
+	GlobalRegistry.MustRegister("github", basicFactory(github.Endpoint))
+	GlobalRegistry.MustRegister("gitlab", basicFactory(gitlab.Endpoint))
+	GlobalRegistry.MustRegister("microsoft_azure_ad", azureADFactory)
+	GlobalRegistry.MustRegister("slack", basicFactory(slack.Endpoint))
 
-	registry["custom"] = customFactory
+	GlobalRegistry.MustRegister("custom", customFactory)
 }
 
 type basicAuthCodeURLConfigBuilder struct {
@@ -111,7 +111,7 @@ func (b *basic) NewExchangeConfigBuilder(clientID, clientSecret string) Exchange
 	}
 }
 
-func basicFactory(endpoint oauth2.Endpoint) factoryFunc {
+func basicFactory(endpoint oauth2.Endpoint) FactoryFunc {
 	return func(vsn int, opts map[string]string) (Provider, error) {
 		switch vsn {
 		case -1, 1:

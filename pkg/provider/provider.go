@@ -59,23 +59,4 @@ type Provider interface {
 	NewExchangeConfigBuilder(clientID, clientSecret string) ExchangeConfigBuilder
 }
 
-type factoryFunc func(vsn int, opts map[string]string) (Provider, error)
-
-var registry = make(map[string]factoryFunc)
-
-// New looks up a provider with the given name and configures it according to
-// the specified options.
-func New(name string, opts map[string]string) (Provider, error) {
-	return NewAt(name, -1, opts)
-}
-
-// NewAt looks up a provider with the given name at the given version and
-// configures it according to the specified options.
-func NewAt(name string, vsn int, opts map[string]string) (Provider, error) {
-	p, found := registry[name]
-	if !found {
-		return nil, ErrNoSuchProvider
-	}
-
-	return p(vsn, opts)
-}
+var GlobalRegistry = NewRegistry()
