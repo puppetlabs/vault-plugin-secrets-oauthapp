@@ -1,0 +1,70 @@
+#!/bin/bash
+set -euo pipefail
+
+#
+# Commands
+#
+
+MKDIR_P="${MKDIR_P:-mkdir -p}"
+GO="${GO:-go}"
+TAR="${TAR:-tar}"
+ZIP_M="${ZIP_M:-zip -m}"
+SHA256SUM="${SHA256SUM:-shasum -a 256}"
+
+#
+# Variables
+#
+
+ARTIFACTS_DIR="${ARTIFACTS_DIR:-artifacts}"
+
+GOOS="$( $GO env GOOS )"
+GOARCH="$( $GO env GOARCH )"
+GOFLAGS="${GOFLAGS:-}"
+LDFLAGS="${LDFLAGS:-}"
+
+CLI_DIST_NAME="${CLI_DIST_NAME:-vault-plugin-secrets-oauthapp}"
+CLI_DIST_VERSION="${CLI_DIST_VERSION:-unknown}"
+
+case "${GOOS}" in
+windows)
+    CLI_EXT=.exe
+    ;;
+*)
+    CLI_EXT=
+    ;;
+esac
+
+CLI_DIST_FILE_PREFIX="${CLI_DIST_NAME}-${CLI_DIST_VERSION}-${GOOS}-${GOARCH}"
+CLI_DIST_FILE_BIN="${CLI_DIST_FILE_PREFIX}${CLI_EXT}"
+
+#
+#
+#
+
+$MKDIR_P "${ARTIFACTS_DIR}"
+
+(
+    set -x
+    $GO build $GOFLAGS -o "${ARTIFACTS_DIR}/${CLI_DIST_FILE_BIN}" -ldflags "${LDFLAGS[*]}" ./cmd/vault-plugin-secrets-oauthapp
+)
+
+case "${GOOS}" in
+windows)
+    (
+        set -x
+        pushd "${ARTIFACTS_DIR}" >/dev/null
+        $ZIP_M -q "${CLI_DIST_FILE_PREFIX}.zip" "${CLI_DIST_FILE_BIN}"
+        $SHA256SUM "${CLI_DIST_FILE_PREFIX}.zip" >"${CLI_DIST_FILE_PREFIX}.zip.sha256.asc"
+    )
+    ;;
+*)
+    (
+        set -x
+        pushd "${ARTIFACTS_DIR}" >/dev/null
+        $TAR -cJ --remove-files -f "${CLI_DIST_FILE_PREFIX}.tar.xz" "${CLI_DIST_FILE_BIN}"
+        $SHA256SUM "${CLI_DIST_FILE_PREFIX}.tar.xz" >"${CLI_DIST_FILE_PREFIX}.tar.xz.sha256.asc"
+    )
+    ;;
+esac
+
+set +x
