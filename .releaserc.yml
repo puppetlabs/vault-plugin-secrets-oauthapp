@@ -27,7 +27,3 @@ plugins:
       successComment: false
       failComment: false
       releasedLabels: false
-  -
-    - '@semantic-release/exec'
-    - publishCmd: >
-        make CLI_DIST_VERSION=${nextRelease.gitTag} release
