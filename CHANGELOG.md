@@ -1,3 +1,10 @@
+# [1.1.0](https://github.com/puppetlabs/vault-plugin-secrets-oauthapp/compare/v1.0.0...v1.1.0) (2019-09-19)
+
+
+### Update
+
+* Expose token type in credential response ([cf95ad17e69ccdeae97e1ddf07df26157fcce8a5](https://github.com/puppetlabs/vault-plugin-secrets-oauthapp/commit/cf95ad17e69ccdeae97e1ddf07df26157fcce8a5))
+
 # 1.0.0 (2019-09-18)
 
 
