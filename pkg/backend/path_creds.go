@@ -40,6 +40,7 @@ func (b *backend) credsReadOperation(ctx context.Context, req *logical.Request, 
 
 	rd := map[string]interface{}{
 		"access_token": tok.AccessToken,
+		"type":         tok.Type(),
 	}
 
 	if !tok.Expiry.IsZero() {

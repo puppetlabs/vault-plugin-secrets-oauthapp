@@ -76,6 +76,7 @@ func TestBasicCredentialExchange(t *testing.T) {
 	require.NotNil(t, resp)
 	require.False(t, resp.IsError(), "response has error: %+v", resp.Error())
 	require.Equal(t, token.AccessToken, resp.Data["access_token"])
+	require.Equal(t, "Bearer", resp.Data["type"])
 	require.Empty(t, resp.Data["expire_time"])
 }
 
@@ -209,5 +210,6 @@ func TestRefreshableCredentialExchange(t *testing.T) {
 	require.NotNil(t, resp)
 	require.False(t, resp.IsError(), "response has error: %+v", resp.Error())
 	require.Equal(t, "token_2", resp.Data["access_token"])
+	require.Equal(t, "Bearer", resp.Data["type"])
 	require.NotEmpty(t, resp.Data["expire_time"])
 }
