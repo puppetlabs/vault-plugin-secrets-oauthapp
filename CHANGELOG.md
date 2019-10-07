@@ -1,3 +1,10 @@
+## [1.1.1](https://github.com/puppetlabs/vault-plugin-secrets-oauthapp/compare/v1.1.0...v1.1.1) (2019-10-07)
+
+
+### Fix
+
+* Do not propagate API errors from providers when token refresh fails ([c3cf680a61a70775f9b2981da880fb335b7d2b3e](https://github.com/puppetlabs/vault-plugin-secrets-oauthapp/commit/c3cf680a61a70775f9b2981da880fb335b7d2b3e))
+
 # [1.1.0](https://github.com/puppetlabs/vault-plugin-secrets-oauthapp/compare/v1.0.0...v1.1.0) (2019-09-19)
 
 
