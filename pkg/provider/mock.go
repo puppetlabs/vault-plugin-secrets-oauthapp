@@ -36,22 +36,25 @@ func StaticMockExchange(token *oauth2.Token) MockExchangeFunc {
 	}
 }
 
-func AmendTokenMockExchange(get MockExchangeFunc, amend func(token *oauth2.Token)) MockExchangeFunc {
+func AmendTokenMockExchange(get MockExchangeFunc, amend func(token *oauth2.Token) error) MockExchangeFunc {
 	return func(candidate string) (*oauth2.Token, error) {
 		token, err := get(candidate)
 		if err != nil {
 			return nil, err
 		}
 
-		amend(token)
+		if err := amend(token); err != nil {
+			return nil, err
+		}
 
 		return token, nil
 	}
 }
 
 func ExpiringMockExchange(fn MockExchangeFunc, duration time.Duration) MockExchangeFunc {
-	return AmendTokenMockExchange(fn, func(t *oauth2.Token) {
+	return AmendTokenMockExchange(fn, func(t *oauth2.Token) error {
 		t.Expiry = time.Now().Add(duration)
+		return nil
 	})
 }
 
@@ -64,13 +67,19 @@ func randomToken(len int) string {
 	return hex.EncodeToString(b)
 }
 
-func RefreshableMockExchange(fn MockExchangeFunc, step func(i int) time.Duration) MockExchangeFunc {
+func RefreshableMockExchange(fn MockExchangeFunc, step func(i int) (time.Duration, error)) MockExchangeFunc {
 	refreshToken := randomToken(40)
 	var i int32
 
-	return AmendTokenMockExchange(fn, func(t *oauth2.Token) {
+	return AmendTokenMockExchange(fn, func(t *oauth2.Token) error {
+		exp, err := step(int(atomic.AddInt32(&i, 1)))
+		if err != nil {
+			return err
+		}
+
 		t.RefreshToken = refreshToken
-		t.Expiry = time.Now().Add(step(int(atomic.AddInt32(&i, 1))))
+		t.Expiry = time.Now().Add(exp)
+		return nil
 	})
 }
 

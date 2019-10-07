@@ -55,13 +55,14 @@ func (b *backend) refreshToken(ctx context.Context, storage logical.Storage, key
 		Build().
 		TokenSource(ctx, tok)
 
-	tok, err = src.Token()
+	refreshed, err := src.Token()
 	if err != nil {
-		return nil, err
+		b.logger.Warn("unable to refresh token", "key", key, "error", err)
+		return tok, nil
 	}
 
 	// Store the new token.
-	entry, err := logical.StorageEntryJSON(key, tok)
+	entry, err := logical.StorageEntryJSON(key, refreshed)
 	if err != nil {
 		return nil, err
 	}
@@ -70,7 +71,7 @@ func (b *backend) refreshToken(ctx context.Context, storage logical.Storage, key
 		return nil, err
 	}
 
-	return tok, nil
+	return refreshed, nil
 }
 
 func (b *backend) getRefreshToken(ctx context.Context, storage logical.Storage, key string) (*oauth2.Token, error) {
@@ -91,8 +92,10 @@ func (b *backend) getRefreshToken(ctx context.Context, storage logical.Storage, 
 func (b *backend) refreshPeriodic(ctx context.Context, req *logical.Request) error {
 	view := logical.NewStorageView(req.Storage, credsPathPrefix)
 	logical.ScanView(ctx, view, func(path string) {
-		if _, err := b.getRefreshToken(ctx, req.Storage, view.ExpandKey(path)); err != nil {
-			b.logger.Error("unable to refresh token: %+v", err)
+		key := view.ExpandKey(path)
+
+		if _, err := b.getRefreshToken(ctx, req.Storage, key); err != nil {
+			b.logger.Error("unable to refresh token", "key", key, "error", err)
 		}
 	})
 

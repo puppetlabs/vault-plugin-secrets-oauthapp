@@ -26,20 +26,20 @@ func TestPeriodicRefresh(t *testing.T) {
 		"first": provider.RandomMockExchange,
 		"second": provider.RefreshableMockExchange(
 			provider.IncrementMockExchange("second_"),
-			func(_ int) time.Duration { return 30 * time.Minute },
+			func(_ int) (time.Duration, error) { return 30 * time.Minute, nil },
 		),
 		"third": provider.RefreshableMockExchange(
 			provider.IncrementMockExchange("third_"),
-			func(i int) time.Duration {
+			func(i int) (time.Duration, error) {
 				atomic.StoreInt32(&ti, int32(i))
 
 				switch i {
 				case 1:
 					// Start with a short duration, which will force a refresh within
 					// the library's grace period (< 10 seconds to expiry).
-					return 2 * time.Second
+					return 2 * time.Second, nil
 				default:
-					return 10 * time.Minute
+					return 10 * time.Minute, nil
 				}
 			},
 		),
