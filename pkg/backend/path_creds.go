@@ -68,22 +68,34 @@ func (b *backend) credsUpdateOperation(ctx context.Context, req *logical.Request
 
 	key := credKey(data.Get("name").(string))
 
-	code, ok := data.GetOk("code")
-	if !ok {
-		return logical.ErrorResponse("missing code"), nil
-	}
+	var tok *oauth2.Token
 
 	cb := p.NewExchangeConfigBuilder(c.ClientID, c.ClientSecret)
+	if code, ok := data.GetOk("code"); ok {
+		if _, ok := data.GetOk("refresh_token"); ok {
+			return logical.ErrorResponse("cannot use both code and refresh_token"), nil
+		}
 
-	if redirectURL, ok := data.GetOk("redirect_url"); ok {
-		cb = cb.WithRedirectURL(redirectURL.(string))
-	}
+		if redirectURL, ok := data.GetOk("redirect_url"); ok {
+			cb = cb.WithRedirectURL(redirectURL.(string))
+		}
 
-	tok, err := cb.Build().Exchange(ctx, code.(string))
-	if _, ok := err.(*oauth2.RetrieveError); ok {
-		return logical.ErrorResponse("invalid code"), nil
-	} else if err != nil {
-		return nil, err
+		tok, err = cb.Build().Exchange(ctx, code.(string))
+		if _, ok := err.(*oauth2.RetrieveError); ok {
+			return logical.ErrorResponse("invalid code"), nil
+		} else if err != nil {
+			return nil, err
+		}
+	} else if refreshToken, ok := data.GetOk("refresh_token"); ok {
+		tok, err = cb.Build().TokenSource(ctx, &oauth2.Token{RefreshToken: refreshToken.(string)}).Token()
+		if _, ok := err.(*oauth2.RetrieveError); ok {
+			return logical.ErrorResponse("invalid refresh_token"), nil
+		} else if err != nil {
+			return nil, err
+		}
+		// tok now contains a refresh token and an access token
+	} else {
+		return logical.ErrorResponse("missing code or refresh_token"), nil
 	}
 
 	b.credMut.Lock()
@@ -127,6 +139,10 @@ var credsFields = map[string]*framework.FieldSchema{
 	"redirect_url": {
 		Type:        framework.TypeString,
 		Description: "Specifies the redirect URL to provide when exchanging (required by some services and must be equivalent to the redirect URL provided to the authorization code URL).",
+	},
+	"refresh_token": {
+		Type:        framework.TypeString,
+		Description: "Specifies a refresh token retrieved from the provider by some means external to this plugin.",
 	},
 }
 
