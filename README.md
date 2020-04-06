@@ -64,6 +64,15 @@ access_token    nLlBg9Lmd7n1X96bw/xcW9HvyOHzxj19z3zXKv0XXxr8eLjQSerf4iyPDRCucSHQ
 Note that the client secret and refresh token are never exposed to Vault
 clients.
 
+Alternatively, if a refresh token is obtained in some other way you can
+skip the auth_code_url step and pass the token directly to the creds
+write instead of the response code:
+
+```console
+$ vault write oauth2/bitbucket/creds/my-user-tokens refresh_token=eyJhbGciOiJub25lIn0.eyJqdGkiOiI4YTE0NDRjMi0wYjQxLTRiZDUtODI3My0yZDBkMDczODQ4MDAifQ.
+Success! Data written to: oauth2/bitbucket/creds/my-user-tokens
+```
+
 ## Endpoints
 
 ### `config`
@@ -117,8 +126,9 @@ application.
 
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|----------|
-| `code` | The response code to exchange for a full token. | String | None | Yes |
+| `code` | The response code to exchange for a full token. | String | None | Either this or `refresh_token` |
 | `redirect_url` | The same redirect URL as specified in the authorization code URL. | String | None | Refer to provider documentation |
+| `refresh_token` | A refresh token retrieved from the provider by some means external to this plugin. | String | None | Either this or `code` |
 
 #### `DELETE` (`delete`)
 
