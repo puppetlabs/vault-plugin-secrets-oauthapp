@@ -1,3 +1,15 @@
+# [1.2.0](https://github.com/puppetlabs/vault-plugin-secrets-oauthapp/compare/v1.1.1...v1.2.0) (2020-04-06)
+
+
+### New
+
+* Add refresh_token option to creds write ([a74f7e484e20dacf21d9c9e742ea4d0f34ff7037](https://github.com/puppetlabs/vault-plugin-secrets-oauthapp/commit/a74f7e484e20dacf21d9c9e742ea4d0f34ff7037))
+
+### Upgrade
+
+* Bump handlebars from 4.2.0 to 4.5.3 ([188593baa9c83f4ec16f69d4f211b7c78c19def3](https://github.com/puppetlabs/vault-plugin-secrets-oauthapp/commit/188593baa9c83f4ec16f69d4f211b7c78c19def3))
+* Bump npm from 6.11.3 to 6.13.4 ([e3aaa079b4fee4934f40f542fbff4ca554e544e4](https://github.com/puppetlabs/vault-plugin-secrets-oauthapp/commit/e3aaa079b4fee4934f40f542fbff4ca554e544e4))
+
 ## [1.1.1](https://github.com/puppetlabs/vault-plugin-secrets-oauthapp/compare/v1.1.0...v1.1.1) (2019-10-07)
 
 
