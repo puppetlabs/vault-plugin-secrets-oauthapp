@@ -8,6 +8,7 @@ import (
 	"golang.org/x/oauth2/bitbucket"
 	"golang.org/x/oauth2/github"
 	"golang.org/x/oauth2/gitlab"
+	"golang.org/x/oauth2/google"
 	"golang.org/x/oauth2/microsoft"
 	"golang.org/x/oauth2/slack"
 )
@@ -16,6 +17,7 @@ func init() {
 	GlobalRegistry.MustRegister("bitbucket", basicFactory(bitbucket.Endpoint))
 	GlobalRegistry.MustRegister("github", basicFactory(github.Endpoint))
 	GlobalRegistry.MustRegister("gitlab", basicFactory(gitlab.Endpoint))
+	GlobalRegistry.MustRegister("google", basicFactory(google.Endpoint))
 	GlobalRegistry.MustRegister("microsoft_azure_ad", azureADFactory)
 	GlobalRegistry.MustRegister("slack", basicFactory(slack.Endpoint))
 
