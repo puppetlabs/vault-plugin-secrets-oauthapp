@@ -148,6 +148,10 @@ Remove the credential information from storage.
 
 [Documentation](https://docs.gitlab.com/ee/api/oauth2.html)
 
+### Google (`google`)
+
+[Documentation](https://developers.google.com/identity/protocols/oauth2)
+
 ### Microsoft Azure AD (`microsoft_azure_ad`)
 
 [Documentation](https://docs.microsoft.com/en-us/azure/active-directory/develop/v2-oauth2-auth-code-flow)
