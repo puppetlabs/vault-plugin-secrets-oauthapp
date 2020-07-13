@@ -1,3 +1,15 @@
+# [1.3.0](https://github.com/puppetlabs/vault-plugin-secrets-oauthapp/compare/v1.2.0...v1.3.0) (2020-07-13)
+
+
+### New
+
+* add Google OAuth support ([194cfafeaff1ce246d80aa8f9bf783f909fb5179](https://github.com/puppetlabs/vault-plugin-secrets-oauthapp/commit/194cfafeaff1ce246d80aa8f9bf783f909fb5179))
+
+### Upgrade
+
+* Bump https-proxy-agent from 2.2.2 to 2.2.4 ([80ab6a27aa520f952632e91f6f26fa58b691e224](https://github.com/puppetlabs/vault-plugin-secrets-oauthapp/commit/80ab6a27aa520f952632e91f6f26fa58b691e224))
+* Bump npm from 6.13.4 to 6.14.6 ([0a30d2a99804db00b6b580dbce34ad72bcf04d4c](https://github.com/puppetlabs/vault-plugin-secrets-oauthapp/commit/0a30d2a99804db00b6b580dbce34ad72bcf04d4c))
+
 # [1.2.0](https://github.com/puppetlabs/vault-plugin-secrets-oauthapp/compare/v1.1.1...v1.2.0) (2020-04-06)
 
 
