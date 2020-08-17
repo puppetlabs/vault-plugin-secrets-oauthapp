@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 
+	"github.com/coreos/go-oidc"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/bitbucket"
 	"golang.org/x/oauth2/github"
@@ -159,12 +160,25 @@ func customFactory(vsn int, opts map[string]string) (Provider, error) {
 		return nil, ErrNoProviderWithVersion
 	}
 
-	authURL := opts["auth_code_url"]
+	var authURL string
+	var tokenURL string
+	discoveryURL := opts["discovery_url"]
+	if discoveryURL != "" {
+		provider, err := oidc.NewProvider(context.TODO(), discoveryURL)
+		if err != nil {
+			return nil, err
+		}
+		authURL = provider.Endpoint().AuthURL
+		tokenURL = provider.Endpoint().TokenURL
+	} else {
+		authURL = opts["auth_code_url"]
+		tokenURL = opts["token_url"]
+	}
+
 	if authURL == "" {
 		return nil, &OptionError{Option: "auth_code_url", Message: "authorization code URL is required"}
 	}
 
-	tokenURL := opts["token_url"]
 	if tokenURL == "" {
 		return nil, &OptionError{Option: "token_url", Message: "token URL is required"}
 	}
