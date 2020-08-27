@@ -27,7 +27,7 @@ func credKey(name string) string {
 func (b *backend) credsReadOperation(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
 	key := credKey(data.Get("name").(string))
 
-	tok, err := b.getRefreshToken(ctx, req.Storage, key)
+	tok, err := b.getRefreshToken(ctx, req.Storage, key, data)
 	if err == ErrNotConfigured {
 		return logical.ErrorResponse("not configured"), nil
 	} else if err != nil {
@@ -128,10 +128,17 @@ func (b *backend) credsDeleteOperation(ctx context.Context, req *logical.Request
 }
 
 var credsFields = map[string]*framework.FieldSchema{
+	// fields for both read & write operations
 	"name": {
 		Type:        framework.TypeString,
 		Description: "Specifies the name of the credential.",
 	},
+	// fields for read operation
+	"minimum_seconds": {
+		Type:        framework.TypeInt,
+		Description: "Minimum remaining seconds to allow when reusing access token.",
+	},
+	// fields for write operation
 	"code": {
 		Type:        framework.TypeString,
 		Description: "Specifies the response code to exchange for a full token.",

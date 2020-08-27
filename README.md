@@ -118,6 +118,14 @@ Retrieve an authorization code URL for the given state.
 #### `GET` (`read`)
 
 Retrieve a current access token for the given credential.
+Reuses previous token if it is not yet expired or close to it.
+
+| Name | Description | Type | Default | Required |
+|------|-------------|------|---------|----------|
+| `minimum_seconds` | Minimum seconds before access token expires | Integer | * | No |
+
+\* Defaults to underlying library default, which is 10 seconds unless
+  the token expiration time is set to zero.
 
 #### `PUT` (`write`)
 
