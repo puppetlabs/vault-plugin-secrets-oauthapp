@@ -6,6 +6,7 @@ import (
 
 	"github.com/hashicorp/vault/sdk/framework"
 	"github.com/hashicorp/vault/sdk/logical"
+	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/pkg/provider"
 	"golang.org/x/oauth2"
 )
 
@@ -42,6 +43,22 @@ func getToken(ctx context.Context, storage logical.Storage, key string) (*oauth2
 	return tok, nil
 }
 
+func (b *backend) getExchangeConfig(ctx context.Context, storage logical.Storage) (provider.ExchangeConfig, error) {
+	c, err := getConfig(ctx, storage)
+	if err != nil {
+		return nil, err
+	} else if c == nil {
+		return nil, ErrNotConfigured
+	}
+
+	p, err := c.provider(b.providerRegistry)
+	if err != nil {
+		return nil, err
+	}
+
+	return p.NewExchangeConfigBuilder(c.ClientID, c.ClientSecret).Build(), nil
+}
+
 func (b *backend) refreshToken(ctx context.Context, storage logical.Storage, key string, data *framework.FieldData) (*oauth2.Token, error) {
 	b.credMut.Lock()
 	defer b.credMut.Unlock()
@@ -58,22 +75,12 @@ func (b *backend) refreshToken(ctx context.Context, storage logical.Storage, key
 	}
 	tok.AccessToken = ""
 
-	c, err := getConfig(ctx, storage)
-	if err != nil {
-		return nil, err
-	} else if c == nil {
-		return nil, ErrNotConfigured
-	}
-
-	p, err := c.provider(b.providerRegistry)
-	if err != nil {
-		return nil, err
-	}
-
 	// Refresh.
-	src := p.NewExchangeConfigBuilder(c.ClientID, c.ClientSecret).
-		Build().
-		TokenSource(ctx, tok)
+	ec, err := b.getExchangeConfig(ctx, storage)
+	if err != nil {
+		return nil, err
+	}
+	src := ec.TokenSource(ctx, tok)
 
 	refreshed, err := src.Token()
 	if err != nil {
