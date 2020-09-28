@@ -81,14 +81,16 @@ func (b *backend) credsUpdateOperation(ctx context.Context, req *logical.Request
 		}
 
 		tok, err = cb.Build().Exchange(ctx, code.(string))
-		if _, ok := err.(*oauth2.RetrieveError); ok {
+		if rErr, ok := err.(*oauth2.RetrieveError); ok {
+			b.logger.Error("invalid code", "error", rErr)
 			return logical.ErrorResponse("invalid code"), nil
 		} else if err != nil {
 			return nil, err
 		}
 	} else if refreshToken, ok := data.GetOk("refresh_token"); ok {
 		tok, err = cb.Build().TokenSource(ctx, &oauth2.Token{RefreshToken: refreshToken.(string)}).Token()
-		if _, ok := err.(*oauth2.RetrieveError); ok {
+		if rErr, ok := err.(*oauth2.RetrieveError); ok {
+			b.logger.Error("invalid refresh_token", "error", rErr)
 			return logical.ErrorResponse("invalid refresh_token"), nil
 		} else if err != nil {
 			return nil, err
