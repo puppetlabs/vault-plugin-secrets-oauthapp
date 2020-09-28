@@ -1,3 +1,15 @@
+# [1.5.0](https://github.com/puppetlabs/vault-plugin-secrets-oauthapp/compare/v1.4.0...v1.5.0) (2020-09-28)
+
+
+### Fix
+
+* add keys to logger function calls ([0b2ea21a427c2c8b31d2ab394acdb3760112f59c](https://github.com/puppetlabs/vault-plugin-secrets-oauthapp/commit/0b2ea21a427c2c8b31d2ab394acdb3760112f59c))
+
+### Update
+
+* Give more complete oauth2 error messages ([31b0662c4b83afcde7508963a447790787f69d73](https://github.com/puppetlabs/vault-plugin-secrets-oauthapp/commit/31b0662c4b83afcde7508963a447790787f69d73))
+* move oauth2 error messages to log ([48e1eccb92d0a413473a5f99fa7ea9a1d9ad1fb5](https://github.com/puppetlabs/vault-plugin-secrets-oauthapp/commit/48e1eccb92d0a413473a5f99fa7ea9a1d9ad1fb5))
+
 # [1.4.0](https://github.com/puppetlabs/vault-plugin-secrets-oauthapp/compare/v1.3.0...v1.4.0) (2020-09-28)
 
 
