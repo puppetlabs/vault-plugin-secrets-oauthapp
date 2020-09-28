@@ -175,6 +175,7 @@ arbitrary OAuth 2 authorization code grant flow.
 
 | Name | Description | Default | Required |
 |------|-------------|---------|----------|
-| `auth_code_url` | The URL to submit the initial authorization code request to. | None | Yes |
-| `token_url` | The URL to use for exchanging temporary codes and refreshing access tokens. | None | Yes |
+| `discovery_url` | The URL at which to discover authorization code and token URLs. | None | Either this or the other two urls |
+| `auth_code_url` | The URL to submit the initial authorization code request to. | None | Either this or `discovery_url` |
+| `token_url` | The URL to use for exchanging temporary codes and refreshing access tokens. | None | Either this or `discovery_url` |
 | `auth_style` | How to authenticate to the token URL. If specified, must be one of `in_header` or `in_params`. | Automatically detect | No |
