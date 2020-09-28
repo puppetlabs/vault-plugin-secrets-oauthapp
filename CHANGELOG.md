@@ -1,3 +1,11 @@
+# [1.6.0](https://github.com/puppetlabs/vault-plugin-secrets-oauthapp/compare/v1.5.0...v1.6.0) (2020-09-28)
+
+
+### Update
+
+* expand characters allowed for creds path ([7264f66c69930a9c91c63a944673bc4bf9765ec9](https://github.com/puppetlabs/vault-plugin-secrets-oauthapp/commit/7264f66c69930a9c91c63a944673bc4bf9765ec9))
+* use local Regex function instead of expanding framework function ([8d74a12dc388c9da1051c23c2ff55e0f2ec404a1](https://github.com/puppetlabs/vault-plugin-secrets-oauthapp/commit/8d74a12dc388c9da1051c23c2ff55e0f2ec404a1))
+
 # [1.5.0](https://github.com/puppetlabs/vault-plugin-secrets-oauthapp/compare/v1.4.0...v1.5.0) (2020-09-28)
 
 
