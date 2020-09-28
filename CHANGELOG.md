@@ -1,3 +1,23 @@
+# [1.4.0](https://github.com/puppetlabs/vault-plugin-secrets-oauthapp/compare/v1.3.0...v1.4.0) (2020-09-28)
+
+
+### Chore
+
+* Update CODEOWNERS ([92be6a42e595f54bc2d9b001f8a80d2325a61ff0](https://github.com/puppetlabs/vault-plugin-secrets-oauthapp/commit/92be6a42e595f54bc2d9b001f8a80d2325a61ff0))
+
+### Fix
+
+* Use OptionError when discovery_url fails ([83e100eaed65764ab13e0f3cd8d4844c30eec4b7](https://github.com/puppetlabs/vault-plugin-secrets-oauthapp/commit/83e100eaed65764ab13e0f3cd8d4844c30eec4b7))
+
+### New
+
+* Add discovery_url ([cb59513a2b4fc8c03833304dc62b1c7d877cae6b](https://github.com/puppetlabs/vault-plugin-secrets-oauthapp/commit/cb59513a2b4fc8c03833304dc62b1c7d877cae6b))
+
+### Upgrade
+
+* Bump lodash from 4.17.15 to 4.17.19 ([4c55418da05974170f67d274d01e4d003b1fc063](https://github.com/puppetlabs/vault-plugin-secrets-oauthapp/commit/4c55418da05974170f67d274d01e4d003b1fc063))
+* Bump node-fetch from 2.6.0 to 2.6.1 ([e62e8942fb02204f9427fd9bf2a0112c7e003173](https://github.com/puppetlabs/vault-plugin-secrets-oauthapp/commit/e62e8942fb02204f9427fd9bf2a0112c7e003173))
+
 # [1.3.0](https://github.com/puppetlabs/vault-plugin-secrets-oauthapp/compare/v1.2.0...v1.3.0) (2020-07-13)
 
 
