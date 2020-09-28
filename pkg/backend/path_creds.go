@@ -148,6 +148,12 @@ var credsFields = map[string]*framework.FieldSchema{
 	},
 }
 
+// Allow characters not special to urls or shells
+// Derived from framework.GenericNameWithAtRegex
+func credentialNameRegex(name string) string {
+	return fmt.Sprintf(`(?P<%s>\w(([\w.@~!_,:^-]+)?\w)?)`, name)
+}
+
 const credsHelpSynopsis = `
 Provides access tokens for authorized credentials.
 `
@@ -161,7 +167,7 @@ the access token will be available when reading the endpoint.
 
 func pathCreds(b *backend) *framework.Path {
 	return &framework.Path{
-		Pattern: credsPathPrefix + framework.GenericNameWithAtRegex("name") + `$`,
+		Pattern: credsPathPrefix + credentialNameRegex("name") + `$`,
 		Fields:  credsFields,
 		Operations: map[logical.Operation]framework.OperationHandler{
 			logical.ReadOperation: &framework.PathOperation{
