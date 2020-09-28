@@ -166,7 +166,7 @@ func customFactory(vsn int, opts map[string]string) (Provider, error) {
 	if discoveryURL != "" {
 		provider, err := oidc.NewProvider(context.TODO(), discoveryURL)
 		if err != nil {
-			return nil, err
+			return nil, &OptionError{Option: "discovery_url", Message: "error making new provider: " + err.Error()}
 		}
 		authURL = provider.Endpoint().AuthURL
 		tokenURL = provider.Endpoint().TokenURL
