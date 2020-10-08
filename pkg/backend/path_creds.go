@@ -81,14 +81,16 @@ func (b *backend) credsUpdateOperation(ctx context.Context, req *logical.Request
 		}
 
 		tok, err = cb.Build().Exchange(ctx, code.(string))
-		if _, ok := err.(*oauth2.RetrieveError); ok {
+		if rErr, ok := err.(*oauth2.RetrieveError); ok {
+			b.logger.Error("invalid code", "error", rErr)
 			return logical.ErrorResponse("invalid code"), nil
 		} else if err != nil {
 			return nil, err
 		}
 	} else if refreshToken, ok := data.GetOk("refresh_token"); ok {
 		tok, err = cb.Build().TokenSource(ctx, &oauth2.Token{RefreshToken: refreshToken.(string)}).Token()
-		if _, ok := err.(*oauth2.RetrieveError); ok {
+		if rErr, ok := err.(*oauth2.RetrieveError); ok {
+			b.logger.Error("invalid refresh_token", "error", rErr)
 			return logical.ErrorResponse("invalid refresh_token"), nil
 		} else if err != nil {
 			return nil, err
@@ -153,6 +155,12 @@ var credsFields = map[string]*framework.FieldSchema{
 	},
 }
 
+// Allow characters not special to urls or shells
+// Derived from framework.GenericNameWithAtRegex
+func credentialNameRegex(name string) string {
+	return fmt.Sprintf(`(?P<%s>\w(([\w.@~!_,:^-]+)?\w)?)`, name)
+}
+
 const credsHelpSynopsis = `
 Provides access tokens for authorized credentials.
 `
@@ -166,7 +174,7 @@ the access token will be available when reading the endpoint.
 
 func pathCreds(b *backend) *framework.Path {
 	return &framework.Path{
-		Pattern: credsPathPrefix + framework.GenericNameWithAtRegex("name") + `$`,
+		Pattern: credsPathPrefix + credentialNameRegex("name") + `$`,
 		Fields:  credsFields,
 		Operations: map[logical.Operation]framework.OperationHandler{
 			logical.ReadOperation: &framework.PathOperation{

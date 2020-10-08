@@ -1,3 +1,43 @@
+# [1.6.0](https://github.com/puppetlabs/vault-plugin-secrets-oauthapp/compare/v1.5.0...v1.6.0) (2020-09-28)
+
+
+### Update
+
+* expand characters allowed for creds path ([7264f66c69930a9c91c63a944673bc4bf9765ec9](https://github.com/puppetlabs/vault-plugin-secrets-oauthapp/commit/7264f66c69930a9c91c63a944673bc4bf9765ec9))
+* use local Regex function instead of expanding framework function ([8d74a12dc388c9da1051c23c2ff55e0f2ec404a1](https://github.com/puppetlabs/vault-plugin-secrets-oauthapp/commit/8d74a12dc388c9da1051c23c2ff55e0f2ec404a1))
+
+# [1.5.0](https://github.com/puppetlabs/vault-plugin-secrets-oauthapp/compare/v1.4.0...v1.5.0) (2020-09-28)
+
+
+### Fix
+
+* add keys to logger function calls ([0b2ea21a427c2c8b31d2ab394acdb3760112f59c](https://github.com/puppetlabs/vault-plugin-secrets-oauthapp/commit/0b2ea21a427c2c8b31d2ab394acdb3760112f59c))
+
+### Update
+
+* Give more complete oauth2 error messages ([31b0662c4b83afcde7508963a447790787f69d73](https://github.com/puppetlabs/vault-plugin-secrets-oauthapp/commit/31b0662c4b83afcde7508963a447790787f69d73))
+* move oauth2 error messages to log ([48e1eccb92d0a413473a5f99fa7ea9a1d9ad1fb5](https://github.com/puppetlabs/vault-plugin-secrets-oauthapp/commit/48e1eccb92d0a413473a5f99fa7ea9a1d9ad1fb5))
+
+# [1.4.0](https://github.com/puppetlabs/vault-plugin-secrets-oauthapp/compare/v1.3.0...v1.4.0) (2020-09-28)
+
+
+### Chore
+
+* Update CODEOWNERS ([92be6a42e595f54bc2d9b001f8a80d2325a61ff0](https://github.com/puppetlabs/vault-plugin-secrets-oauthapp/commit/92be6a42e595f54bc2d9b001f8a80d2325a61ff0))
+
+### Fix
+
+* Use OptionError when discovery_url fails ([83e100eaed65764ab13e0f3cd8d4844c30eec4b7](https://github.com/puppetlabs/vault-plugin-secrets-oauthapp/commit/83e100eaed65764ab13e0f3cd8d4844c30eec4b7))
+
+### New
+
+* Add discovery_url ([cb59513a2b4fc8c03833304dc62b1c7d877cae6b](https://github.com/puppetlabs/vault-plugin-secrets-oauthapp/commit/cb59513a2b4fc8c03833304dc62b1c7d877cae6b))
+
+### Upgrade
+
+* Bump lodash from 4.17.15 to 4.17.19 ([4c55418da05974170f67d274d01e4d003b1fc063](https://github.com/puppetlabs/vault-plugin-secrets-oauthapp/commit/4c55418da05974170f67d274d01e4d003b1fc063))
+* Bump node-fetch from 2.6.0 to 2.6.1 ([e62e8942fb02204f9427fd9bf2a0112c7e003173](https://github.com/puppetlabs/vault-plugin-secrets-oauthapp/commit/e62e8942fb02204f9427fd9bf2a0112c7e003173))
+
 # [1.3.0](https://github.com/puppetlabs/vault-plugin-secrets-oauthapp/compare/v1.2.0...v1.3.0) (2020-07-13)
 
 
