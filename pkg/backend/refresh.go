@@ -18,7 +18,8 @@ func tokenOk2Reuse(tok *oauth2.Token, data *framework.FieldData) bool {
 	}
 	if minsecondsstr, ok := data.GetOk("minimum_seconds"); ok {
 		minseconds := minsecondsstr.(int)
-		if time.Until(tok.Expiry).Seconds() < float64(minseconds) {
+		zeroTime := time.Time{}
+		if tok.Expiry != zeroTime && time.Until(tok.Expiry).Seconds() < float64(minseconds) {
 			return false
 		}
 	}
