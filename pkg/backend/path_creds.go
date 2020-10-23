@@ -34,7 +34,7 @@ func (b *backend) credsReadOperation(ctx context.Context, req *logical.Request, 
 		return nil, err
 	} else if tok == nil {
 		return nil, nil
-	} else if !tok.Valid() {
+	} else if !tokenOk2Reuse(tok, data) {
 		return logical.ErrorResponse("token expired"), nil
 	}
 
