@@ -27,9 +27,21 @@ func credKey(name string) string {
 func (b *backend) credsReadOperation(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
 	key := credKey(data.Get("name").(string))
 
-	tok, err := b.getRefreshToken(ctx, req.Storage, key)
+	var (
+		tok *oauth2.Token
+		err error
+	)
+
+	if scopes, ok := data.GetOk("scopes"); ok {
+		tok, err = b.getRefreshToken(ctx, req.Storage, key, scopes.([]string), false)
+	} else {
+		tok, err = b.getRefreshToken(ctx, req.Storage, key, nil, false)
+	}
+
 	if err == ErrNotConfigured {
 		return logical.ErrorResponse("not configured"), nil
+	} else if err == ErrInvalidCredentials {
+		return logical.ErrorResponse("invalid client credentials"), nil
 	} else if err != nil {
 		return nil, err
 	} else if tok == nil {
@@ -64,6 +76,10 @@ func (b *backend) credsUpdateOperation(ctx context.Context, req *logical.Request
 	p, err := c.provider(b.providerRegistry)
 	if err != nil {
 		return nil, err
+	}
+
+	if !p.IsAuthorizationRequired() {
+		return logical.ErrorResponse(`this provider does not support creating credentials. Use "read" command to retrieve token`), nil
 	}
 
 	key := credKey(data.Get("name").(string))

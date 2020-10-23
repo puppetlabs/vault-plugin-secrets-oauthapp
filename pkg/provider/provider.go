@@ -44,6 +44,25 @@ type ExchangeConfigBuilder interface {
 	Build() ExchangeConfig
 }
 
+// TokenConfig is the component of *oauth2/clientcredentials.Config required
+// for retrieving a token via 2-legged OAuth
+type TokenConfig interface {
+	Token(ctx context.Context) (*oauth2.Token, error)
+	TokenSource(ctx context.Context) oauth2.TokenSource
+}
+
+// TokenConfigBuilder creates TokenConfigs.
+type TokenConfigBuilder interface {
+	// WithHTTPClient uses the given HTTP client to perform the exchange.
+	WithHTTPClient(client *http.Client) TokenConfigBuilder
+
+	// WithScopes sets the scopes for the config.
+	WithScopes(scopes ...string) TokenConfigBuilder
+
+	// Build creates an TokenConfig from the current configuration.
+	Build() TokenConfig
+}
+
 // Provider represents an integration with a particular OAuth provider using the
 // authorization code grant.
 type Provider interface {
@@ -57,6 +76,13 @@ type Provider interface {
 
 	// NewExchangeConfigBuilder creates a new config builder for token exchange.
 	NewExchangeConfigBuilder(clientID, clientSecret string) ExchangeConfigBuilder
+
+	// NewTokenConfigBuilder creates a new config builder for 2-legged token exchange.
+	NewTokenConfigBuilder(clientID, clientSecret string) (TokenConfigBuilder, error)
+
+	// IsAuthorizationRequired returns true if authorization is required (i.e. 3-legged OAuth)
+	// or returns false if it's not required (i.e. 2-legged OAuth)
+	IsAuthorizationRequired() bool
 }
 
 var GlobalRegistry = NewRegistry()

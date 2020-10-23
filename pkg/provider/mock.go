@@ -221,6 +221,14 @@ func (mp *mockProvider) NewExchangeConfigBuilder(clientID, clientSecret string) 
 	}
 }
 
+func (mp *mockProvider) NewTokenConfigBuilder(clientID, clientSecret string) (TokenConfigBuilder, error) {
+	return nil, ErrAuthRequired
+}
+
+func (mp *mockProvider) IsAuthorizationRequired() bool {
+	return true
+}
+
 type mock struct {
 	vsn          int
 	expectedOpts map[string]string

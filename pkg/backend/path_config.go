@@ -126,6 +126,10 @@ func (b *backend) configAuthCodeURLUpdateOperation(ctx context.Context, req *log
 		return nil, err
 	}
 
+	if !p.IsAuthorizationRequired() {
+		return logical.ErrorResponse("this provider does not support generating authorization URL"), nil
+	}
+
 	state, ok := data.GetOk("state")
 	if !ok {
 		return logical.ErrorResponse("missing state"), nil

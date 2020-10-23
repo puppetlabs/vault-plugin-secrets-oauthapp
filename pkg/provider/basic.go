@@ -7,6 +7,7 @@ import (
 	"github.com/coreos/go-oidc"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/bitbucket"
+	"golang.org/x/oauth2/clientcredentials"
 	"golang.org/x/oauth2/github"
 	"golang.org/x/oauth2/gitlab"
 	"golang.org/x/oauth2/google"
@@ -22,7 +23,8 @@ func init() {
 	GlobalRegistry.MustRegister("microsoft_azure_ad", azureADFactory)
 	GlobalRegistry.MustRegister("slack", basicFactory(slack.Endpoint))
 
-	GlobalRegistry.MustRegister("custom", customFactory)
+	GlobalRegistry.MustRegister("custom", customFactory(true))
+	GlobalRegistry.MustRegister("custom_client_credentials", customFactory(false))
 }
 
 type basicAuthCodeURLConfigBuilder struct {
@@ -86,9 +88,53 @@ func (cb *basicExchangeConfigBuilder) Build() ExchangeConfig {
 	}
 }
 
+type tokenExchangeConfig struct {
+	config *clientcredentials.Config
+	client *http.Client
+}
+
+func (c *tokenExchangeConfig) Token(ctx context.Context) (*oauth2.Token, error) {
+	if c.client != nil {
+		ctx = context.WithValue(ctx, oauth2.HTTPClient, c.client)
+	}
+
+	return c.config.Token(ctx)
+}
+
+func (c *tokenExchangeConfig) TokenSource(ctx context.Context) oauth2.TokenSource {
+	if c.client != nil {
+		ctx = context.WithValue(ctx, oauth2.HTTPClient, c.client)
+	}
+
+	return c.config.TokenSource(ctx)
+}
+
+type basicTokenConfigBuilder struct {
+	config *clientcredentials.Config
+	client *http.Client
+}
+
+func (cb *basicTokenConfigBuilder) WithHTTPClient(client *http.Client) TokenConfigBuilder {
+	cb.client = client
+	return cb
+}
+
+func (cb *basicTokenConfigBuilder) WithScopes(scopes ...string) TokenConfigBuilder {
+	cb.config.Scopes = scopes
+	return cb
+}
+
+func (cb *basicTokenConfigBuilder) Build() TokenConfig {
+	return &tokenExchangeConfig{
+		config: cb.config,
+		client: cb.client,
+	}
+}
+
 type basic struct {
-	vsn      int
-	endpoint oauth2.Endpoint
+	vsn                     int
+	endpoint                oauth2.Endpoint
+	isAuthorizationRequired bool
 }
 
 func (b *basic) Version() int {
@@ -112,6 +158,24 @@ func (b *basic) NewExchangeConfigBuilder(clientID, clientSecret string) Exchange
 			Endpoint:     b.endpoint,
 		},
 	}
+}
+
+func (b *basic) NewTokenConfigBuilder(clientID, clientSecret string) (TokenConfigBuilder, error) {
+	if b.IsAuthorizationRequired() {
+		return nil, ErrAuthRequired
+	}
+
+	return &basicTokenConfigBuilder{
+		config: &clientcredentials.Config{
+			ClientID:     clientID,
+			ClientSecret: clientSecret,
+			TokenURL:     b.endpoint.TokenURL,
+		},
+	}, nil
+}
+
+func (b *basic) IsAuthorizationRequired() bool {
+	return b.isAuthorizationRequired
 }
 
 func basicFactory(endpoint oauth2.Endpoint) FactoryFunc {
@@ -153,56 +217,59 @@ func azureADFactory(vsn int, opts map[string]string) (Provider, error) {
 	return p, nil
 }
 
-func customFactory(vsn int, opts map[string]string) (Provider, error) {
-	switch vsn {
-	case -1, 1:
-	default:
-		return nil, ErrNoProviderWithVersion
-	}
-
-	var authURL string
-	var tokenURL string
-	discoveryURL := opts["discovery_url"]
-	if discoveryURL != "" {
-		provider, err := oidc.NewProvider(context.TODO(), discoveryURL)
-		if err != nil {
-			return nil, &OptionError{Option: "discovery_url", Message: "error making new provider: " + err.Error()}
+func customFactory(isAuthorizationRequired bool) FactoryFunc {
+	return func(vsn int, opts map[string]string) (Provider, error) {
+		switch vsn {
+		case -1, 1:
+		default:
+			return nil, ErrNoProviderWithVersion
 		}
-		authURL = provider.Endpoint().AuthURL
-		tokenURL = provider.Endpoint().TokenURL
-	} else {
-		authURL = opts["auth_code_url"]
-		tokenURL = opts["token_url"]
-	}
 
-	if authURL == "" {
-		return nil, &OptionError{Option: "auth_code_url", Message: "authorization code URL is required"}
-	}
+		var authURL string
+		var tokenURL string
+		discoveryURL := opts["discovery_url"]
+		if discoveryURL != "" {
+			provider, err := oidc.NewProvider(context.TODO(), discoveryURL)
+			if err != nil {
+				return nil, &OptionError{Option: "discovery_url", Message: "error making new provider: " + err.Error()}
+			}
+			authURL = provider.Endpoint().AuthURL
+			tokenURL = provider.Endpoint().TokenURL
+		} else {
+			authURL = opts["auth_code_url"]
+			tokenURL = opts["token_url"]
+		}
 
-	if tokenURL == "" {
-		return nil, &OptionError{Option: "token_url", Message: "token URL is required"}
-	}
+		if isAuthorizationRequired && authURL == "" {
+			return nil, &OptionError{Option: "auth_code_url", Message: "authorization code URL is required"}
+		}
 
-	authStyle := oauth2.AuthStyleAutoDetect
-	switch opts["auth_style"] {
-	case "in_header":
-		authStyle = oauth2.AuthStyleInHeader
-	case "in_params":
-		authStyle = oauth2.AuthStyleInParams
-	case "":
-	default:
-		return nil, &OptionError{Option: "auth_style", Message: `unknown authentication style; expected one of "in_header" or "in_params"`}
-	}
+		if tokenURL == "" {
+			return nil, &OptionError{Option: "token_url", Message: "token URL is required"}
+		}
 
-	endpoint := oauth2.Endpoint{
-		AuthURL:   authURL,
-		TokenURL:  tokenURL,
-		AuthStyle: authStyle,
-	}
+		authStyle := oauth2.AuthStyleAutoDetect
+		switch opts["auth_style"] {
+		case "in_header":
+			authStyle = oauth2.AuthStyleInHeader
+		case "in_params":
+			authStyle = oauth2.AuthStyleInParams
+		case "":
+		default:
+			return nil, &OptionError{Option: "auth_style", Message: `unknown authentication style; expected one of "in_header" or "in_params"`}
+		}
 
-	p := &basic{
-		vsn:      1,
-		endpoint: endpoint,
+		endpoint := oauth2.Endpoint{
+			AuthURL:   authURL,
+			TokenURL:  tokenURL,
+			AuthStyle: authStyle,
+		}
+
+		p := &basic{
+			vsn:                     1,
+			endpoint:                endpoint,
+			isAuthorizationRequired: isAuthorizationRequired,
+		}
+		return p, nil
 	}
-	return p, nil
 }

@@ -22,6 +22,7 @@ $ vault secrets enable -path=oauth2/bitbucket oauthapp
 Success! Enabled the oauthapp secrets engine at: oauth2/bitbucket/
 ```
 
+### OAuth with authorization (3-legged OAuth)
 Configure it with the necessary information to exchange tokens:
 
 ```console
@@ -73,6 +74,33 @@ $ vault write oauth2/bitbucket/creds/my-user-tokens refresh_token=eyJhbGciOiJub2
 Success! Data written to: oauth2/bitbucket/creds/my-user-tokens
 ```
 
+### OAuth without authorization (2-legged OAuth)
+Configure it with the necessary information to exchange tokens:
+
+```console
+$ vault write oauth2/custom_client_credentials/config \
+    provider=custom_client_credentials \
+    client_id=aBcD3FgHiJkLmN0pQ \
+    client_secret=AbCd3fGh1jK1MnoPqRs7uVwXYz \
+    '{"provider_options": {"token_url": "https://url-to-provider/token"}}'
+Success! Data written to: oauth2/custom_client_credentials/config
+```
+
+Once the client secret has been written, it will never be exposed again.
+
+Get token. Once the token is expired it will be renewed automatically
+with the next read.
+
+```console
+$ vault read oauth2/custom_client_credentials/creds/my-user-auth
+Key             Value
+---             -----
+access_token    nLlBg9Lmd7n1X96bw/xcW9HvyOHzxj19z3zXKv0XXxr8eLjQSerf4iyPDRCucSHQN+c7fnKhPsSWbWg0
+```
+
+Note that the client secret is never exposed to Vault clients.
+
+
 ## Endpoints
 
 ### `config`
@@ -104,7 +132,8 @@ tokens.
 
 #### `PUT` (`write`)
 
-Retrieve an authorization code URL for the given state.
+Retrieve an authorization code URL for the given state.  
+Not supported with 2-legged OAuth.
 
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|----------|
@@ -119,10 +148,15 @@ Retrieve an authorization code URL for the given state.
 
 Retrieve a current access token for the given credential.
 
+| Name | Description | Type | Default | Required |
+|------|-------------|------|---------|----------|
+| `scopes` | A list of explicit scopes to request for 2-legged OAuth. Has no meaning for 3-legged OAuth. | List of String | None | No |
+
 #### `PUT` (`write`)
 
 Create or update a credential after an authorization flow has returned to the
-application.
+application.  
+Not supported with 2-legged OAuth.
 
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|----------|
@@ -177,5 +211,18 @@ arbitrary OAuth 2 authorization code grant flow.
 |------|-------------|---------|----------|
 | `discovery_url` | The URL at which to discover authorization code and token URLs. | None | Either this or the other two urls |
 | `auth_code_url` | The URL to submit the initial authorization code request to. | None | Either this or `discovery_url` |
+| `token_url` | The URL to use for exchanging temporary codes and refreshing access tokens. | None | Either this or `discovery_url` |
+| `auth_style` | How to authenticate to the token URL. If specified, must be one of `in_header` or `in_params`. | Automatically detect | No |
+
+### Custom with no authorization - 2-legged OAuth (`custom_client_credentials`)
+
+This provider allows you to specify the required endpoints for negotiating an
+arbitrary OAuth 2 client credentials grant flow.
+
+#### Options
+
+| Name | Description | Default | Required |
+|------|-------------|---------|----------|
+| `discovery_url` | The URL at which to discover authorization code and token URLs. | None | Either this or the other two urls |
 | `token_url` | The URL to use for exchanging temporary codes and refreshing access tokens. | None | Either this or `discovery_url` |
 | `auth_style` | How to authenticate to the token URL. If specified, must be one of `in_header` or `in_params`. | Automatically detect | No |
