@@ -9,7 +9,7 @@ import (
 	"golang.org/x/oauth2"
 )
 
-func tokenOk2Reuse(tok *oauth2.Token, data *framework.FieldData) bool {
+func tokenValid(tok *oauth2.Token, data *framework.FieldData) bool {
 	if !tok.Valid() {
 		return false
 	}
@@ -53,7 +53,7 @@ func (b *backend) refreshToken(ctx context.Context, storage logical.Storage, key
 		return nil, err
 	} else if tok == nil {
 		return nil, nil
-	} else if tokenOk2Reuse(tok, data) || tok.RefreshToken == "" {
+	} else if tokenValid(tok, data) || tok.RefreshToken == "" {
 		return tok, nil
 	}
 	tok.AccessToken = ""
@@ -102,7 +102,7 @@ func (b *backend) getRefreshToken(ctx context.Context, storage logical.Storage, 
 		return nil, nil
 	}
 
-	if !tokenOk2Reuse(tok, data) {
+	if !tokenValid(tok, data) {
 		return b.refreshToken(ctx, storage, key, data)
 	}
 
