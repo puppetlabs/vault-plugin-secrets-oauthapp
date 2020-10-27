@@ -1,3 +1,17 @@
+# [1.7.0](https://github.com/puppetlabs/vault-plugin-secrets-oauthapp/compare/v1.6.0...v1.7.0) (2020-10-27)
+
+
+### New
+
+* Add minimum_seconds credential read option ([8050dc3ffdc0c774c37afe0f3038aa3863cfff66](https://github.com/puppetlabs/vault-plugin-secrets-oauthapp/commit/8050dc3ffdc0c774c37afe0f3038aa3863cfff66))
+* Add tests for minimum_seconds ([52daf36215a3ea8e7dfa9f3ea5e884fc4020df4a](https://github.com/puppetlabs/vault-plugin-secrets-oauthapp/commit/52daf36215a3ea8e7dfa9f3ea5e884fc4020df4a))
+
+### Update
+
+* Make sure retrieved token meets all requirements ([f67616f15e955e5efc17580d3d23f9767fa2e1ad](https://github.com/puppetlabs/vault-plugin-secrets-oauthapp/commit/f67616f15e955e5efc17580d3d23f9767fa2e1ad))
+* Rename tokenOk2Reuse to tokenValid ([ec8a7e45600fc79f7dc5e39de393cb81cb2ae253](https://github.com/puppetlabs/vault-plugin-secrets-oauthapp/commit/ec8a7e45600fc79f7dc5e39de393cb81cb2ae253))
+* Treat zero time as never expired ([f93aff64d428a1281b7c367a0cb3eb567c28a4cd](https://github.com/puppetlabs/vault-plugin-secrets-oauthapp/commit/f93aff64d428a1281b7c367a0cb3eb567c28a4cd))
+
 # [1.6.0](https://github.com/puppetlabs/vault-plugin-secrets-oauthapp/compare/v1.5.0...v1.6.0) (2020-09-28)
 
 
