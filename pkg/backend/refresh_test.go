@@ -43,6 +43,15 @@ func TestPeriodicRefresh(t *testing.T) {
 				}
 			},
 		),
+		"fourth": provider.RefreshableMockExchange(
+			provider.IncrementMockExchange("fourth_"),
+			func(i int) (time.Duration, error) {
+				atomic.StoreInt32(&ti, int32(i))
+
+				// add 30 seconds for each subsequent read
+				return time.Duration(i * 30) * time.Second, nil
+			},
+		),
 	})
 
 	pr := provider.NewRegistry()
@@ -71,7 +80,7 @@ func TestPeriodicRefresh(t *testing.T) {
 	require.Nil(t, resp)
 
 	// Write our credentials.
-	for _, code := range []string{"first", "second", "third"} {
+	for _, code := range []string{"first", "second", "third", "fourth"} {
 		req = &logical.Request{
 			Operation: logical.UpdateOperation,
 			Path:      credsPathPrefix + code,
@@ -115,6 +124,17 @@ func TestPeriodicRefresh(t *testing.T) {
 	require.NotEmpty(t, resp.Data["access_token"])
 	require.Empty(t, resp.Data["expire_time"])
 
+	// make sure minimum_seconds added to first does not generate new token
+	first_token := resp.Data["access_token"]
+	req.Data = map[string]interface{}{
+		"minimum_seconds": "60000",
+	}
+	resp, err = b.HandleRequest(ctx, req)
+	require.NoError(t, err)
+	require.False(t, resp != nil && resp.IsError(), "response has error: %+v", resp.Error())
+	require.Equal(t, first_token, resp.Data["access_token"])
+	require.Empty(t, resp.Data["expire_time"])
+
 	// "second"
 	req = &logical.Request{
 		Operation: logical.ReadOperation,
@@ -140,4 +160,46 @@ func TestPeriodicRefresh(t *testing.T) {
 	require.False(t, resp != nil && resp.IsError(), "response has error: %+v", resp.Error())
 	require.Equal(t, "third_2", resp.Data["access_token"])
 	require.NotEmpty(t, resp.Data["expire_time"])
+
+	// test minimum_seconds more than the 30 of the first token
+	req = &logical.Request{
+		Operation: logical.ReadOperation,
+		Path:      credsPathPrefix + "fourth",
+		Storage:   storage,
+		Data: map[string]interface{}{
+			"minimum_seconds":     "40",
+		},
+	}
+
+	resp, err = b.HandleRequest(ctx, req)
+	require.NoError(t, err)
+	require.False(t, resp != nil && resp.IsError(), "response has error: %+v", resp.Error())
+	require.Equal(t, "fourth_2", resp.Data["access_token"])
+	require.NotEmpty(t, resp.Data["expire_time"])
+
+	// test minimum_seconds less than the 60 of the second token
+	req.Data["minimum_seconds"] = "50"
+
+	resp, err = b.HandleRequest(ctx, req)
+	require.NoError(t, err)
+	require.False(t, resp != nil && resp.IsError(), "response has error: %+v", resp.Error())
+	require.Equal(t, "fourth_2", resp.Data["access_token"])
+	require.NotEmpty(t, resp.Data["expire_time"])
+
+	// test minimum_seconds more than the 60 of the second token
+	req.Data["minimum_seconds"] = "70"
+
+	resp, err = b.HandleRequest(ctx, req)
+	require.NoError(t, err)
+	require.False(t, resp != nil && resp.IsError(), "response has error: %+v", resp.Error())
+	require.Equal(t, "fourth_3", resp.Data["access_token"])
+	require.NotEmpty(t, resp.Data["expire_time"])
+
+	// verify that it is marked expired if new token is less than request
+	req.Data["minimum_seconds"] = "125"
+
+	resp, err = b.HandleRequest(ctx, req)
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	require.EqualError(t, resp.Error(), "token expired")
 }

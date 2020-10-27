@@ -2,10 +2,29 @@ package backend
 
 import (
 	"context"
+	"time"
 
+	"github.com/hashicorp/vault/sdk/framework"
 	"github.com/hashicorp/vault/sdk/logical"
 	"golang.org/x/oauth2"
 )
+
+func tokenValid(tok *oauth2.Token, data *framework.FieldData) bool {
+	if !tok.Valid() {
+		return false
+	}
+	if data == nil {
+		return true
+	}
+	if minsecondsstr, ok := data.GetOk("minimum_seconds"); ok {
+		minseconds := minsecondsstr.(int)
+		zeroTime := time.Time{}
+		if tok.Expiry != zeroTime && time.Until(tok.Expiry).Seconds() < float64(minseconds) {
+			return false
+		}
+	}
+	return true
+}
 
 func getToken(ctx context.Context, storage logical.Storage, key string) (*oauth2.Token, error) {
 	entry, err := storage.Get(ctx, key)
@@ -23,7 +42,7 @@ func getToken(ctx context.Context, storage logical.Storage, key string) (*oauth2
 	return tok, nil
 }
 
-func (b *backend) refreshToken(ctx context.Context, storage logical.Storage, key string) (*oauth2.Token, error) {
+func (b *backend) refreshToken(ctx context.Context, storage logical.Storage, key string, data *framework.FieldData) (*oauth2.Token, error) {
 	b.credMut.Lock()
 	defer b.credMut.Unlock()
 
@@ -34,9 +53,10 @@ func (b *backend) refreshToken(ctx context.Context, storage logical.Storage, key
 		return nil, err
 	} else if tok == nil {
 		return nil, nil
-	} else if tok.Valid() || tok.RefreshToken == "" {
+	} else if tokenValid(tok, data) || tok.RefreshToken == "" {
 		return tok, nil
 	}
+	tok.AccessToken = ""
 
 	c, err := getConfig(ctx, storage)
 	if err != nil {
@@ -74,7 +94,7 @@ func (b *backend) refreshToken(ctx context.Context, storage logical.Storage, key
 	return refreshed, nil
 }
 
-func (b *backend) getRefreshToken(ctx context.Context, storage logical.Storage, key string) (*oauth2.Token, error) {
+func (b *backend) getRefreshToken(ctx context.Context, storage logical.Storage, key string, data *framework.FieldData) (*oauth2.Token, error) {
 	tok, err := getToken(ctx, storage, key)
 	if err != nil {
 		return nil, err
@@ -82,8 +102,8 @@ func (b *backend) getRefreshToken(ctx context.Context, storage logical.Storage, 
 		return nil, nil
 	}
 
-	if !tok.Valid() {
-		return b.refreshToken(ctx, storage, key)
+	if !tokenValid(tok, data) {
+		return b.refreshToken(ctx, storage, key, data)
 	}
 
 	return tok, nil
@@ -94,7 +114,7 @@ func (b *backend) refreshPeriodic(ctx context.Context, req *logical.Request) err
 	logical.ScanView(ctx, view, func(path string) {
 		key := view.ExpandKey(path)
 
-		if _, err := b.getRefreshToken(ctx, req.Storage, key); err != nil {
+		if _, err := b.getRefreshToken(ctx, req.Storage, key, nil); err != nil {
 			b.logger.Error("unable to refresh token", "key", key, "error", err)
 		}
 	})
