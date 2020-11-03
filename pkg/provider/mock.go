@@ -6,6 +6,8 @@ import (
 	"encoding/hex"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -308,3 +310,70 @@ func MockFactory(opts ...MockOption) FactoryFunc {
 
 	return m.factory
 }
+
+// tokenProvider is a local server that mocks RFC8693 token exchange
+type tokenProvider struct {
+	server       *httptest.Server
+}
+
+func NewMockTokenProvider() *tokenProvider {
+	tp := new(tokenProvider)
+	tp.server = httptest.NewServer(tp)
+
+	return tp
+}
+
+func (tp *tokenProvider) GetServerURL() string {
+	return tp.server.URL
+}
+
+func (tp *tokenProvider) Close() {
+	tp.server.Close()
+}
+
+func (tp *tokenProvider) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	errmsg := ""
+
+	switch r.URL.Path {
+	case "/token":
+		grant_type := r.FormValue("grant_type")
+		tok := url.Values{}
+		if grant_type != "urn:ietf:params:oauth:grant-type:token-exchange" {
+			tok["scopes"] = []string{"scopea scopeb scopec"}
+			tok["audience"] = []string{"any"}
+		} else {
+			subject_token := r.FormValue("subject_token")
+			if subject_token == "" {
+				errmsg = "no subject_token"
+				break
+			}
+			params, err := url.ParseQuery(subject_token)
+			if err != nil {
+				errmsg = "could not parse subject_token"
+				break
+			}
+			scopes := r.FormValue("scope")
+			if scopes != "" {
+				tok["scopes"] = []string{scopes}
+			} else {
+				tok["scopes"] = params["scopes"]
+			}
+			audience := r.FormValue("audience")
+			if audience != "" {
+				tok["audience"] = []string{audience}
+			} else {
+				tok["audience"] = params["audience"]
+			}
+		}
+
+		// simple manual json encoding
+		w.Write([]byte(`{"access_token": "` + tok.Encode() + `"}`))
+		return
+	default:
+		errmsg = fmt.Sprintf("unexpected path: %q", r.URL.Path)
+	}
+	w.Write([]byte(`{"error": "` + errmsg + `"}`))
+}
+
