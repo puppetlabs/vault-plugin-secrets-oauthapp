@@ -19,8 +19,9 @@ type backend struct {
 	logger           hclog.Logger
 
 	// mut protects the cache value.
-	mut   sync.Mutex
-	cache *cache
+	mut         sync.Mutex
+	cache       *cache
+	cacheCancel context.CancelFunc
 
 	// locks is a slice of mutexes that are used to protect credential updates.
 	locks []*locksutil.LockEntry

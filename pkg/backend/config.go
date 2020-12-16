@@ -50,12 +50,16 @@ func (b *backend) getCache(ctx context.Context, storage logical.Storage) (*cache
 			return nil, err
 		}
 
-		cache, err := newCache(b.ctx, cfg, b.providerRegistry)
+		cacheCtx, cancel := context.WithCancel(b.ctx)
+
+		cache, err := newCache(cacheCtx, cfg, b.providerRegistry)
 		if err != nil {
+			cancel()
 			return nil, err
 		}
 
 		b.cache = cache
+		b.cacheCancel = cancel
 	}
 
 	return b.cache, nil

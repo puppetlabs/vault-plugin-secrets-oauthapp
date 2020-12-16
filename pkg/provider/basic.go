@@ -177,7 +177,7 @@ func customFactory(ctx context.Context, vsn int, opts map[string]string) (Provid
 		// provider, but will be honored for existing configurations.
 		discoveryURL := opts["discovery_url"]
 		if discoveryURL != "" {
-			provider, err := oidc.NewProvider(context.TODO(), discoveryURL)
+			provider, err := oidc.NewProvider(ctx, discoveryURL)
 			if err != nil {
 				return nil, &OptionError{Option: "discovery_url", Message: "error making new provider: " + err.Error()}
 			}
