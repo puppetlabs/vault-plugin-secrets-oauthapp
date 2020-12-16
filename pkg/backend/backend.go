@@ -7,14 +7,23 @@ import (
 
 	"github.com/hashicorp/go-hclog"
 	"github.com/hashicorp/vault/sdk/framework"
+	"github.com/hashicorp/vault/sdk/helper/locksutil"
 	"github.com/hashicorp/vault/sdk/logical"
 	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/pkg/provider"
 )
 
 type backend struct {
+	ctx              context.Context
+	cancel           context.CancelFunc
 	providerRegistry *provider.Registry
-	credMut          sync.Mutex
 	logger           hclog.Logger
+
+	// mut protects the cache value.
+	mut   sync.Mutex
+	cache *cache
+
+	// locks is a slice of mutexes that are used to protect credential updates.
+	locks []*locksutil.LockEntry
 }
 
 const backendHelp = `
@@ -27,6 +36,8 @@ type Options struct {
 }
 
 func New(opts Options) *framework.Backend {
+	ctx, cancel := context.WithCancel(context.Background())
+
 	providerRegistry := opts.ProviderRegistry
 	if providerRegistry == nil {
 		providerRegistry = provider.GlobalRegistry
@@ -38,8 +49,12 @@ func New(opts Options) *framework.Backend {
 	}
 
 	b := &backend{
+		ctx:              ctx,
+		cancel:           cancel,
 		providerRegistry: providerRegistry,
 		logger:           logger,
+
+		locks: locksutil.CreateLocks(),
 	}
 
 	return &framework.Backend{
@@ -47,6 +62,8 @@ func New(opts Options) *framework.Backend {
 		PathsSpecial: pathsSpecial(),
 		Paths:        paths(b),
 		BackendType:  logical.TypeLogical,
+		Clean:        b.clean,
+		Invalidate:   b.invalidate,
 		PeriodicFunc: b.refreshPeriodic,
 	}
 }

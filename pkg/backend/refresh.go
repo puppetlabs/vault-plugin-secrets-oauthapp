@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/hashicorp/vault/sdk/framework"
+	"github.com/hashicorp/vault/sdk/helper/locksutil"
 	"github.com/hashicorp/vault/sdk/logical"
 	"golang.org/x/oauth2"
 )
@@ -26,7 +27,7 @@ func tokenValid(tok *oauth2.Token, data *framework.FieldData) bool {
 	return true
 }
 
-func getToken(ctx context.Context, storage logical.Storage, key string) (*oauth2.Token, error) {
+func getTokenLocked(ctx context.Context, storage logical.Storage, key string) (*oauth2.Token, error) {
 	entry, err := storage.Get(ctx, key)
 	if err != nil {
 		return nil, err
@@ -42,13 +43,22 @@ func getToken(ctx context.Context, storage logical.Storage, key string) (*oauth2
 	return tok, nil
 }
 
+func (b *backend) getToken(ctx context.Context, storage logical.Storage, key string) (*oauth2.Token, error) {
+	lock := locksutil.LockForKey(b.locks, key)
+	lock.RLock()
+	defer lock.RUnlock()
+
+	return getTokenLocked(ctx, storage, key)
+}
+
 func (b *backend) refreshToken(ctx context.Context, storage logical.Storage, key string, data *framework.FieldData) (*oauth2.Token, error) {
-	b.credMut.Lock()
-	defer b.credMut.Unlock()
+	lock := locksutil.LockForKey(b.locks, key)
+	lock.Lock()
+	defer lock.Unlock()
 
 	// In case someone else refreshed this token from under us, we'll re-request
 	// it here with the lock acquired.
-	tok, err := getToken(ctx, storage, key)
+	tok, err := getTokenLocked(ctx, storage, key)
 	if err != nil {
 		return nil, err
 	} else if tok == nil {
@@ -58,20 +68,15 @@ func (b *backend) refreshToken(ctx context.Context, storage logical.Storage, key
 	}
 	tok.AccessToken = ""
 
-	c, err := getConfig(ctx, storage)
+	c, err := b.getCache(ctx, storage)
 	if err != nil {
 		return nil, err
 	} else if c == nil {
 		return nil, ErrNotConfigured
 	}
 
-	p, err := c.provider(b.providerRegistry)
-	if err != nil {
-		return nil, err
-	}
-
 	// Refresh.
-	src := p.NewExchangeConfigBuilder(c.ClientID, c.ClientSecret).
+	src := c.Provider.NewExchangeConfigBuilder(c.Config.ClientID, c.Config.ClientSecret).
 		Build().
 		TokenSource(ctx, tok)
 
@@ -95,7 +100,7 @@ func (b *backend) refreshToken(ctx context.Context, storage logical.Storage, key
 }
 
 func (b *backend) getRefreshToken(ctx context.Context, storage logical.Storage, key string, data *framework.FieldData) (*oauth2.Token, error) {
-	tok, err := getToken(ctx, storage, key)
+	tok, err := b.getToken(ctx, storage, key)
 	if err != nil {
 		return nil, err
 	} else if tok == nil {

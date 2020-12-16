@@ -10,37 +10,8 @@ import (
 	"golang.org/x/oauth2"
 )
 
-type config struct {
-	ClientID        string            `json:"client_id"`
-	ClientSecret    string            `json:"client_secret"`
-	AuthURLParams   map[string]string `json:"auth_url_params"`
-	ProviderName    string            `json:"provider_name"`
-	ProviderVersion int               `json:"provider_version"`
-	ProviderOptions map[string]string `json:"provider_options"`
-}
-
-func (c *config) provider(r *provider.Registry) (provider.Provider, error) {
-	return r.NewAt(c.ProviderName, c.ProviderVersion, c.ProviderOptions)
-}
-
-func getConfig(ctx context.Context, storage logical.Storage) (*config, error) {
-	entry, err := storage.Get(ctx, configPath)
-	if err != nil {
-		return nil, err
-	} else if entry == nil {
-		return nil, nil
-	}
-
-	c := &config{}
-	if err := entry.DecodeJSON(c); err != nil {
-		return nil, err
-	}
-
-	return c, nil
-}
-
 func (b *backend) configReadOperation(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
-	c, err := getConfig(ctx, req.Storage)
+	c, err := b.getCache(ctx, req.Storage)
 	if err != nil {
 		return nil, err
 	} else if c == nil {
@@ -49,11 +20,11 @@ func (b *backend) configReadOperation(ctx context.Context, req *logical.Request,
 
 	resp := &logical.Response{
 		Data: map[string]interface{}{
-			"client_id":        c.ClientID,
-			"auth_url_params":  c.AuthURLParams,
-			"provider":         c.ProviderName,
-			"provider_version": c.ProviderVersion,
-			"provider_options": c.ProviderOptions,
+			"client_id":        c.Config.ClientID,
+			"auth_url_params":  c.Config.AuthURLParams,
+			"provider":         c.Config.ProviderName,
+			"provider_version": c.Config.ProviderVersion,
+			"provider_options": c.Config.ProviderOptions,
 		},
 	}
 	return resp, nil
@@ -102,6 +73,8 @@ func (b *backend) configUpdateOperation(ctx context.Context, req *logical.Reques
 		return nil, err
 	}
 
+	b.reset()
+
 	return nil, nil
 }
 
@@ -110,20 +83,17 @@ func (b *backend) configDeleteOperation(ctx context.Context, req *logical.Reques
 		return nil, err
 	}
 
+	b.reset()
+
 	return nil, nil
 }
 
 func (b *backend) configAuthCodeURLUpdateOperation(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
-	c, err := getConfig(ctx, req.Storage)
+	c, err := b.getCache(ctx, req.Storage)
 	if err != nil {
 		return nil, err
 	} else if c == nil {
 		return logical.ErrorResponse("not configured"), nil
-	}
-
-	p, err := c.provider(b.providerRegistry)
-	if err != nil {
-		return nil, err
 	}
 
 	state, ok := data.GetOk("state")
@@ -131,7 +101,7 @@ func (b *backend) configAuthCodeURLUpdateOperation(ctx context.Context, req *log
 		return logical.ErrorResponse("missing state"), nil
 	}
 
-	cb := p.NewAuthCodeURLConfigBuilder(c.ClientID)
+	cb := c.Provider.NewAuthCodeURLConfigBuilder(c.Config.ClientID)
 
 	if redirectURL, ok := data.GetOk("redirect_url"); ok {
 		cb = cb.WithRedirectURL(redirectURL.(string))
@@ -145,7 +115,7 @@ func (b *backend) configAuthCodeURLUpdateOperation(ctx context.Context, req *log
 	for k, v := range data.Get("auth_url_params").(map[string]string) {
 		opts = append(opts, oauth2.SetAuthURLParam(k, v))
 	}
-	for k, v := range c.AuthURLParams {
+	for k, v := range c.Config.AuthURLParams {
 		opts = append(opts, oauth2.SetAuthURLParam(k, v))
 	}
 

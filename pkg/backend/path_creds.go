@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/hashicorp/vault/sdk/framework"
+	"github.com/hashicorp/vault/sdk/helper/locksutil"
 	"github.com/hashicorp/vault/sdk/logical"
 	"golang.org/x/oauth2"
 )
@@ -54,23 +55,22 @@ func (b *backend) credsReadOperation(ctx context.Context, req *logical.Request, 
 }
 
 func (b *backend) credsUpdateOperation(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
-	c, err := getConfig(ctx, req.Storage)
+	c, err := b.getCache(ctx, req.Storage)
 	if err != nil {
 		return nil, err
 	} else if c == nil {
 		return logical.ErrorResponse("not configured"), nil
 	}
 
-	p, err := c.provider(b.providerRegistry)
-	if err != nil {
-		return nil, err
-	}
-
 	key := credKey(data.Get("name").(string))
+
+	lock := locksutil.LockForKey(b.locks, key)
+	lock.Lock()
+	defer lock.Unlock()
 
 	var tok *oauth2.Token
 
-	cb := p.NewExchangeConfigBuilder(c.ClientID, c.ClientSecret)
+	cb := c.Provider.NewExchangeConfigBuilder(c.Config.ClientID, c.Config.ClientSecret)
 	if code, ok := data.GetOk("code"); ok {
 		if _, ok := data.GetOk("refresh_token"); ok {
 			return logical.ErrorResponse("cannot use both code and refresh_token"), nil
@@ -100,9 +100,6 @@ func (b *backend) credsUpdateOperation(ctx context.Context, req *logical.Request
 		return logical.ErrorResponse("missing code or refresh_token"), nil
 	}
 
-	b.credMut.Lock()
-	defer b.credMut.Unlock()
-
 	// TODO: Handle extra fields?
 	entry, err := logical.StorageEntryJSON(key, tok)
 	if err != nil {
@@ -117,10 +114,11 @@ func (b *backend) credsUpdateOperation(ctx context.Context, req *logical.Request
 }
 
 func (b *backend) credsDeleteOperation(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
-	b.credMut.Lock()
-	defer b.credMut.Unlock()
-
 	key := credKey(data.Get("name").(string))
+
+	lock := locksutil.LockForKey(b.locks, key)
+	lock.Lock()
+	defer lock.Unlock()
 
 	if err := req.Storage.Delete(ctx, key); err != nil {
 		return nil, err
