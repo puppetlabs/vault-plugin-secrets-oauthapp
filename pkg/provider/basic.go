@@ -48,20 +48,30 @@ type basicExchangeConfig struct {
 	client *http.Client
 }
 
-func (c *basicExchangeConfig) Exchange(ctx context.Context, code string, opts ...oauth2.AuthCodeOption) (*oauth2.Token, error) {
+func (c *basicExchangeConfig) Exchange(ctx context.Context, code string, opts ...oauth2.AuthCodeOption) (*Token, error) {
 	if c.client != nil {
 		ctx = context.WithValue(ctx, oauth2.HTTPClient, c.client)
 	}
 
-	return c.config.Exchange(ctx, code, opts...)
+	tok, err := c.config.Exchange(ctx, code, opts...)
+	if err != nil {
+		return nil, err
+	}
+
+	return &Token{Token: tok}, nil
 }
 
-func (c *basicExchangeConfig) TokenSource(ctx context.Context, t *oauth2.Token) oauth2.TokenSource {
+func (c *basicExchangeConfig) Refresh(ctx context.Context, t *Token) (*Token, error) {
 	if c.client != nil {
 		ctx = context.WithValue(ctx, oauth2.HTTPClient, c.client)
 	}
 
-	return c.config.TokenSource(ctx, t)
+	tok, err := c.config.TokenSource(ctx, t.Token).Token()
+	if err != nil {
+		return nil, err
+	}
+
+	return &Token{Token: tok}, nil
 }
 
 type basicExchangeConfigBuilder struct {
@@ -115,9 +125,11 @@ func (b *basic) NewExchangeConfigBuilder(clientID, clientSecret string) Exchange
 }
 
 func basicFactory(endpoint oauth2.Endpoint) FactoryFunc {
-	return func(vsn int, opts map[string]string) (Provider, error) {
+	return func(ctx context.Context, vsn int, opts map[string]string) (Provider, error) {
+		vsn = selectVersion(vsn, 1)
+
 		switch vsn {
-		case -1, 1:
+		case 1:
 		default:
 			return nil, ErrNoProviderWithVersion
 		}
@@ -127,16 +139,18 @@ func basicFactory(endpoint oauth2.Endpoint) FactoryFunc {
 		}
 
 		p := &basic{
-			vsn:      1,
+			vsn:      vsn,
 			endpoint: endpoint,
 		}
 		return p, nil
 	}
 }
 
-func azureADFactory(vsn int, opts map[string]string) (Provider, error) {
+func azureADFactory(ctx context.Context, vsn int, opts map[string]string) (Provider, error) {
+	vsn = selectVersion(vsn, 1)
+
 	switch vsn {
-	case -1, 1:
+	case 1:
 	default:
 		return nil, ErrNoProviderWithVersion
 	}
@@ -153,33 +167,33 @@ func azureADFactory(vsn int, opts map[string]string) (Provider, error) {
 	return p, nil
 }
 
-func customFactory(vsn int, opts map[string]string) (Provider, error) {
+func customFactory(ctx context.Context, vsn int, opts map[string]string) (Provider, error) {
+	vsn = selectVersion(vsn, 2)
+
 	switch vsn {
-	case -1, 1:
+	case 2:
+	case 1:
+		// discovery_url is now deprecated since we have a complete OIDC
+		// provider, but will be honored for existing configurations.
+		discoveryURL := opts["discovery_url"]
+		if discoveryURL != "" {
+			provider, err := oidc.NewProvider(context.TODO(), discoveryURL)
+			if err != nil {
+				return nil, &OptionError{Option: "discovery_url", Message: "error making new provider: " + err.Error()}
+			}
+
+			opts["auth_code_url"] = provider.Endpoint().AuthURL
+			opts["token_url"] = provider.Endpoint().TokenURL
+		}
 	default:
 		return nil, ErrNoProviderWithVersion
 	}
 
-	var authURL string
-	var tokenURL string
-	discoveryURL := opts["discovery_url"]
-	if discoveryURL != "" {
-		provider, err := oidc.NewProvider(context.TODO(), discoveryURL)
-		if err != nil {
-			return nil, &OptionError{Option: "discovery_url", Message: "error making new provider: " + err.Error()}
-		}
-		authURL = provider.Endpoint().AuthURL
-		tokenURL = provider.Endpoint().TokenURL
-	} else {
-		authURL = opts["auth_code_url"]
-		tokenURL = opts["token_url"]
-	}
-
-	if authURL == "" {
+	if opts["auth_code_url"] == "" {
 		return nil, &OptionError{Option: "auth_code_url", Message: "authorization code URL is required"}
 	}
 
-	if tokenURL == "" {
+	if opts["token_url"] == "" {
 		return nil, &OptionError{Option: "token_url", Message: "token URL is required"}
 	}
 
@@ -195,13 +209,13 @@ func customFactory(vsn int, opts map[string]string) (Provider, error) {
 	}
 
 	endpoint := oauth2.Endpoint{
-		AuthURL:   authURL,
-		TokenURL:  tokenURL,
+		AuthURL:   opts["auth_code_url"],
+		TokenURL:  opts["token_url"],
 		AuthStyle: authStyle,
 	}
 
 	p := &basic{
-		vsn:      1,
+		vsn:      vsn,
 		endpoint: endpoint,
 	}
 	return p, nil

@@ -9,6 +9,7 @@ import (
 	"github.com/hashicorp/vault/sdk/framework"
 	"github.com/hashicorp/vault/sdk/helper/locksutil"
 	"github.com/hashicorp/vault/sdk/logical"
+	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/pkg/provider"
 	"golang.org/x/oauth2"
 )
 
@@ -68,7 +69,7 @@ func (b *backend) credsUpdateOperation(ctx context.Context, req *logical.Request
 	lock.Lock()
 	defer lock.Unlock()
 
-	var tok *oauth2.Token
+	var tok *provider.Token
 
 	cb := c.Provider.NewExchangeConfigBuilder(c.Config.ClientID, c.Config.ClientSecret)
 	if code, ok := data.GetOk("code"); ok {
@@ -88,7 +89,12 @@ func (b *backend) credsUpdateOperation(ctx context.Context, req *logical.Request
 			return nil, err
 		}
 	} else if refreshToken, ok := data.GetOk("refresh_token"); ok {
-		tok, err = cb.Build().TokenSource(ctx, &oauth2.Token{RefreshToken: refreshToken.(string)}).Token()
+		tok = &provider.Token{
+			Token: &oauth2.Token{
+				RefreshToken: refreshToken.(string),
+			},
+		}
+		tok, err = cb.Build().Refresh(ctx, tok)
 		if rErr, ok := err.(*oauth2.RetrieveError); ok {
 			b.logger.Error("invalid refresh_token", "error", rErr)
 			return logical.ErrorResponse("invalid refresh_token"), nil
@@ -100,7 +106,6 @@ func (b *backend) credsUpdateOperation(ctx context.Context, req *logical.Request
 		return logical.ErrorResponse("missing code or refresh_token"), nil
 	}
 
-	// TODO: Handle extra fields?
 	entry, err := logical.StorageEntryJSON(key, tok)
 	if err != nil {
 		return nil, err

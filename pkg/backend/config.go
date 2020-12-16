@@ -21,8 +21,8 @@ type cache struct {
 	Provider provider.Provider
 }
 
-func newCache(c *config, r *provider.Registry) (*cache, error) {
-	p, err := r.NewAt(c.ProviderName, c.ProviderVersion, c.ProviderOptions)
+func newCache(ctx context.Context, c *config, r *provider.Registry) (*cache, error) {
+	p, err := r.NewAt(ctx, c.ProviderName, c.ProviderVersion, c.ProviderOptions)
 	if err != nil {
 		return nil, err
 	}
@@ -50,7 +50,7 @@ func (b *backend) getCache(ctx context.Context, storage logical.Storage) (*cache
 			return nil, err
 		}
 
-		cache, err := newCache(cfg, b.providerRegistry)
+		cache, err := newCache(b.ctx, cfg, b.providerRegistry)
 		if err != nil {
 			return nil, err
 		}

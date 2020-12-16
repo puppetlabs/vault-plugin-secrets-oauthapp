@@ -48,7 +48,7 @@ func (b *backend) configUpdateOperation(ctx context.Context, req *logical.Reques
 
 	providerOptions := data.Get("provider_options").(map[string]string)
 
-	p, err := b.providerRegistry.New(providerName.(string), providerOptions)
+	p, err := b.providerRegistry.New(ctx, providerName.(string), providerOptions)
 	if err == provider.ErrNoSuchProvider {
 		return logical.ErrorResponse("provider %q does not exist", providerName), nil
 	} else if err != nil {

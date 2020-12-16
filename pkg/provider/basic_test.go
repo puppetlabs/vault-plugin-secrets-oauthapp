@@ -108,7 +108,7 @@ func TestBasicExchangeConfig(t *testing.T) {
 	// This token is already invalid, so let's try to refresh it.
 	require.False(t, token.Valid())
 
-	token, err = conf.TokenSource(ctx, token).Token()
+	token, err = conf.Refresh(ctx, token)
 	require.NoError(t, err)
 	require.NotNil(t, token)
 

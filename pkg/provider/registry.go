@@ -1,11 +1,12 @@
 package provider
 
 import (
+	"context"
 	"fmt"
 	"sync"
 )
 
-type FactoryFunc func(vsn int, opts map[string]string) (Provider, error)
+type FactoryFunc func(ctx context.Context, vsn int, opts map[string]string) (Provider, error)
 
 type Registry struct {
 	factories map[string]FactoryFunc
@@ -34,13 +35,13 @@ func (r *Registry) MustRegister(name string, factory FactoryFunc) {
 
 // New looks up a provider with the given name and configures it according to
 // the specified options.
-func (r *Registry) New(name string, opts map[string]string) (Provider, error) {
-	return r.NewAt(name, -1, opts)
+func (r *Registry) New(ctx context.Context, name string, opts map[string]string) (Provider, error) {
+	return r.NewAt(ctx, name, -1, opts)
 }
 
 // NewAt looks up a provider with the given name at the given version and
 // configures it according to the specified options.
-func (r *Registry) NewAt(name string, vsn int, opts map[string]string) (Provider, error) {
+func (r *Registry) NewAt(ctx context.Context, name string, vsn int, opts map[string]string) (Provider, error) {
 	r.mut.RLock()
 	defer r.mut.RUnlock()
 
@@ -49,7 +50,7 @@ func (r *Registry) NewAt(name string, vsn int, opts map[string]string) (Provider
 		return nil, ErrNoSuchProvider
 	}
 
-	return p(vsn, opts)
+	return p(ctx, vsn, opts)
 }
 
 func NewRegistry() *Registry {

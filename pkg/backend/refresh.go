@@ -7,10 +7,10 @@ import (
 	"github.com/hashicorp/vault/sdk/framework"
 	"github.com/hashicorp/vault/sdk/helper/locksutil"
 	"github.com/hashicorp/vault/sdk/logical"
-	"golang.org/x/oauth2"
+	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/pkg/provider"
 )
 
-func tokenValid(tok *oauth2.Token, data *framework.FieldData) bool {
+func tokenValid(tok *provider.Token, data *framework.FieldData) bool {
 	if !tok.Valid() {
 		return false
 	}
@@ -27,7 +27,7 @@ func tokenValid(tok *oauth2.Token, data *framework.FieldData) bool {
 	return true
 }
 
-func getTokenLocked(ctx context.Context, storage logical.Storage, key string) (*oauth2.Token, error) {
+func getTokenLocked(ctx context.Context, storage logical.Storage, key string) (*provider.Token, error) {
 	entry, err := storage.Get(ctx, key)
 	if err != nil {
 		return nil, err
@@ -35,7 +35,7 @@ func getTokenLocked(ctx context.Context, storage logical.Storage, key string) (*
 		return nil, nil
 	}
 
-	tok := &oauth2.Token{}
+	tok := &provider.Token{}
 	if err := entry.DecodeJSON(tok); err != nil {
 		return nil, err
 	}
@@ -43,7 +43,7 @@ func getTokenLocked(ctx context.Context, storage logical.Storage, key string) (*
 	return tok, nil
 }
 
-func (b *backend) getToken(ctx context.Context, storage logical.Storage, key string) (*oauth2.Token, error) {
+func (b *backend) getToken(ctx context.Context, storage logical.Storage, key string) (*provider.Token, error) {
 	lock := locksutil.LockForKey(b.locks, key)
 	lock.RLock()
 	defer lock.RUnlock()
@@ -51,7 +51,7 @@ func (b *backend) getToken(ctx context.Context, storage logical.Storage, key str
 	return getTokenLocked(ctx, storage, key)
 }
 
-func (b *backend) refreshToken(ctx context.Context, storage logical.Storage, key string, data *framework.FieldData) (*oauth2.Token, error) {
+func (b *backend) refreshToken(ctx context.Context, storage logical.Storage, key string, data *framework.FieldData) (*provider.Token, error) {
 	lock := locksutil.LockForKey(b.locks, key)
 	lock.Lock()
 	defer lock.Unlock()
@@ -76,11 +76,9 @@ func (b *backend) refreshToken(ctx context.Context, storage logical.Storage, key
 	}
 
 	// Refresh.
-	src := c.Provider.NewExchangeConfigBuilder(c.Config.ClientID, c.Config.ClientSecret).
+	refreshed, err := c.Provider.NewExchangeConfigBuilder(c.Config.ClientID, c.Config.ClientSecret).
 		Build().
-		TokenSource(ctx, tok)
-
-	refreshed, err := src.Token()
+		Refresh(ctx, tok)
 	if err != nil {
 		b.logger.Warn("unable to refresh token", "key", key, "error", err)
 		return tok, nil
@@ -99,7 +97,7 @@ func (b *backend) refreshToken(ctx context.Context, storage logical.Storage, key
 	return refreshed, nil
 }
 
-func (b *backend) getRefreshToken(ctx context.Context, storage logical.Storage, key string, data *framework.FieldData) (*oauth2.Token, error) {
+func (b *backend) getRefreshToken(ctx context.Context, storage logical.Storage, key string, data *framework.FieldData) (*provider.Token, error) {
 	tok, err := b.getToken(ctx, storage, key)
 	if err != nil {
 		return nil, err

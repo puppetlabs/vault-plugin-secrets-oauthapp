@@ -116,62 +116,48 @@ func RestrictMockExchange(m map[string]MockExchangeFunc) MockExchangeFunc {
 	}
 }
 
-type mockTokenSource struct {
-	fn    MockExchangeFunc
-	code  string
-	token *oauth2.Token
-}
-
-func (mts *mockTokenSource) Token() (*oauth2.Token, error) {
-	if !mts.token.Valid() {
-		token, err := mts.fn(mts.code)
-		if err != nil {
-			return nil, err
-		}
-
-		mts.token = token
-	}
-
-	return mts.token, nil
-}
-
 type mockExchangeConfig struct {
 	owner *mock
 	fn    MockExchangeFunc
 }
 
-func (c *mockExchangeConfig) Exchange(ctx context.Context, code string, opts ...oauth2.AuthCodeOption) (*oauth2.Token, error) {
+func (c *mockExchangeConfig) Exchange(ctx context.Context, code string, opts ...oauth2.AuthCodeOption) (*Token, error) {
 	if c.fn == nil {
 		return nil, &oauth2.RetrieveError{}
 	}
 
-	t, err := c.fn(code)
+	tok, err := c.fn(code)
 	if err != nil {
 		return nil, err
 	}
 
-	if t.RefreshToken != "" {
-		c.owner.putRefreshTokenCode(t.RefreshToken, code)
+	if tok.RefreshToken != "" {
+		c.owner.putRefreshTokenCode(tok.RefreshToken, code)
 	}
 
-	return t, nil
+	return &Token{Token: tok}, nil
 }
 
-func (c *mockExchangeConfig) TokenSource(ctx context.Context, t *oauth2.Token) oauth2.TokenSource {
+func (c *mockExchangeConfig) Refresh(ctx context.Context, t *Token) (*Token, error) {
 	if t.RefreshToken == "" || c.fn == nil {
-		return oauth2.StaticTokenSource(t)
+		return t, nil
 	}
 
 	code, ok := c.owner.getRefreshTokenCode(t.RefreshToken)
 	if !ok {
-		return oauth2.StaticTokenSource(t)
+		return t, nil
 	}
 
-	return &mockTokenSource{
-		fn:    c.fn,
-		code:  code,
-		token: t,
+	if t.Valid() {
+		return t, nil
 	}
+
+	tok, err := c.fn(code)
+	if err != nil {
+		return nil, err
+	}
+
+	return &Token{Token: tok}, nil
 }
 
 type mockExchangeConfigBuilder struct {
@@ -229,7 +215,7 @@ type mock struct {
 	refreshMut   sync.RWMutex
 }
 
-func (m *mock) factory(vsn int, options map[string]string) (Provider, error) {
+func (m *mock) factory(ctx context.Context, vsn int, options map[string]string) (Provider, error) {
 	switch vsn {
 	case -1, m.vsn:
 	default:
