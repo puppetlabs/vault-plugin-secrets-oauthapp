@@ -1,7 +1,7 @@
 # vault-plugin-secrets-oauthapp
 
-This is a standalone backend plugin for use with [Hashicorp
-Vault](https://www.github.com/hashicorp/vault).
+This is a standalone backend plugin for use with [HashiCorp
+Vault](https://github.com/hashicorp/vault).
 
 This plugin provides a secure wrapper around OAuth 2 authorization code grant
 flows, allowing a Vault client to request authorization on behalf of a user and
