@@ -43,7 +43,7 @@ func (c *oidcExchangeConfig) verifyUpdateToken(ctx context.Context, t *Token) er
 
 	idToken, err := c.p.Verifier(&gooidc.Config{ClientID: c.delegate.config.ClientID}).Verify(ctx, rawIDToken)
 	if err != nil {
-		return err
+		return fmt.Errorf("provider: oidc: verification error: %+v", err)
 	}
 
 	if idToken.Nonce != c.nonce {
@@ -59,20 +59,20 @@ func (c *oidcExchangeConfig) verifyUpdateToken(ctx context.Context, t *Token) er
 				t.ExtraData[field] = rawIDToken
 			case oidcExtraDataFieldIDTokenClaims:
 				claims := make(map[string]interface{})
-				if err := idToken.Claims(claims); err != nil {
-					return err
+				if err := idToken.Claims(&claims); err != nil {
+					return fmt.Errorf("provider: oidc: error parsing token claims: %+v", err)
 				}
 
 				t.ExtraData[field] = claims
 			case oidcExtraDataFieldUserInfo:
 				userInfo, err := c.p.UserInfo(ctx, c.delegate.config.TokenSource(ctx, t.Token))
 				if err != nil {
-					return err
+					return fmt.Errorf("provider: oidc: error fetching user info: %+v", err)
 				}
 
 				claims := make(map[string]interface{})
-				if err := userInfo.Claims(claims); err != nil {
-					return err
+				if err := userInfo.Claims(&claims); err != nil {
+					return fmt.Errorf("provider: oidc: error parsing user info: %+v", err)
 				}
 
 				t.ExtraData[field] = claims
@@ -229,7 +229,7 @@ func OIDCFactory(ctx context.Context, vsn int, opts map[string]string) (Provider
 			}
 		}
 
-		p.extraDataFields = p.extraDataFields
+		p.extraDataFields = fields
 	}
 
 	return p, nil

@@ -2,6 +2,9 @@ package provider_test
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/rsa"
+	"encoding/json"
 	"io"
 	"io/ioutil"
 	"net/http"
@@ -9,11 +12,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/coreos/go-oidc"
 	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/pkg/provider"
 	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/pkg/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/oauth2"
+	"gopkg.in/square/go-jose.v2"
+	"gopkg.in/square/go-jose.v2/jwt"
 )
 
 const testOIDCConfiguration = `
@@ -33,12 +39,29 @@ func TestOIDCFlow(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
+	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	require.NoError(t, err)
+
+	signer, err := jose.NewSigner(jose.SigningKey{
+		Algorithm: jose.RS256,
+		Key:       privateKey,
+	}, (&jose.SignerOptions{}).WithType("JWT"))
+	require.NoError(t, err)
+
 	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/.well-known/openid-configuration":
 			io.WriteString(w, testOIDCConfiguration)
 		case "/.well-known/jwks.json":
-			w.WriteHeader(http.StatusInternalServerError)
+			json.NewEncoder(w).Encode(&jose.JSONWebKeySet{
+				Keys: []jose.JSONWebKey{
+					{
+						Key:   &privateKey.PublicKey,
+						KeyID: "key",
+						Use:   "sig",
+					},
+				},
+			})
 		case "/token":
 			b, err := ioutil.ReadAll(r.Body)
 			require.NoError(t, err)
@@ -50,7 +73,32 @@ func TestOIDCFlow(t *testing.T) {
 			assert.Equal(t, "foo", data.Get("client_id"))
 			assert.Equal(t, "bar", data.Get("client_secret"))
 
-			w.Write([]byte(`access_token=abcd&refresh_token=efgh&token_type=bearer&expires_in=5`))
+			idClaims := jwt.Claims{
+				Issuer:   "http://localhost",
+				Audience: jwt.Audience{"foo"},
+				Subject:  "test-user",
+				Expiry:   jwt.NewNumericDate(time.Now().Add(time.Hour)),
+			}
+
+			idToken, err := jwt.Signed(signer).Claims(idClaims).CompactSerialize()
+			require.NoError(t, err)
+
+			resp := make(url.Values)
+			resp.Set("access_token", "abcd")
+			resp.Set("refresh_token", "efgh")
+			resp.Set("token_type", "bearer")
+			resp.Set("id_token", idToken)
+			resp.Set("expires_in", "900")
+
+			io.WriteString(w, resp.Encode())
+		case "/userinfo":
+			assert.Equal(t, "Bearer abcd", r.Header.Get("authorization"))
+
+			json.NewEncoder(w).Encode(oidc.UserInfo{
+				Subject: "test-user",
+				Profile: "https://example.com/test-user",
+				Email:   "test-user@example.com",
+			})
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
@@ -72,4 +120,22 @@ func TestOIDCFlow(t *testing.T) {
 	token, err := conf.Exchange(ctx, "123456", oauth2.SetAuthURLParam("baz", "quux"))
 	require.NoError(t, err)
 	require.NotNil(t, token)
+	assert.Equal(t, "abcd", token.AccessToken)
+	assert.Equal(t, "Bearer", token.Type())
+	assert.Equal(t, "efgh", token.RefreshToken)
+	assert.NotEmpty(t, token.Expiry)
+	require.Contains(t, token.ExtraData, "id_token")
+	require.Contains(t, token.ExtraData, "id_token_claims")
+	require.Contains(t, token.ExtraData, "user_info")
+	require.NotEmpty(t, token.ExtraData["id_token"])
+
+	idTokenClaims, ok := token.ExtraData["id_token_claims"].(map[string]interface{})
+	require.True(t, ok)
+	assert.Equal(t, "test-user", idTokenClaims["sub"])
+	assert.Equal(t, "http://localhost", idTokenClaims["iss"])
+
+	userInfo, ok := token.ExtraData["user_info"].(map[string]interface{})
+	require.True(t, ok)
+	assert.Equal(t, "test-user", userInfo["sub"])
+	assert.Equal(t, "test-user@example.com", userInfo["email"])
 }
