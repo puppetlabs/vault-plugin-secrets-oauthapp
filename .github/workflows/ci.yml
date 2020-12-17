@@ -1,0 +1,32 @@
+name: CI
+on: [push, pull_request]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/setup-go@v2
+      with:
+        go-version: '1.14'
+    - uses: actions/checkout@v2
+    - uses: actions/cache@v2
+      with:
+        path: |
+          ~/go/pkg/mod
+          ~/go/pkg/sumdb
+        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+        restore-keys: |
+          ${{ runner.os }}-go-
+    - name: install-tools
+      env:
+        GO111MODULE: 'on'
+      run: |
+        cd
+        go get \
+          gotest.tools/gotestsum \
+          github.com/golangci/golangci-lint/cmd/golangci-lint@v1.33.0
+    - name: check
+      run: make check
+    - name: test
+      run: make test
+    - name: build
+      run: make
