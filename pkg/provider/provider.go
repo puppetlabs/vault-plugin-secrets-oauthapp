@@ -2,7 +2,6 @@ package provider
 
 import (
 	"context"
-	"net/http"
 
 	"golang.org/x/oauth2"
 )
@@ -42,8 +41,9 @@ type ExchangeConfig interface {
 
 // ExchangeConfigBuilder creates ExchangeConfigs.
 type ExchangeConfigBuilder interface {
-	// WithHTTPClient uses the given HTTP client to perform the exchange.
-	WithHTTPClient(client *http.Client) ExchangeConfigBuilder
+	// WithOption sets an exchange-specific option for this provider. If the
+	// provider does not support the given option, it is ignored.
+	WithOption(name, value string) ExchangeConfigBuilder
 
 	// WithRedirectURL sets the redirect URL for the config.
 	WithRedirectURL(redirectURL string) ExchangeConfigBuilder

@@ -5,7 +5,6 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
-	"net/http"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -165,7 +164,7 @@ type mockExchangeConfigBuilder struct {
 	client MockClient
 }
 
-func (cb *mockExchangeConfigBuilder) WithHTTPClient(_ *http.Client) ExchangeConfigBuilder {
+func (cb *mockExchangeConfigBuilder) WithOption(name, value string) ExchangeConfigBuilder {
 	return cb
 }
 

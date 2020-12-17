@@ -91,9 +91,9 @@ func TestBasicExchangeConfig(t *testing.T) {
 		}
 	})
 	c := &http.Client{Transport: &MockRoundTripper{Handler: h}}
+	ctx = context.WithValue(ctx, oauth2.HTTPClient, c)
 
 	conf := basicTest.NewExchangeConfigBuilder("foo", "bar").
-		WithHTTPClient(c).
 		WithRedirectURL("http://example.com/redirect").
 		Build()
 

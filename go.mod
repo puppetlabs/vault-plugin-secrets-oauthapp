@@ -1,6 +1,6 @@
 module github.com/puppetlabs/vault-plugin-secrets-oauthapp
 
-go 1.12
+go 1.14
 
 require (
 	github.com/coreos/go-oidc v2.2.1+incompatible

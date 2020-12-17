@@ -137,6 +137,7 @@ application.
 | `code` | The response code to exchange for a full token. | String | None | Either this or `refresh_token` |
 | `redirect_url` | The same redirect URL as specified in the authorization code URL. | String | None | Refer to provider documentation |
 | `refresh_token` | A refresh token retrieved from the provider by some means external to this plugin. | String | None | Either this or `code` |
+| `provider_options` | A list of options to pass on to the provider for configuring this token exchange. | Map of String🠦String | None | Refer to provider documentation |
 
 #### `DELETE` (`delete`)
 
@@ -170,6 +171,25 @@ Remove the credential information from storage.
 |------|-------------|---------|----------|
 | `tenant` | The tenant to authenticate to. | None | Yes |
 
+### OpenID Connect (`oidc`)
+
+This provider implements the OpenID Connect protocol version 1.0.
+
+[Documentation](https://openid.net/developers/specs/)
+
+#### Options
+
+| Name | Description | Default | Required |
+|------|-------------|---------|----------|
+| `issuer_url` | The URL to an issuer of OpenID JWTs with an accessible `.well-known/openid-configuration` resource. | None | Yes |
+| `extra_data_fields` | A comma-separated list of subject fields to expose in the credential endpoint. Valid fields are `id_token`, `id_token_claims`, and `user_info`. | None | No |
+
+#### Credential exchange options
+
+| Name | Description | Default | Required |
+|------|-------------|---------|----------|
+| `nonce` | The same nonce as specified in the authorization code URL. | String | None | If present in the authorization code URL |
+
 ### Slack (`slack`)
 
 [Documentation](https://api.slack.com/docs/oauth)
@@ -183,7 +203,6 @@ arbitrary OAuth 2 authorization code grant flow.
 
 | Name | Description | Default | Required |
 |------|-------------|---------|----------|
-| `discovery_url` | The URL at which to discover authorization code and token URLs. | None | Either this or the other two urls |
-| `auth_code_url` | The URL to submit the initial authorization code request to. | None | Either this or `discovery_url` |
-| `token_url` | The URL to use for exchanging temporary codes and refreshing access tokens. | None | Either this or `discovery_url` |
+| `auth_code_url` | The URL to submit the initial authorization code request to. | None | Yes |
+| `token_url` | The URL to use for exchanging temporary codes and refreshing access tokens. | None | Yes |
 | `auth_style` | How to authenticate to the token URL. If specified, must be one of `in_header` or `in_params`. | Automatically detect | No |

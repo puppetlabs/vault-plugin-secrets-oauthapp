@@ -2,9 +2,8 @@ package provider
 
 import (
 	"context"
-	"net/http"
 
-	"github.com/coreos/go-oidc"
+	gooidc "github.com/coreos/go-oidc"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/bitbucket"
 	"golang.org/x/oauth2/github"
@@ -45,14 +44,9 @@ func (cb *basicAuthCodeURLConfigBuilder) Build() AuthCodeURLConfig {
 
 type basicExchangeConfig struct {
 	config *oauth2.Config
-	client *http.Client
 }
 
 func (c *basicExchangeConfig) Exchange(ctx context.Context, code string, opts ...oauth2.AuthCodeOption) (*Token, error) {
-	if c.client != nil {
-		ctx = context.WithValue(ctx, oauth2.HTTPClient, c.client)
-	}
-
 	tok, err := c.config.Exchange(ctx, code, opts...)
 	if err != nil {
 		return nil, err
@@ -62,10 +56,6 @@ func (c *basicExchangeConfig) Exchange(ctx context.Context, code string, opts ..
 }
 
 func (c *basicExchangeConfig) Refresh(ctx context.Context, t *Token) (*Token, error) {
-	if c.client != nil {
-		ctx = context.WithValue(ctx, oauth2.HTTPClient, c.client)
-	}
-
 	tok, err := c.config.TokenSource(ctx, t.Token).Token()
 	if err != nil {
 		return nil, err
@@ -76,11 +66,9 @@ func (c *basicExchangeConfig) Refresh(ctx context.Context, t *Token) (*Token, er
 
 type basicExchangeConfigBuilder struct {
 	config *oauth2.Config
-	client *http.Client
 }
 
-func (cb *basicExchangeConfigBuilder) WithHTTPClient(client *http.Client) ExchangeConfigBuilder {
-	cb.client = client
+func (cb *basicExchangeConfigBuilder) WithOption(name, value string) ExchangeConfigBuilder {
 	return cb
 }
 
@@ -92,7 +80,6 @@ func (cb *basicExchangeConfigBuilder) WithRedirectURL(redirectURL string) Exchan
 func (cb *basicExchangeConfigBuilder) Build() ExchangeConfig {
 	return &basicExchangeConfig{
 		config: cb.config,
-		client: cb.client,
 	}
 }
 
@@ -177,7 +164,7 @@ func customFactory(ctx context.Context, vsn int, opts map[string]string) (Provid
 		// provider, but will be honored for existing configurations.
 		discoveryURL := opts["discovery_url"]
 		if discoveryURL != "" {
-			provider, err := oidc.NewProvider(ctx, discoveryURL)
+			provider, err := gooidc.NewProvider(ctx, discoveryURL)
 			if err != nil {
 				return nil, &OptionError{Option: "discovery_url", Message: "error making new provider: " + err.Error()}
 			}

@@ -49,6 +49,10 @@ func (b *backend) credsReadOperation(ctx context.Context, req *logical.Request, 
 		rd["expire_time"] = tok.Expiry
 	}
 
+	if len(tok.ExtraData) > 0 {
+		rd["extra_data"] = tok.ExtraData
+	}
+
 	resp := &logical.Response{
 		Data: rd,
 	}
@@ -72,6 +76,11 @@ func (b *backend) credsUpdateOperation(ctx context.Context, req *logical.Request
 	var tok *provider.Token
 
 	cb := c.Provider.NewExchangeConfigBuilder(c.Config.ClientID, c.Config.ClientSecret)
+
+	for name, value := range data.Get("provider_options").(map[string]string) {
+		cb = cb.WithOption(name, value)
+	}
+
 	if code, ok := data.GetOk("code"); ok {
 		if _, ok := data.GetOk("refresh_token"); ok {
 			return logical.ErrorResponse("cannot use both code and refresh_token"), nil
@@ -155,6 +164,10 @@ var credsFields = map[string]*framework.FieldSchema{
 	"refresh_token": {
 		Type:        framework.TypeString,
 		Description: "Specifies a refresh token retrieved from the provider by some means external to this plugin.",
+	},
+	"provider_options": {
+		Type:        framework.TypeKVPairs,
+		Description: "Specifies a list of options to pass on to the provider for configuring this token exchange.",
 	},
 }
 
