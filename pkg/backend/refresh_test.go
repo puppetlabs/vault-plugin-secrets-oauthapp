@@ -8,6 +8,7 @@ import (
 
 	"github.com/hashicorp/vault/sdk/logical"
 	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/pkg/provider"
+	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/pkg/testutil"
 	"github.com/stretchr/testify/require"
 )
 
@@ -15,21 +16,21 @@ func TestPeriodicRefresh(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	client := provider.MockClient{
+	client := testutil.MockClient{
 		ID:     "abc",
 		Secret: "def",
 	}
 
 	var ti int32
 
-	exchange := provider.RestrictMockExchange(map[string]provider.MockExchangeFunc{
-		"first": provider.RandomMockExchange,
-		"second": provider.RefreshableMockExchange(
-			provider.IncrementMockExchange("second_"),
+	exchange := testutil.RestrictMockExchange(map[string]testutil.MockExchangeFunc{
+		"first": testutil.RandomMockExchange,
+		"second": testutil.RefreshableMockExchange(
+			testutil.IncrementMockExchange("second_"),
 			func(_ int) (time.Duration, error) { return 30 * time.Minute, nil },
 		),
-		"third": provider.RefreshableMockExchange(
-			provider.IncrementMockExchange("third_"),
+		"third": testutil.RefreshableMockExchange(
+			testutil.IncrementMockExchange("third_"),
 			func(i int) (time.Duration, error) {
 				atomic.StoreInt32(&ti, int32(i))
 
@@ -43,19 +44,19 @@ func TestPeriodicRefresh(t *testing.T) {
 				}
 			},
 		),
-		"fourth": provider.RefreshableMockExchange(
-			provider.IncrementMockExchange("fourth_"),
+		"fourth": testutil.RefreshableMockExchange(
+			testutil.IncrementMockExchange("fourth_"),
 			func(i int) (time.Duration, error) {
 				atomic.StoreInt32(&ti, int32(i))
 
 				// add 30 seconds for each subsequent read
-				return time.Duration(i * 30) * time.Second, nil
+				return time.Duration(i*30) * time.Second, nil
 			},
 		),
 	})
 
 	pr := provider.NewRegistry()
-	pr.MustRegister("mock", provider.MockFactory(provider.MockWithExchange(client, exchange)))
+	pr.MustRegister("mock", testutil.MockFactory(testutil.MockWithExchange(client, exchange)))
 
 	storage := &logical.InmemStorage{}
 
@@ -167,7 +168,7 @@ func TestPeriodicRefresh(t *testing.T) {
 		Path:      credsPathPrefix + "fourth",
 		Storage:   storage,
 		Data: map[string]interface{}{
-			"minimum_seconds":     "40",
+			"minimum_seconds": "40",
 		},
 	}
 

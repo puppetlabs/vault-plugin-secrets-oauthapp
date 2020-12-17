@@ -1,39 +1,35 @@
-package provider
+package provider_test
 
 import (
 	"context"
 	"io/ioutil"
 	"net/http"
-	"net/http/httptest"
 	"net/url"
 	"testing"
 	"time"
 
+	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/pkg/provider"
+	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/pkg/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/oauth2"
 )
 
-type MockRoundTripper struct {
-	Handler http.Handler
-}
-
-func (mrt *MockRoundTripper) RoundTrip(r *http.Request) (*http.Response, error) {
-	w := httptest.NewRecorder()
-	mrt.Handler.ServeHTTP(w, r)
-	return w.Result(), nil
-}
-
-var basicTest = &basic{
-	vsn: 1,
-	endpoint: oauth2.Endpoint{
-		AuthURL:   "http://localhost/authorize",
-		TokenURL:  "http://localhost/token",
-		AuthStyle: oauth2.AuthStyleInParams,
-	},
-}
+var basicTestFactory = provider.BasicFactory(oauth2.Endpoint{
+	AuthURL:   "http://localhost/authorize",
+	TokenURL:  "http://localhost/token",
+	AuthStyle: oauth2.AuthStyleInParams,
+})
 
 func TestBasicAuthCodeURLConfig(t *testing.T) {
+	ctx := context.Background()
+
+	r := provider.NewRegistry()
+	r.MustRegister("basic", basicTestFactory)
+
+	basicTest, err := r.New(ctx, "basic", map[string]string{})
+	require.NoError(t, err)
+
 	conf := basicTest.NewAuthCodeURLConfigBuilder("foo").
 		WithRedirectURL("http://example.com/redirect").
 		WithScopes("a", "b", "c").
@@ -58,6 +54,9 @@ func TestBasicAuthCodeURLConfig(t *testing.T) {
 func TestBasicExchangeConfig(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
+
+	r := provider.NewRegistry()
+	r.MustRegister("basic", basicTestFactory)
 
 	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -90,8 +89,11 @@ func TestBasicExchangeConfig(t *testing.T) {
 			w.WriteHeader(http.StatusNotFound)
 		}
 	})
-	c := &http.Client{Transport: &MockRoundTripper{Handler: h}}
+	c := &http.Client{Transport: &testutil.MockRoundTripper{Handler: h}}
 	ctx = context.WithValue(ctx, oauth2.HTTPClient, c)
+
+	basicTest, err := r.New(ctx, "basic", map[string]string{})
+	require.NoError(t, err)
 
 	conf := basicTest.NewExchangeConfigBuilder("foo", "bar").
 		WithRedirectURL("http://example.com/redirect").

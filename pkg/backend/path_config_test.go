@@ -8,6 +8,7 @@ import (
 
 	"github.com/hashicorp/vault/sdk/logical"
 	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/pkg/provider"
+	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/pkg/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -17,7 +18,7 @@ func TestConfigReadWrite(t *testing.T) {
 	defer cancel()
 
 	pr := provider.NewRegistry()
-	pr.MustRegister("mock", provider.MockFactory(provider.MockWithVersion(2)))
+	pr.MustRegister("mock", testutil.MockFactory(testutil.MockWithVersion(2)))
 
 	storage := &logical.InmemStorage{}
 
@@ -67,7 +68,7 @@ func TestConfigAuthCodeURL(t *testing.T) {
 	defer cancel()
 
 	pr := provider.NewRegistry()
-	pr.MustRegister("mock", provider.MockFactory())
+	pr.MustRegister("mock", testutil.MockFactory())
 
 	storage := &logical.InmemStorage{}
 
@@ -118,7 +119,7 @@ func TestConfigAuthCodeURL(t *testing.T) {
 	u.RawQuery = ""
 	u.Fragment = ""
 
-	assert.Equal(t, provider.MockAuthCodeURL, u.String())
+	assert.Equal(t, testutil.MockAuthCodeURL, u.String())
 	assert.Equal(t, "code", qs.Get("response_type"))
 	assert.Equal(t, "abc", qs.Get("client_id"))
 	assert.Equal(t, "qwerty", qs.Get("state"))

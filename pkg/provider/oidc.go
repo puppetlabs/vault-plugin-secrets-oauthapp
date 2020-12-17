@@ -7,6 +7,7 @@ import (
 
 	gooidc "github.com/coreos/go-oidc"
 	"github.com/hashicorp/vault/sdk/helper/parseutil"
+	"github.com/hashicorp/vault/sdk/helper/strutil"
 	"golang.org/x/oauth2"
 )
 
@@ -24,7 +25,7 @@ var (
 )
 
 func init() {
-	GlobalRegistry.MustRegister("oidc", oidcFactory)
+	GlobalRegistry.MustRegister("oidc", OIDCFactory)
 }
 
 type oidcExchangeConfig struct {
@@ -142,7 +143,14 @@ func (cb *oidcExchangeConfigBuilder) Build() ExchangeConfig {
 type oidc struct {
 	vsn             int
 	p               *gooidc.Provider
+	authStyle       oauth2.AuthStyle
 	extraDataFields []string
+}
+
+func (o *oidc) endpoint() oauth2.Endpoint {
+	ep := o.p.Endpoint()
+	ep.AuthStyle = o.authStyle
+	return ep
 }
 
 func (o *oidc) Version() int {
@@ -150,27 +158,22 @@ func (o *oidc) Version() int {
 }
 
 func (o *oidc) NewAuthCodeURLConfigBuilder(clientID string) AuthCodeURLConfigBuilder {
-	return &basicAuthCodeURLConfigBuilder{
-		config: &oauth2.Config{
-			ClientID: clientID,
-			Endpoint: o.p.Endpoint(),
-		},
-	}
+	return NewConformingAuthCodeURLConfigBuilder(o.endpoint(), clientID)
 }
 
 func (o *oidc) NewExchangeConfigBuilder(clientID, clientSecret string) ExchangeConfigBuilder {
 	return &oidcExchangeConfigBuilder{
 		config: &oauth2.Config{
+			Endpoint:     o.endpoint(),
 			ClientID:     clientID,
 			ClientSecret: clientSecret,
-			Endpoint:     o.p.Endpoint(),
 		},
 		p:               o.p,
 		extraDataFields: o.extraDataFields,
 	}
 }
 
-func oidcFactory(ctx context.Context, vsn int, opts map[string]string) (Provider, error) {
+func OIDCFactory(ctx context.Context, vsn int, opts map[string]string) (Provider, error) {
 	vsn = selectVersion(vsn, 1)
 
 	switch vsn {
@@ -188,9 +191,28 @@ func oidcFactory(ctx context.Context, vsn int, opts map[string]string) (Provider
 		return nil, &OptionError{Option: "issuer_url", Message: fmt.Sprintf("error creating OIDC provider with given issuer URL: %+v", err)}
 	}
 
+	// For some reason, the upstream provider does not check the
+	// "token_endpoint_auth_methods_supported" value.
+	authStyle := delegate.Endpoint().AuthStyle
+	if authStyle == oauth2.AuthStyleAutoDetect {
+		var metadata struct {
+			TokenEndpointAuthMethodsSupported []string `json:"token_endpoint_auth_methods_supported"`
+		}
+		if err := delegate.Claims(&metadata); err != nil {
+			return nil, &OptionError{Option: "issuer_url", Message: fmt.Sprintf("error decoding OIDC provider metadata: %+v", err)}
+		}
+
+		if strutil.StrListContains(metadata.TokenEndpointAuthMethodsSupported, "client_secret_post") {
+			authStyle = oauth2.AuthStyleInParams
+		} else {
+			authStyle = oauth2.AuthStyleInHeader
+		}
+	}
+
 	p := &oidc{
-		vsn: vsn,
-		p:   delegate,
+		vsn:       vsn,
+		p:         delegate,
+		authStyle: authStyle,
 	}
 
 	if opts["extra_data_fields"] != "" {

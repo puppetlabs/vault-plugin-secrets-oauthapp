@@ -14,32 +14,14 @@ import (
 )
 
 func init() {
-	GlobalRegistry.MustRegister("bitbucket", basicFactory(bitbucket.Endpoint))
-	GlobalRegistry.MustRegister("github", basicFactory(github.Endpoint))
-	GlobalRegistry.MustRegister("gitlab", basicFactory(gitlab.Endpoint))
-	GlobalRegistry.MustRegister("google", basicFactory(google.Endpoint))
-	GlobalRegistry.MustRegister("microsoft_azure_ad", azureADFactory)
-	GlobalRegistry.MustRegister("slack", basicFactory(slack.Endpoint))
+	GlobalRegistry.MustRegister("bitbucket", BasicFactory(bitbucket.Endpoint))
+	GlobalRegistry.MustRegister("github", BasicFactory(github.Endpoint))
+	GlobalRegistry.MustRegister("gitlab", BasicFactory(gitlab.Endpoint))
+	GlobalRegistry.MustRegister("google", BasicFactory(google.Endpoint))
+	GlobalRegistry.MustRegister("microsoft_azure_ad", AzureADFactory)
+	GlobalRegistry.MustRegister("slack", BasicFactory(slack.Endpoint))
 
-	GlobalRegistry.MustRegister("custom", customFactory)
-}
-
-type basicAuthCodeURLConfigBuilder struct {
-	config *oauth2.Config
-}
-
-func (cb *basicAuthCodeURLConfigBuilder) WithRedirectURL(redirectURL string) AuthCodeURLConfigBuilder {
-	cb.config.RedirectURL = redirectURL
-	return cb
-}
-
-func (cb *basicAuthCodeURLConfigBuilder) WithScopes(scopes ...string) AuthCodeURLConfigBuilder {
-	cb.config.Scopes = scopes
-	return cb
-}
-
-func (cb *basicAuthCodeURLConfigBuilder) Build() AuthCodeURLConfig {
-	return cb.config
+	GlobalRegistry.MustRegister("custom", CustomFactory)
 }
 
 type basicExchangeConfig struct {
@@ -93,25 +75,20 @@ func (b *basic) Version() int {
 }
 
 func (b *basic) NewAuthCodeURLConfigBuilder(clientID string) AuthCodeURLConfigBuilder {
-	return &basicAuthCodeURLConfigBuilder{
-		config: &oauth2.Config{
-			ClientID: clientID,
-			Endpoint: b.endpoint,
-		},
-	}
+	return NewConformingAuthCodeURLConfigBuilder(b.endpoint, clientID)
 }
 
 func (b *basic) NewExchangeConfigBuilder(clientID, clientSecret string) ExchangeConfigBuilder {
 	return &basicExchangeConfigBuilder{
 		config: &oauth2.Config{
+			Endpoint:     b.endpoint,
 			ClientID:     clientID,
 			ClientSecret: clientSecret,
-			Endpoint:     b.endpoint,
 		},
 	}
 }
 
-func basicFactory(endpoint oauth2.Endpoint) FactoryFunc {
+func BasicFactory(endpoint oauth2.Endpoint) FactoryFunc {
 	return func(ctx context.Context, vsn int, opts map[string]string) (Provider, error) {
 		vsn = selectVersion(vsn, 1)
 
@@ -133,7 +110,7 @@ func basicFactory(endpoint oauth2.Endpoint) FactoryFunc {
 	}
 }
 
-func azureADFactory(ctx context.Context, vsn int, opts map[string]string) (Provider, error) {
+func AzureADFactory(ctx context.Context, vsn int, opts map[string]string) (Provider, error) {
 	vsn = selectVersion(vsn, 1)
 
 	switch vsn {
@@ -154,7 +131,7 @@ func azureADFactory(ctx context.Context, vsn int, opts map[string]string) (Provi
 	return p, nil
 }
 
-func customFactory(ctx context.Context, vsn int, opts map[string]string) (Provider, error) {
+func CustomFactory(ctx context.Context, vsn int, opts map[string]string) (Provider, error) {
 	vsn = selectVersion(vsn, 2)
 
 	switch vsn {
