@@ -4,7 +4,6 @@ go 1.14
 
 require (
 	github.com/coreos/go-oidc v2.2.1+incompatible
-	github.com/davecgh/go-spew v1.1.1
 	github.com/hashicorp/go-hclog v0.8.0
 	github.com/hashicorp/golang-lru v0.5.3 // indirect
 	github.com/hashicorp/vault/api v1.0.4
