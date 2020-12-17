@@ -59,13 +59,15 @@ func (b *backend) refreshToken(ctx context.Context, storage logical.Storage, key
 	// In case someone else refreshed this token from under us, we'll re-request
 	// it here with the lock acquired.
 	tok, err := getTokenLocked(ctx, storage, key)
-	if err != nil {
+	switch {
+	case err != nil:
 		return nil, err
-	} else if tok == nil {
+	case tok == nil:
 		return nil, nil
-	} else if tokenValid(tok, data) || tok.RefreshToken == "" {
+	case tokenValid(tok, data) || tok.RefreshToken == "":
 		return tok, nil
 	}
+
 	tok.AccessToken = ""
 
 	c, err := b.getCache(ctx, storage)
@@ -114,13 +116,11 @@ func (b *backend) getRefreshToken(ctx context.Context, storage logical.Storage, 
 
 func (b *backend) refreshPeriodic(ctx context.Context, req *logical.Request) error {
 	view := logical.NewStorageView(req.Storage, credsPathPrefix)
-	logical.ScanView(ctx, view, func(path string) {
+	return logical.ScanView(ctx, view, func(path string) {
 		key := view.ExpandKey(path)
 
 		if _, err := b.getRefreshToken(ctx, req.Storage, key, nil); err != nil {
 			b.logger.Error("unable to refresh token", "key", key, "error", err)
 		}
 	})
-
-	return nil
 }

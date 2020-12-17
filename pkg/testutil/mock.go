@@ -15,6 +15,7 @@ import (
 	"golang.org/x/oauth2"
 )
 
+/* #nosec G101 */
 const (
 	MockAuthCodeURL = "http://localhost/authorize"
 	MockTokenURL    = "http://localhost/token"
@@ -70,8 +71,8 @@ func ExpiringMockExchange(fn MockExchangeFunc, duration time.Duration) MockExcha
 	})
 }
 
-func randomToken(len int) string {
-	b := make([]byte, len)
+func randomToken(n int) string {
+	b := make([]byte, n)
 	if _, err := rand.Read(b); err != nil {
 		panic(err)
 	}

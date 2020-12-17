@@ -1,19 +1,12 @@
 language: go
 go:
-- 1.12.x
+- 1.14.x
 env:
   global:
-  - GO111MODULE=on
+  - GO111MODULE: 'on'
   - secure: qCumZ+GUmZouLZP4BVoajrCA6imfxGcvpfwU82ja9V/bl7L6OOIeTDZW2AtK63jGO0GyKCVf3TUM2uJmQyYldtbbbS1fizAfinllUqAQQErMu5XaID06jOgjKIBBIMRJzCiqNKWYm7wQyThHtEYtnUQznjsAiTiGqNOLfu5dWcRSJCYtCoNxXsWKJCSUk1Me9Z9Fsy4qwtjeeuvT0e1CIaXYhtHniINHiAYoRPPSvO1YurH/uzQxzbMEzotc3LFpD6IPi2y1hWhWfSvG3d2/YqeFw9X6EyB3jErcZX6h8pxgIi6hAezIQpf7EU/Oj1Kfa5+gFdC7axPmdfpX4eUGDBN3UikCMrBY+nl27OTxrBpepwKVIor0MdWFN+z7vd3cJhba00Tx186SaXc0nzE5YB7C68mkT6meTc56ROgRxu35UeFVhw2lSYNVR0tZMNy1xw2VZoweN4D0sqsB76ureB8BguHu2WFmLUtbglFccE+KXZ2CrIGE+wkmbmp9MpHzlz4UkSDFDpvM1FI8n/JBWPk2IeSKZt7ljb9ekhYAE7hVxXysY8ueYkuHmS8d59i61S21WxmFMxFlw4+OcGNtO+zgAwnERT6cUmMZXBHvuiJ5JaMAKE8lQKh8dFcmiMYUYGnX0JBfWm3ixAyy5a/ir0Qztaprq6bueEkMhAnqszE=
 before_install:
 - export CLI_DIST_BRANCH="${TRAVIS_BRANCH}"
 script:
 - make
 - make test
-jobs:
-  include:
-  - stage: deploy
-    deploy:
-      provider: script
-      skip_cleanup: true
-      script: sh -c 'npm install && npx semantic-release'

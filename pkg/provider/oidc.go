@@ -119,8 +119,7 @@ type oidcExchangeConfigBuilder struct {
 }
 
 func (cb *oidcExchangeConfigBuilder) WithOption(name, value string) ExchangeConfigBuilder {
-	switch name {
-	case oidcExchangeConfigOptionNonce:
+	if name == oidcExchangeConfigOptionNonce {
 		cb.nonce = value
 	}
 

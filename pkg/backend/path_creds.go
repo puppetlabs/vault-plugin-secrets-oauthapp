@@ -1,3 +1,7 @@
+// TODO: We should upgrade credential keys to use a cryptographically secure
+// hash algorithm.
+/* #nosec G401 G505 */
+
 package backend
 
 import (
@@ -30,13 +34,14 @@ func (b *backend) credsReadOperation(ctx context.Context, req *logical.Request, 
 	key := credKey(data.Get("name").(string))
 
 	tok, err := b.getRefreshToken(ctx, req.Storage, key, data)
-	if err == ErrNotConfigured {
+	switch {
+	case err == ErrNotConfigured:
 		return logical.ErrorResponse("not configured"), nil
-	} else if err != nil {
+	case err != nil:
 		return nil, err
-	} else if tok == nil {
+	case tok == nil:
 		return nil, nil
-	} else if !tokenValid(tok, data) {
+	case !tokenValid(tok, data):
 		return logical.ErrorResponse("token expired"), nil
 	}
 
