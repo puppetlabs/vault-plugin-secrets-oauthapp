@@ -2,6 +2,7 @@ package provider
 
 import (
 	"context"
+	"crypto/subtle"
 	"errors"
 	"fmt"
 
@@ -46,7 +47,8 @@ func (c *oidcExchangeConfig) verifyUpdateToken(ctx context.Context, t *Token) er
 		return fmt.Errorf("provider: oidc: verification error: %+v", err)
 	}
 
-	if idToken.Nonce != c.nonce {
+	if subtle.ConstantTimeEq(int32(len(idToken.Nonce)), int32(len(c.nonce))) == 0 ||
+		subtle.ConstantTimeCompare([]byte(idToken.Nonce), []byte(c.nonce)) == 0 {
 		return ErrOIDCNonceMismatch
 	}
 

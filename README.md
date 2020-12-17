@@ -73,6 +73,16 @@ $ vault write oauth2/bitbucket/creds/my-user-tokens refresh_token=eyJhbGciOiJub2
 Success! Data written to: oauth2/bitbucket/creds/my-user-tokens
 ```
 
+For some operations, you may find that you need to provide a map of data for a
+field. When using the CLI, you can repeat the name of the field for each
+key-value pair of the map and use `=` to separate keys from values. For example:
+
+```console
+$ vault write oauth2/oidc/config [...] \
+  provider_options=issuer_url=https://login.example.com \
+  provider_options=extra_data_fields=id_token_claims
+```
+
 ## Endpoints
 
 ### `config`
@@ -165,7 +175,7 @@ Remove the credential information from storage.
 
 [Documentation](https://docs.microsoft.com/en-us/azure/active-directory/develop/v2-oauth2-auth-code-flow)
 
-#### Options
+#### Configuration options
 
 | Name | Description | Default | Required |
 |------|-------------|---------|----------|
@@ -177,7 +187,7 @@ This provider implements the OpenID Connect protocol version 1.0.
 
 [Documentation](https://openid.net/developers/specs/)
 
-#### Options
+#### Configuration options
 
 | Name | Description | Default | Required |
 |------|-------------|---------|----------|
@@ -199,7 +209,7 @@ This provider implements the OpenID Connect protocol version 1.0.
 This provider allows you to specify the required endpoints for negotiating an
 arbitrary OAuth 2 authorization code grant flow.
 
-#### Options
+#### Configuration options
 
 | Name | Description | Default | Required |
 |------|-------------|---------|----------|
