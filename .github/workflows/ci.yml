@@ -16,14 +16,6 @@ jobs:
         key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
         restore-keys: |
           ${{ runner.os }}-go-
-    - name: Install tools
-      env:
-        GO111MODULE: 'on'
-      run: |
-        cd
-        go get \
-          gotest.tools/gotestsum \
-          github.com/golangci/golangci-lint/cmd/golangci-lint@v1.33.0
     - name: Check
       run: make check
     - name: Test

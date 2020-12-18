@@ -5,8 +5,8 @@ set -euo pipefail
 # Commands
 #
 
+GO="${GO:-go}"
 SHELLCHECK="${SHELLCHECK:-shellcheck}"
-GOLANGCI_LINT="${GOLANGCI_LINT:-golangci-lint}"
 
 #
 #
@@ -19,4 +19,4 @@ echo "check: shellcheck"
 )
 
 echo "check: lint"
-$GOLANGCI_LINT run
+$GO run github.com/golangci/golangci-lint/cmd/golangci-lint run

@@ -6,17 +6,9 @@ set -euo pipefail
 #
 
 GO="${GO:-go}"
-GOTESTSUM="${GOTESTSUM:-gotestsum}"
 
 #
 #
 #
 
-go_test_args=( -race )
-
-# shellcheck disable=SC2086
-if ! command -v $GOTESTSUM >/dev/null 2>&1; then
-  ( set -x; $GO test "${go_test_args[@]}" ./... )
-else
-  ( set -x; $GOTESTSUM -f testname --no-summary output --packages ./... -- "${go_test_args[@]}" )
-fi
+$GO run gotest.tools/gotestsum -f testname --no-summary output --packages ./... -- -race

@@ -4,8 +4,6 @@
 
 export GIT ?= git
 export GO ?= go
-export GOLANGCI_LINT ?= golangci-lint
-export GOTESTSUM ?= gotestsum
 export MKDIR_P ?= mkdir -p
 export RM ?= rm -f
 export SHA256SUM ?= shasum -a 256
