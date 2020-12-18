@@ -19,17 +19,26 @@ type config struct {
 type cache struct {
 	Config   *config
 	Provider provider.Provider
+	cancel   context.CancelFunc
 }
 
-func newCache(ctx context.Context, c *config, r *provider.Registry) (*cache, error) {
+func (c *cache) Close() {
+	c.cancel()
+}
+
+func newCache(c *config, r *provider.Registry) (*cache, error) {
+	ctx, cancel := context.WithCancel(context.Background())
+
 	p, err := r.NewAt(ctx, c.ProviderName, c.ProviderVersion, c.ProviderOptions)
 	if err != nil {
+		cancel()
 		return nil, err
 	}
 
 	return &cache{
 		Config:   c,
 		Provider: p,
+		cancel:   cancel,
 	}, nil
 }
 
@@ -50,16 +59,12 @@ func (b *backend) getCache(ctx context.Context, storage logical.Storage) (*cache
 			return nil, err
 		}
 
-		cacheCtx, cancel := context.WithCancel(b.ctx)
-
-		cache, err := newCache(cacheCtx, cfg, b.providerRegistry)
+		cache, err := newCache(cfg, b.providerRegistry)
 		if err != nil {
-			cancel()
 			return nil, err
 		}
 
 		b.cache = cache
-		b.cacheCancel = cancel
 	}
 
 	return b.cache, nil

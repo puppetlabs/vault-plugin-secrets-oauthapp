@@ -13,15 +13,12 @@ import (
 )
 
 type backend struct {
-	ctx              context.Context
-	cancel           context.CancelFunc
 	providerRegistry *provider.Registry
 	logger           hclog.Logger
 
 	// mut protects the cache value.
-	mut         sync.Mutex
-	cache       *cache
-	cacheCancel context.CancelFunc
+	mut   sync.Mutex
+	cache *cache
 
 	// locks is a slice of mutexes that are used to protect credential updates.
 	locks []*locksutil.LockEntry
@@ -37,8 +34,6 @@ type Options struct {
 }
 
 func New(opts Options) *framework.Backend {
-	ctx, cancel := context.WithCancel(context.Background())
-
 	providerRegistry := opts.ProviderRegistry
 	if providerRegistry == nil {
 		providerRegistry = provider.GlobalRegistry
@@ -50,8 +45,6 @@ func New(opts Options) *framework.Backend {
 	}
 
 	b := &backend{
-		ctx:              ctx,
-		cancel:           cancel,
 		providerRegistry: providerRegistry,
 		logger:           logger,
 

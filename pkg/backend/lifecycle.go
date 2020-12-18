@@ -6,12 +6,10 @@ func (b *backend) reset() {
 	b.mut.Lock()
 	defer b.mut.Unlock()
 
-	if b.cacheCancel != nil {
-		b.cacheCancel()
+	if b.cache != nil {
+		b.cache.Close()
+		b.cache = nil
 	}
-
-	b.cache = nil
-	b.cacheCancel = nil
 }
 
 func (b *backend) invalidate(ctx context.Context, key string) {
@@ -21,5 +19,5 @@ func (b *backend) invalidate(ctx context.Context, key string) {
 }
 
 func (b *backend) clean(ctx context.Context) {
-	b.cancel()
+	b.reset()
 }
