@@ -32,12 +32,12 @@ jobs:
       id: get-tag-version
       uses: actions/github-script@v3
       with:
+        result-encoding: string
         script: |
           return context.ref.replace(/^refs\/tags\/v/, '');
     - uses: mindsers/changelog-reader-action@v2
       id: read-changelog
       with:
-        validation_depth: 10
         version: ${{ steps.get-tag-version.outputs.result }}
     - uses: actions/create-release@v1
       env:

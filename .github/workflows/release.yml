@@ -62,7 +62,7 @@ jobs:
     - name: Get asset information
       id: get-asset-information
       run: |
-        archive_name="$( find ./artifacts/ -type f -not -name '*.asc' -printf '%s\n' )"
+        archive_name="$( find ./artifacts/ -type f -not -name '*.sha256.asc' -printf '%f\n' )"
         archive_media_type="$( file -b --mime-type "./artifacts/${archive_name}" )"
 
         checksum_name="${archive_name}.sha256.asc"
