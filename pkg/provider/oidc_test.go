@@ -51,9 +51,9 @@ func TestOIDCFlow(t *testing.T) {
 	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/.well-known/openid-configuration":
-			io.WriteString(w, testOIDCConfiguration)
+			_, _ = io.WriteString(w, testOIDCConfiguration)
 		case "/.well-known/jwks.json":
-			json.NewEncoder(w).Encode(&jose.JSONWebKeySet{
+			_ = json.NewEncoder(w).Encode(&jose.JSONWebKeySet{
 				Keys: []jose.JSONWebKey{
 					{
 						Key:   &privateKey.PublicKey,
@@ -90,11 +90,11 @@ func TestOIDCFlow(t *testing.T) {
 			resp.Set("id_token", idToken)
 			resp.Set("expires_in", "900")
 
-			io.WriteString(w, resp.Encode())
+			_, _ = io.WriteString(w, resp.Encode())
 		case "/userinfo":
 			assert.Equal(t, "Bearer abcd", r.Header.Get("authorization"))
 
-			json.NewEncoder(w).Encode(oidc.UserInfo{
+			_ = json.NewEncoder(w).Encode(oidc.UserInfo{
 				Subject: "test-user",
 				Profile: "https://example.com/test-user",
 				Email:   "test-user@example.com",

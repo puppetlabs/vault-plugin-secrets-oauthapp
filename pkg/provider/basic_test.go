@@ -77,11 +77,11 @@ func TestBasicExchangeConfig(t *testing.T) {
 				assert.Equal(t, "http://example.com/redirect", data.Get("redirect_uri"))
 				assert.Equal(t, "quux", data.Get("baz"))
 
-				w.Write([]byte(`access_token=abcd&refresh_token=efgh&token_type=bearer&expires_in=5`))
+				_, _ = w.Write([]byte(`access_token=abcd&refresh_token=efgh&token_type=bearer&expires_in=5`))
 			case "refresh_token":
 				assert.Equal(t, "efgh", data.Get("refresh_token"))
 
-				w.Write([]byte(`access_token=ijkl&refresh_token=efgh&token_type=bearer&expires_in=3600`))
+				_, _ = w.Write([]byte(`access_token=ijkl&refresh_token=efgh&token_type=bearer&expires_in=3600`))
 			default:
 				assert.Fail(t, "unexpected `grant_type` value: %q", data.Get("grant_type"))
 			}

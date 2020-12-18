@@ -1,0 +1,22 @@
+#!/bin/bash
+set -euo pipefail
+
+#
+# Commands
+#
+
+GO="${GO:-go}"
+SHELLCHECK="${SHELLCHECK:-shellcheck}"
+
+#
+#
+#
+
+echo "check: shellcheck"
+(
+  shopt -s globstar nullglob
+  $SHELLCHECK -- scripts/**/* **/*.sh
+)
+
+echo "check: lint"
+$GO run github.com/golangci/golangci-lint/cmd/golangci-lint run

@@ -15,8 +15,7 @@ func (b *backend) reset() {
 }
 
 func (b *backend) invalidate(ctx context.Context, key string) {
-	switch key {
-	case configPath:
+	if key == configPath {
 		b.reset()
 	}
 }
