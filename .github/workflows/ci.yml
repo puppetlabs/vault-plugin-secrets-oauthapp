@@ -136,7 +136,7 @@ jobs:
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
-        upload_url: ${{ github.event.release.upload_url }}
+        upload_url: ${{ needs.release.outputs.upload-url }}
         asset_path: ./artifacts/${{ steps.get-asset-information.outputs.archive-name }}
         asset_name: ${{ steps.get-asset-information.outputs.archive-name }}
         asset_content_type: ${{ steps.get-asset-information.outputs.archive-media-type }}
