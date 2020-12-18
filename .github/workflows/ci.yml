@@ -16,7 +16,7 @@ jobs:
         key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
         restore-keys: |
           ${{ runner.os }}-go-
-    - name: install-tools
+    - name: Install tools
       env:
         GO111MODULE: 'on'
       run: |
@@ -24,9 +24,35 @@ jobs:
         go get \
           gotest.tools/gotestsum \
           github.com/golangci/golangci-lint/cmd/golangci-lint@v1.33.0
-    - name: check
+    - name: Check
       run: make check
-    - name: test
+    - name: Test
       run: make test
-    - name: build
+    - name: Build
       run: make
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+    - uses: actions/checkout@v2
+    - name: Get tag version
+      id: get-tag-version
+      uses: actions/github-script@v3
+      with:
+        script: |
+          return context.ref.replace(/^refs\/tags\/v/, '');
+    - uses: mindsers/changelog-reader-action@v2
+      id: read-changelog
+      with:
+        validation_depth: 10
+        version: ${{ steps.get-tag-version.outputs.result }}
+    - uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ github.ref }}
+        release_name: v${{ steps.read-changelog.outputs.version }}
+        body: ${{ steps.read-changelog.outputs.changes }}
+        prerelease: ${{ steps.read-changelog.outputs.status == 'prereleased' }}
+        draft: ${{ steps.read-changelog.outputs.status == 'unreleased' }}
