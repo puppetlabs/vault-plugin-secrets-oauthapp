@@ -1,4 +1,4 @@
-package provider
+package testutil
 
 import (
 	"context"
@@ -6,17 +6,30 @@ import (
 	"encoding/hex"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/pkg/provider"
 	"golang.org/x/oauth2"
 )
 
+/* #nosec G101 */
 const (
 	MockAuthCodeURL = "http://localhost/authorize"
 	MockTokenURL    = "http://localhost/token"
 )
+
+type MockRoundTripper struct {
+	Handler http.Handler
+}
+
+func (mrt *MockRoundTripper) RoundTrip(r *http.Request) (*http.Response, error) {
+	w := httptest.NewRecorder()
+	mrt.Handler.ServeHTTP(w, r)
+	return w.Result(), nil
+}
 
 var MockEndpoint = oauth2.Endpoint{
 	AuthURL:  MockAuthCodeURL,
@@ -58,8 +71,8 @@ func ExpiringMockExchange(fn MockExchangeFunc, duration time.Duration) MockExcha
 	})
 }
 
-func randomToken(len int) string {
-	b := make([]byte, len)
+func randomToken(n int) string {
+	b := make([]byte, n)
 	if _, err := rand.Read(b); err != nil {
 		panic(err)
 	}
@@ -116,62 +129,48 @@ func RestrictMockExchange(m map[string]MockExchangeFunc) MockExchangeFunc {
 	}
 }
 
-type mockTokenSource struct {
-	fn    MockExchangeFunc
-	code  string
-	token *oauth2.Token
-}
-
-func (mts *mockTokenSource) Token() (*oauth2.Token, error) {
-	if !mts.token.Valid() {
-		token, err := mts.fn(mts.code)
-		if err != nil {
-			return nil, err
-		}
-
-		mts.token = token
-	}
-
-	return mts.token, nil
-}
-
 type mockExchangeConfig struct {
 	owner *mock
 	fn    MockExchangeFunc
 }
 
-func (c *mockExchangeConfig) Exchange(ctx context.Context, code string, opts ...oauth2.AuthCodeOption) (*oauth2.Token, error) {
+func (c *mockExchangeConfig) Exchange(ctx context.Context, code string, opts ...oauth2.AuthCodeOption) (*provider.Token, error) {
 	if c.fn == nil {
 		return nil, &oauth2.RetrieveError{}
 	}
 
-	t, err := c.fn(code)
+	tok, err := c.fn(code)
 	if err != nil {
 		return nil, err
 	}
 
-	if t.RefreshToken != "" {
-		c.owner.putRefreshTokenCode(t.RefreshToken, code)
+	if tok.RefreshToken != "" {
+		c.owner.putRefreshTokenCode(tok.RefreshToken, code)
 	}
 
-	return t, nil
+	return &provider.Token{Token: tok}, nil
 }
 
-func (c *mockExchangeConfig) TokenSource(ctx context.Context, t *oauth2.Token) oauth2.TokenSource {
+func (c *mockExchangeConfig) Refresh(ctx context.Context, t *provider.Token) (*provider.Token, error) {
 	if t.RefreshToken == "" || c.fn == nil {
-		return oauth2.StaticTokenSource(t)
+		return t, nil
 	}
 
 	code, ok := c.owner.getRefreshTokenCode(t.RefreshToken)
 	if !ok {
-		return oauth2.StaticTokenSource(t)
+		return t, nil
 	}
 
-	return &mockTokenSource{
-		fn:    c.fn,
-		code:  code,
-		token: t,
+	if t.Valid() {
+		return t, nil
 	}
+
+	tok, err := c.fn(code)
+	if err != nil {
+		return nil, err
+	}
+
+	return &provider.Token{Token: tok}, nil
 }
 
 type mockExchangeConfigBuilder struct {
@@ -179,15 +178,15 @@ type mockExchangeConfigBuilder struct {
 	client MockClient
 }
 
-func (cb *mockExchangeConfigBuilder) WithHTTPClient(_ *http.Client) ExchangeConfigBuilder {
+func (cb *mockExchangeConfigBuilder) WithOption(name, value string) provider.ExchangeConfigBuilder {
 	return cb
 }
 
-func (cb *mockExchangeConfigBuilder) WithRedirectURL(_ string) ExchangeConfigBuilder {
+func (cb *mockExchangeConfigBuilder) WithRedirectURL(_ string) provider.ExchangeConfigBuilder {
 	return cb
 }
 
-func (cb *mockExchangeConfigBuilder) Build() ExchangeConfig {
+func (cb *mockExchangeConfigBuilder) Build() provider.ExchangeConfig {
 	return &mockExchangeConfig{
 		owner: cb.owner,
 		fn:    cb.owner.exchanges[cb.client],
@@ -202,16 +201,11 @@ func (mp *mockProvider) Version() int {
 	return mp.owner.vsn
 }
 
-func (mp *mockProvider) NewAuthCodeURLConfigBuilder(clientID string) AuthCodeURLConfigBuilder {
-	return &basicAuthCodeURLConfigBuilder{
-		config: &oauth2.Config{
-			ClientID: clientID,
-			Endpoint: MockEndpoint,
-		},
-	}
+func (mp *mockProvider) NewAuthCodeURLConfigBuilder(clientID string) provider.AuthCodeURLConfigBuilder {
+	return provider.NewConformingAuthCodeURLConfigBuilder(MockEndpoint, clientID)
 }
 
-func (mp *mockProvider) NewExchangeConfigBuilder(clientID, clientSecret string) ExchangeConfigBuilder {
+func (mp *mockProvider) NewExchangeConfigBuilder(clientID, clientSecret string) provider.ExchangeConfigBuilder {
 	return &mockExchangeConfigBuilder{
 		client: MockClient{
 			ID:     clientID,
@@ -229,28 +223,28 @@ type mock struct {
 	refreshMut   sync.RWMutex
 }
 
-func (m *mock) factory(vsn int, options map[string]string) (Provider, error) {
+func (m *mock) factory(ctx context.Context, vsn int, options map[string]string) (provider.Provider, error) {
 	switch vsn {
 	case -1, m.vsn:
 	default:
-		return nil, ErrNoProviderWithVersion
+		return nil, provider.ErrNoProviderWithVersion
 	}
 
 	for k, ev := range m.expectedOpts {
 		av, found := options[k]
 		if !found {
-			return nil, &OptionError{Option: k, Message: "not found"}
+			return nil, &provider.OptionError{Option: k, Message: "not found"}
 		}
 
 		if av != ev {
-			return nil, &OptionError{Option: k, Message: fmt.Sprintf("expected %q, got %q", ev, av)}
+			return nil, &provider.OptionError{Option: k, Message: fmt.Sprintf("expected %q, got %q", ev, av)}
 		}
 
 		delete(options, k)
 	}
 
 	for k := range options {
-		return nil, &OptionError{Option: k, Message: "unexpected"}
+		return nil, &provider.OptionError{Option: k, Message: "unexpected"}
 	}
 
 	p := &mockProvider{
@@ -294,7 +288,7 @@ func MockWithExchange(client MockClient, fn MockExchangeFunc) MockOption {
 	}
 }
 
-func MockFactory(opts ...MockOption) FactoryFunc {
+func MockFactory(opts ...MockOption) provider.FactoryFunc {
 	m := &mock{
 		expectedOpts: make(map[string]string),
 		exchanges:    make(map[MockClient]MockExchangeFunc),

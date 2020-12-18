@@ -2,9 +2,8 @@ package provider
 
 import (
 	"context"
-	"net/http"
 
-	"github.com/coreos/go-oidc"
+	gooidc "github.com/coreos/go-oidc"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/bitbucket"
 	"golang.org/x/oauth2/github"
@@ -15,62 +14,43 @@ import (
 )
 
 func init() {
-	GlobalRegistry.MustRegister("bitbucket", basicFactory(bitbucket.Endpoint))
-	GlobalRegistry.MustRegister("github", basicFactory(github.Endpoint))
-	GlobalRegistry.MustRegister("gitlab", basicFactory(gitlab.Endpoint))
-	GlobalRegistry.MustRegister("google", basicFactory(google.Endpoint))
-	GlobalRegistry.MustRegister("microsoft_azure_ad", azureADFactory)
-	GlobalRegistry.MustRegister("slack", basicFactory(slack.Endpoint))
+	GlobalRegistry.MustRegister("bitbucket", BasicFactory(bitbucket.Endpoint))
+	GlobalRegistry.MustRegister("github", BasicFactory(github.Endpoint))
+	GlobalRegistry.MustRegister("gitlab", BasicFactory(gitlab.Endpoint))
+	GlobalRegistry.MustRegister("google", BasicFactory(google.Endpoint))
+	GlobalRegistry.MustRegister("microsoft_azure_ad", AzureADFactory)
+	GlobalRegistry.MustRegister("slack", BasicFactory(slack.Endpoint))
 
-	GlobalRegistry.MustRegister("custom", customFactory)
-}
-
-type basicAuthCodeURLConfigBuilder struct {
-	config *oauth2.Config
-}
-
-func (cb *basicAuthCodeURLConfigBuilder) WithRedirectURL(redirectURL string) AuthCodeURLConfigBuilder {
-	cb.config.RedirectURL = redirectURL
-	return cb
-}
-
-func (cb *basicAuthCodeURLConfigBuilder) WithScopes(scopes ...string) AuthCodeURLConfigBuilder {
-	cb.config.Scopes = scopes
-	return cb
-}
-
-func (cb *basicAuthCodeURLConfigBuilder) Build() AuthCodeURLConfig {
-	return cb.config
+	GlobalRegistry.MustRegister("custom", CustomFactory)
 }
 
 type basicExchangeConfig struct {
 	config *oauth2.Config
-	client *http.Client
 }
 
-func (c *basicExchangeConfig) Exchange(ctx context.Context, code string, opts ...oauth2.AuthCodeOption) (*oauth2.Token, error) {
-	if c.client != nil {
-		ctx = context.WithValue(ctx, oauth2.HTTPClient, c.client)
+func (c *basicExchangeConfig) Exchange(ctx context.Context, code string, opts ...oauth2.AuthCodeOption) (*Token, error) {
+	tok, err := c.config.Exchange(ctx, code, opts...)
+	if err != nil {
+		return nil, err
 	}
 
-	return c.config.Exchange(ctx, code, opts...)
+	return &Token{Token: tok}, nil
 }
 
-func (c *basicExchangeConfig) TokenSource(ctx context.Context, t *oauth2.Token) oauth2.TokenSource {
-	if c.client != nil {
-		ctx = context.WithValue(ctx, oauth2.HTTPClient, c.client)
+func (c *basicExchangeConfig) Refresh(ctx context.Context, t *Token) (*Token, error) {
+	tok, err := c.config.TokenSource(ctx, t.Token).Token()
+	if err != nil {
+		return nil, err
 	}
 
-	return c.config.TokenSource(ctx, t)
+	return &Token{Token: tok}, nil
 }
 
 type basicExchangeConfigBuilder struct {
 	config *oauth2.Config
-	client *http.Client
 }
 
-func (cb *basicExchangeConfigBuilder) WithHTTPClient(client *http.Client) ExchangeConfigBuilder {
-	cb.client = client
+func (cb *basicExchangeConfigBuilder) WithOption(name, value string) ExchangeConfigBuilder {
 	return cb
 }
 
@@ -82,7 +62,6 @@ func (cb *basicExchangeConfigBuilder) WithRedirectURL(redirectURL string) Exchan
 func (cb *basicExchangeConfigBuilder) Build() ExchangeConfig {
 	return &basicExchangeConfig{
 		config: cb.config,
-		client: cb.client,
 	}
 }
 
@@ -96,28 +75,25 @@ func (b *basic) Version() int {
 }
 
 func (b *basic) NewAuthCodeURLConfigBuilder(clientID string) AuthCodeURLConfigBuilder {
-	return &basicAuthCodeURLConfigBuilder{
-		config: &oauth2.Config{
-			ClientID: clientID,
-			Endpoint: b.endpoint,
-		},
-	}
+	return NewConformingAuthCodeURLConfigBuilder(b.endpoint, clientID)
 }
 
 func (b *basic) NewExchangeConfigBuilder(clientID, clientSecret string) ExchangeConfigBuilder {
 	return &basicExchangeConfigBuilder{
 		config: &oauth2.Config{
+			Endpoint:     b.endpoint,
 			ClientID:     clientID,
 			ClientSecret: clientSecret,
-			Endpoint:     b.endpoint,
 		},
 	}
 }
 
-func basicFactory(endpoint oauth2.Endpoint) FactoryFunc {
-	return func(vsn int, opts map[string]string) (Provider, error) {
+func BasicFactory(endpoint oauth2.Endpoint) FactoryFunc {
+	return func(ctx context.Context, vsn int, opts map[string]string) (Provider, error) {
+		vsn = selectVersion(vsn, 1)
+
 		switch vsn {
-		case -1, 1:
+		case 1:
 		default:
 			return nil, ErrNoProviderWithVersion
 		}
@@ -127,16 +103,18 @@ func basicFactory(endpoint oauth2.Endpoint) FactoryFunc {
 		}
 
 		p := &basic{
-			vsn:      1,
+			vsn:      vsn,
 			endpoint: endpoint,
 		}
 		return p, nil
 	}
 }
 
-func azureADFactory(vsn int, opts map[string]string) (Provider, error) {
+func AzureADFactory(ctx context.Context, vsn int, opts map[string]string) (Provider, error) {
+	vsn = selectVersion(vsn, 1)
+
 	switch vsn {
-	case -1, 1:
+	case 1:
 	default:
 		return nil, ErrNoProviderWithVersion
 	}
@@ -153,33 +131,33 @@ func azureADFactory(vsn int, opts map[string]string) (Provider, error) {
 	return p, nil
 }
 
-func customFactory(vsn int, opts map[string]string) (Provider, error) {
+func CustomFactory(ctx context.Context, vsn int, opts map[string]string) (Provider, error) {
+	vsn = selectVersion(vsn, 2)
+
 	switch vsn {
-	case -1, 1:
+	case 2:
+	case 1:
+		// discovery_url is now deprecated since we have a complete OIDC
+		// provider, but will be honored for existing configurations.
+		discoveryURL := opts["discovery_url"]
+		if discoveryURL != "" {
+			provider, err := gooidc.NewProvider(ctx, discoveryURL)
+			if err != nil {
+				return nil, &OptionError{Option: "discovery_url", Message: "error making new provider: " + err.Error()}
+			}
+
+			opts["auth_code_url"] = provider.Endpoint().AuthURL
+			opts["token_url"] = provider.Endpoint().TokenURL
+		}
 	default:
 		return nil, ErrNoProviderWithVersion
 	}
 
-	var authURL string
-	var tokenURL string
-	discoveryURL := opts["discovery_url"]
-	if discoveryURL != "" {
-		provider, err := oidc.NewProvider(context.TODO(), discoveryURL)
-		if err != nil {
-			return nil, &OptionError{Option: "discovery_url", Message: "error making new provider: " + err.Error()}
-		}
-		authURL = provider.Endpoint().AuthURL
-		tokenURL = provider.Endpoint().TokenURL
-	} else {
-		authURL = opts["auth_code_url"]
-		tokenURL = opts["token_url"]
-	}
-
-	if authURL == "" {
+	if opts["auth_code_url"] == "" {
 		return nil, &OptionError{Option: "auth_code_url", Message: "authorization code URL is required"}
 	}
 
-	if tokenURL == "" {
+	if opts["token_url"] == "" {
 		return nil, &OptionError{Option: "token_url", Message: "token URL is required"}
 	}
 
@@ -195,13 +173,13 @@ func customFactory(vsn int, opts map[string]string) (Provider, error) {
 	}
 
 	endpoint := oauth2.Endpoint{
-		AuthURL:   authURL,
-		TokenURL:  tokenURL,
+		AuthURL:   opts["auth_code_url"],
+		TokenURL:  opts["token_url"],
 		AuthStyle: authStyle,
 	}
 
 	p := &basic{
-		vsn:      1,
+		vsn:      vsn,
 		endpoint: endpoint,
 	}
 	return p, nil

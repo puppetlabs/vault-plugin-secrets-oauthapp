@@ -1,7 +1,7 @@
 # vault-plugin-secrets-oauthapp
 
-This is a standalone backend plugin for use with [Hashicorp
-Vault](https://www.github.com/hashicorp/vault).
+This is a standalone backend plugin for use with [HashiCorp
+Vault](https://github.com/hashicorp/vault).
 
 This plugin provides a secure wrapper around OAuth 2 authorization code grant
 flows, allowing a Vault client to request authorization on behalf of a user and
@@ -73,6 +73,16 @@ $ vault write oauth2/bitbucket/creds/my-user-tokens refresh_token=eyJhbGciOiJub2
 Success! Data written to: oauth2/bitbucket/creds/my-user-tokens
 ```
 
+For some operations, you may find that you need to provide a map of data for a
+field. When using the CLI, you can repeat the name of the field for each
+key-value pair of the map and use `=` to separate keys from values. For example:
+
+```console
+$ vault write oauth2/oidc/config [...] \
+  provider_options=issuer_url=https://login.example.com \
+  provider_options=extra_data_fields=id_token_claims
+```
+
 ## Endpoints
 
 ### `config`
@@ -137,6 +147,7 @@ application.
 | `code` | The response code to exchange for a full token. | String | None | Either this or `refresh_token` |
 | `redirect_url` | The same redirect URL as specified in the authorization code URL. | String | None | Refer to provider documentation |
 | `refresh_token` | A refresh token retrieved from the provider by some means external to this plugin. | String | None | Either this or `code` |
+| `provider_options` | A list of options to pass on to the provider for configuring this token exchange. | Map of String🠦String | None | Refer to provider documentation |
 
 #### `DELETE` (`delete`)
 
@@ -164,11 +175,30 @@ Remove the credential information from storage.
 
 [Documentation](https://docs.microsoft.com/en-us/azure/active-directory/develop/v2-oauth2-auth-code-flow)
 
-#### Options
+#### Configuration options
 
 | Name | Description | Default | Required |
 |------|-------------|---------|----------|
 | `tenant` | The tenant to authenticate to. | None | Yes |
+
+### OpenID Connect (`oidc`)
+
+This provider implements the OpenID Connect protocol version 1.0.
+
+[Documentation](https://openid.net/developers/specs/)
+
+#### Configuration options
+
+| Name | Description | Default | Required |
+|------|-------------|---------|----------|
+| `issuer_url` | The URL to an issuer of OpenID JWTs with an accessible `.well-known/openid-configuration` resource. | None | Yes |
+| `extra_data_fields` | A comma-separated list of subject fields to expose in the credential endpoint. Valid fields are `id_token`, `id_token_claims`, and `user_info`. | None | No |
+
+#### Credential exchange options
+
+| Name | Description | Default | Required |
+|------|-------------|---------|----------|
+| `nonce` | The same nonce as specified in the authorization code URL. | String | None | If present in the authorization code URL |
 
 ### Slack (`slack`)
 
@@ -179,11 +209,10 @@ Remove the credential information from storage.
 This provider allows you to specify the required endpoints for negotiating an
 arbitrary OAuth 2 authorization code grant flow.
 
-#### Options
+#### Configuration options
 
 | Name | Description | Default | Required |
 |------|-------------|---------|----------|
-| `discovery_url` | The URL at which to discover authorization code and token URLs. | None | Either this or the other two urls |
-| `auth_code_url` | The URL to submit the initial authorization code request to. | None | Either this or `discovery_url` |
-| `token_url` | The URL to use for exchanging temporary codes and refreshing access tokens. | None | Either this or `discovery_url` |
+| `auth_code_url` | The URL to submit the initial authorization code request to. | None | Yes |
+| `token_url` | The URL to use for exchanging temporary codes and refreshing access tokens. | None | Yes |
 | `auth_style` | How to authenticate to the token URL. If specified, must be one of `in_header` or `in_params`. | Automatically detect | No |

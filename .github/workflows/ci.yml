@@ -1,0 +1,50 @@
+name: CI
+on: [push, pull_request]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/setup-go@v2
+      with:
+        go-version: '1.14'
+    - uses: actions/checkout@v2
+    - uses: actions/cache@v2
+      with:
+        path: |
+          ~/go/pkg/mod
+          ~/go/pkg/sumdb
+        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+        restore-keys: |
+          ${{ runner.os }}-go-
+    - name: Check
+      run: make check
+    - name: Test
+      run: make test
+    - name: Build
+      run: make
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+    - uses: actions/checkout@v2
+    - name: Get tag version
+      id: get-tag-version
+      uses: actions/github-script@v3
+      with:
+        script: |
+          return context.ref.replace(/^refs\/tags\/v/, '');
+    - uses: mindsers/changelog-reader-action@v2
+      id: read-changelog
+      with:
+        validation_depth: 10
+        version: ${{ steps.get-tag-version.outputs.result }}
+    - uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ github.ref }}
+        release_name: v${{ steps.read-changelog.outputs.version }}
+        body: ${{ steps.read-changelog.outputs.changes }}
+        prerelease: ${{ steps.read-changelog.outputs.status == 'prereleased' }}
+        draft: ${{ steps.read-changelog.outputs.status == 'unreleased' }}

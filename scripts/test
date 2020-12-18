@@ -1,0 +1,14 @@
+#!/bin/bash
+set -euo pipefail
+
+#
+# Commands
+#
+
+GO="${GO:-go}"
+
+#
+#
+#
+
+$GO run gotest.tools/gotestsum -f testname --no-summary output --packages ./... -- -race
