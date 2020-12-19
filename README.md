@@ -120,9 +120,17 @@ Retrieve an authorization code URL for the given state.
 Retrieve a current access token for the given credential.
 Reuses previous token if it is not yet expired or close to it.
 
+If scopes or audience are requested, the current access token will be
+exchanged for another access token with more limited scopes or audience,
+and the more limited token returned.
+The more limited token is not saved for reuse; the less limited one is
+saved as usual.
+
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|----------|
-| `minimum_seconds` | Minimum seconds before access token expires | Integer | * | No |
+| `minimum_seconds` | Minimum seconds before access token expires. | Integer | * | No |
+| `scopes` | A list of explicit scopes to request. | List of String | None | No |
+| `audience` | An explicit audience to request. | String | None | No |
 
 \* Defaults to underlying library default, which is 10 seconds unless
   the token expiration time is set to zero.

@@ -38,6 +38,31 @@ func (b *backend) credsReadOperation(ctx context.Context, req *logical.Request, 
 		return logical.ErrorResponse("token expired"), nil
 	}
 
+	scopes := data.Get("scopes").([]string)
+	audiences := data.Get("audience").([]string)
+	if len(scopes) > 0 || len(audiences) > 0 {
+		// Do an RFC8693 token exchange to limit the access token
+		options := []oauth2.AuthCodeOption {
+			oauth2.SetAuthURLParam("grant_type", "urn:ietf:params:oauth:grant-type:token-exchange"),
+			oauth2.SetAuthURLParam("subject_token", tok.AccessToken),
+			oauth2.SetAuthURLParam("subject_token_type", "urn:ietf:params:oauth:token-type:access_token"),
+		}
+		if len(scopes) > 0 {
+			options = append(options, oauth2.SetAuthURLParam("scope", strings.Join(scopes, " ")))
+		}
+		if len(audiences) > 0 {
+			options = append(options, oauth2.SetAuthURLParam("audience", audiences[0]))
+		}
+		ec, err := b.getExchangeConfig(ctx, req.Storage)
+		if err != nil {
+			return nil, err
+		}
+		tok, err = ec.Exchange(ctx, "", options...)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	rd := map[string]interface{}{
 		"access_token": tok.AccessToken,
 		"type":         tok.Type(),
@@ -136,6 +161,14 @@ var credsFields = map[string]*framework.FieldSchema{
 		Description: "Specifies the name of the credential.",
 	},
 	// fields for read operation
+	"scopes": {
+		Type:        framework.TypeCommaStringSlice,
+		Description: "The subset of scopes to request for access token, default same as refresh token.",
+	},
+	"audience": {
+		Type:        framework.TypeCommaStringSlice,
+		Description: "An audience to request for access token, default same as refresh token.",
+	},
 	"minimum_seconds": {
 		Type:        framework.TypeInt,
 		Description: "Minimum remaining seconds to allow when reusing access token.",
