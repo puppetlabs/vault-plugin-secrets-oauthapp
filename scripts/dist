@@ -17,54 +17,57 @@ SHA256SUM="${SHA256SUM:-shasum -a 256}"
 
 ARTIFACTS_DIR="${ARTIFACTS_DIR:-artifacts}"
 
-GOOS="$( $GO env GOOS )"
-GOARCH="$( $GO env GOARCH )"
-GOFLAGS="${GOFLAGS:-}"
-LDFLAGS="${LDFLAGS:-}"
-
-CLI_DIST_NAME="${CLI_DIST_NAME:-vault-plugin-secrets-oauthapp}"
-CLI_DIST_VERSION="${CLI_DIST_VERSION:-unknown}"
-
-case "${GOOS}" in
-windows)
-    CLI_EXT=.exe
-    ;;
-*)
-    CLI_EXT=
-    ;;
-esac
-
-CLI_DIST_FILE_PREFIX="${CLI_DIST_NAME}-${CLI_DIST_VERSION}-${GOOS}-${GOARCH}"
-CLI_DIST_FILE_BIN="${CLI_DIST_FILE_PREFIX}${CLI_EXT}"
-
 #
 #
 #
+
+if [ "$#" -lt 1 ] || [ "$#" -gt 2 ]; then
+  echo "usage: $0 <name> [<version>]" >&2
+  exit 1
+fi
+
+dist_name="$1"
+dist_version="${2:-unknown}"
+
+go_os="$( $GO env GOOS )"
+go_arch="$( $GO env GOARCH )"
+
+bin_ext=
+archive_ext=.tar.xz
+
+if [[ "${go_os}" == "windows" ]]; then
+  bin_ext=.exe
+  archive_ext=.zip
+fi
+
+bin_prefix="${dist_name}-${dist_version}-${go_os}-${go_arch}"
+bin="${bin_prefix}${bin_ext}"
+archive="${bin_prefix}${archive_ext}"
+
+declare -a go_build_args
+
+if [ -n "${LDFLAGS:-}" ]; then
+  go_build_args+=( -ldflags "${LDFLAGS[*]}" )
+fi
 
 $MKDIR_P "${ARTIFACTS_DIR}"
 
+echo "dist: ${go_os}/${go_arch}"
+echo "dist: GOFLAGS=$( $GO env GOFLAGS )"
+
+( set -x; $GO build "${go_build_args[@]}" -o "${ARTIFACTS_DIR}/${bin}" ./cmd/vault-plugin-secrets-oauthapp )
+
 (
-    set -x
-    $GO build $GOFLAGS -o "${ARTIFACTS_DIR}/${CLI_DIST_FILE_BIN}" -ldflags "${LDFLAGS[*]}" ./cmd/vault-plugin-secrets-oauthapp
+  cd "${ARTIFACTS_DIR}"
+
+  case "${archive_ext}" in
+  .tar.xz)
+    ( set -x; $TAR -cJ --remove-files -f "${archive}" "${bin}" )
+    ;;
+  .zip)
+    ( set -x; $ZIP_M -q "${archive}" "${bin}" )
+    ;;
+  esac
+
+  ( set -x; $SHA256SUM "${archive}" >"${archive}.sha256.asc" )
 )
-
-case "${GOOS}" in
-windows)
-    (
-        set -x
-        pushd "${ARTIFACTS_DIR}" >/dev/null
-        $ZIP_M -q "${CLI_DIST_FILE_PREFIX}.zip" "${CLI_DIST_FILE_BIN}"
-        $SHA256SUM "${CLI_DIST_FILE_PREFIX}.zip" >"${CLI_DIST_FILE_PREFIX}.zip.sha256.asc"
-    )
-    ;;
-*)
-    (
-        set -x
-        pushd "${ARTIFACTS_DIR}" >/dev/null
-        $TAR -cJ --remove-files -f "${CLI_DIST_FILE_PREFIX}.tar.xz" "${CLI_DIST_FILE_BIN}"
-        $SHA256SUM "${CLI_DIST_FILE_PREFIX}.tar.xz" >"${CLI_DIST_FILE_PREFIX}.tar.xz.sha256.asc"
-    )
-    ;;
-esac
-
-set +x

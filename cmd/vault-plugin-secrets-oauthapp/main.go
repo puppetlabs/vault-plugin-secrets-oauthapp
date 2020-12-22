@@ -13,7 +13,7 @@ func main() {
 	meta := &api.PluginAPIClientMeta{}
 
 	flags := meta.FlagSet()
-	flags.Parse(os.Args[1:])
+	_ = flags.Parse(os.Args[1:])
 
 	err := plugin.Serve(&plugin.ServeOpts{
 		BackendFactoryFunc: backend.Factory,
