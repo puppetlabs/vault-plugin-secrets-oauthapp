@@ -298,7 +298,7 @@ func TestScopesAndAudienceRequests(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	client := provider.MockClient{
+	client := testutil.MockClient{
 		ID:     "hij",
 		Secret: "def",
 	}
@@ -308,7 +308,7 @@ func TestScopesAndAudienceRequests(t *testing.T) {
 	b := New(Options{ProviderRegistry: provider.GlobalRegistry})
 	require.NoError(t, b.Setup(ctx, &logical.BackendConfig{}))
 
-	tp := provider.NewMockTokenProvider()
+	tp := testutil.NewMockTokenProvider()
 	defer tp.Close()
 
 	// Write configuration.
