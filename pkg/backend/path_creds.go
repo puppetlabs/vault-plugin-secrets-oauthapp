@@ -49,7 +49,7 @@ func (b *backend) credsReadOperation(ctx context.Context, req *logical.Request, 
 	audiences := data.Get("audience").([]string)
 	if len(scopes) > 0 || len(audiences) > 0 {
 		// Do an RFC8693 token exchange to limit the access token
-		options := []oauth2.AuthCodeOption {
+		options := []oauth2.AuthCodeOption{
 			oauth2.SetAuthURLParam("grant_type", "urn:ietf:params:oauth:grant-type:token-exchange"),
 			oauth2.SetAuthURLParam("subject_token", tok.AccessToken),
 			oauth2.SetAuthURLParam("subject_token_type", "urn:ietf:params:oauth:token-type:access_token"),

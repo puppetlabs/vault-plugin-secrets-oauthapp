@@ -306,7 +306,7 @@ func MockFactory(opts ...MockOption) provider.FactoryFunc {
 
 // tokenProvider is a local server that mocks RFC8693 token exchange
 type tokenProvider struct {
-	server       *httptest.Server
+	server *httptest.Server
 }
 
 func NewMockTokenProvider() *tokenProvider {
@@ -362,11 +362,10 @@ func (tp *tokenProvider) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// simple manual json encoding
-		w.Write([]byte(`{"access_token": "` + tok.Encode() + `"}`))
+		_, _ = w.Write([]byte(`{"access_token": "` + tok.Encode() + `"}`))
 		return
 	default:
 		errmsg = fmt.Sprintf("unexpected path: %q", r.URL.Path)
 	}
-	w.Write([]byte(`{"error": "` + errmsg + `"}`))
+	_, _ = w.Write([]byte(`{"error": "` + errmsg + `"}`))
 }
-

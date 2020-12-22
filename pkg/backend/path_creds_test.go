@@ -321,8 +321,8 @@ func TestScopesAndAudienceRequests(t *testing.T) {
 			"client_secret": client.Secret,
 			"provider":      "custom",
 			"provider_options": map[string]string{
-				"auth_code_url" : "not-used",
-				"token_url" : tp.GetServerURL() + "/token",
+				"auth_code_url": "not-used",
+				"token_url":     tp.GetServerURL() + "/token",
 			},
 		},
 	}
