@@ -1,0 +1,44 @@
+linters-settings:
+  gocritic:
+    enabled-tags:
+    - diagnostic
+    - experimental
+    - opinionated
+    - performance
+    - style
+  gocyclo:
+    min-complexity: 20
+  nolintlint:
+    allow-leading-space: true
+    allow-unused: false
+    require-explanation: false
+    require-specific: true
+
+linters:
+  disable-all: true
+  enable:
+  - bodyclose
+  - deadcode
+  - errcheck
+  - exportloopref
+  - gocritic
+  - gocyclo
+  - goimports
+  - gosec
+  - gosimple
+  - govet
+  - ineffassign
+  - noctx
+  - nolintlint
+  - staticcheck
+  - structcheck
+  - typecheck
+  - unused
+  - varcheck
+
+issues:
+  exclude-rules:
+  - path: _test\.go$
+    linters:
+    - bodyclose
+    - noctx

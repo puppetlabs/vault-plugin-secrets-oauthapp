@@ -1,3 +1,7 @@
+// TODO: We should upgrade credential keys to use a cryptographically secure
+// hash algorithm.
+/* #nosec G401 G505 */
+
 package backend
 
 import (
@@ -7,7 +11,9 @@ import (
 	"strings"
 
 	"github.com/hashicorp/vault/sdk/framework"
+	"github.com/hashicorp/vault/sdk/helper/locksutil"
 	"github.com/hashicorp/vault/sdk/logical"
+	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/pkg/provider"
 	"golang.org/x/oauth2"
 )
 
@@ -28,13 +34,14 @@ func (b *backend) credsReadOperation(ctx context.Context, req *logical.Request, 
 	key := credKey(data.Get("name").(string))
 
 	tok, err := b.getRefreshToken(ctx, req.Storage, key, data)
-	if err == ErrNotConfigured {
+	switch {
+	case err == ErrNotConfigured:
 		return logical.ErrorResponse("not configured"), nil
-	} else if err != nil {
+	case err != nil:
 		return nil, err
-	} else if tok == nil {
+	case tok == nil:
 		return nil, nil
-	} else if !tokenValid(tok, data) {
+	case !tokenValid(tok, data):
 		return logical.ErrorResponse("token expired"), nil
 	}
 
@@ -42,7 +49,7 @@ func (b *backend) credsReadOperation(ctx context.Context, req *logical.Request, 
 	audiences := data.Get("audience").([]string)
 	if len(scopes) > 0 || len(audiences) > 0 {
 		// Do an RFC8693 token exchange to limit the access token
-		options := []oauth2.AuthCodeOption {
+		options := []oauth2.AuthCodeOption{
 			oauth2.SetAuthURLParam("grant_type", "urn:ietf:params:oauth:grant-type:token-exchange"),
 			oauth2.SetAuthURLParam("subject_token", tok.AccessToken),
 			oauth2.SetAuthURLParam("subject_token_type", "urn:ietf:params:oauth:token-type:access_token"),
@@ -72,6 +79,10 @@ func (b *backend) credsReadOperation(ctx context.Context, req *logical.Request, 
 		rd["expire_time"] = tok.Expiry
 	}
 
+	if len(tok.ExtraData) > 0 {
+		rd["extra_data"] = tok.ExtraData
+	}
+
 	resp := &logical.Response{
 		Data: rd,
 	}
@@ -79,23 +90,27 @@ func (b *backend) credsReadOperation(ctx context.Context, req *logical.Request, 
 }
 
 func (b *backend) credsUpdateOperation(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
-	c, err := getConfig(ctx, req.Storage)
+	c, err := b.getCache(ctx, req.Storage)
 	if err != nil {
 		return nil, err
 	} else if c == nil {
 		return logical.ErrorResponse("not configured"), nil
 	}
 
-	p, err := c.provider(b.providerRegistry)
-	if err != nil {
-		return nil, err
-	}
-
 	key := credKey(data.Get("name").(string))
 
-	var tok *oauth2.Token
+	lock := locksutil.LockForKey(b.locks, key)
+	lock.Lock()
+	defer lock.Unlock()
 
-	cb := p.NewExchangeConfigBuilder(c.ClientID, c.ClientSecret)
+	var tok *provider.Token
+
+	cb := c.Provider.NewExchangeConfigBuilder(c.Config.ClientID, c.Config.ClientSecret)
+
+	for name, value := range data.Get("provider_options").(map[string]string) {
+		cb = cb.WithOption(name, value)
+	}
+
 	if code, ok := data.GetOk("code"); ok {
 		if _, ok := data.GetOk("refresh_token"); ok {
 			return logical.ErrorResponse("cannot use both code and refresh_token"), nil
@@ -113,7 +128,12 @@ func (b *backend) credsUpdateOperation(ctx context.Context, req *logical.Request
 			return nil, err
 		}
 	} else if refreshToken, ok := data.GetOk("refresh_token"); ok {
-		tok, err = cb.Build().TokenSource(ctx, &oauth2.Token{RefreshToken: refreshToken.(string)}).Token()
+		tok = &provider.Token{
+			Token: &oauth2.Token{
+				RefreshToken: refreshToken.(string),
+			},
+		}
+		tok, err = cb.Build().Refresh(ctx, tok)
 		if rErr, ok := err.(*oauth2.RetrieveError); ok {
 			b.logger.Error("invalid refresh_token", "error", rErr)
 			return logical.ErrorResponse("invalid refresh_token"), nil
@@ -125,10 +145,6 @@ func (b *backend) credsUpdateOperation(ctx context.Context, req *logical.Request
 		return logical.ErrorResponse("missing code or refresh_token"), nil
 	}
 
-	b.credMut.Lock()
-	defer b.credMut.Unlock()
-
-	// TODO: Handle extra fields?
 	entry, err := logical.StorageEntryJSON(key, tok)
 	if err != nil {
 		return nil, err
@@ -142,10 +158,11 @@ func (b *backend) credsUpdateOperation(ctx context.Context, req *logical.Request
 }
 
 func (b *backend) credsDeleteOperation(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
-	b.credMut.Lock()
-	defer b.credMut.Unlock()
-
 	key := credKey(data.Get("name").(string))
+
+	lock := locksutil.LockForKey(b.locks, key)
+	lock.Lock()
+	defer lock.Unlock()
 
 	if err := req.Storage.Delete(ctx, key); err != nil {
 		return nil, err
@@ -185,6 +202,10 @@ var credsFields = map[string]*framework.FieldSchema{
 	"refresh_token": {
 		Type:        framework.TypeString,
 		Description: "Specifies a refresh token retrieved from the provider by some means external to this plugin.",
+	},
+	"provider_options": {
+		Type:        framework.TypeKVPairs,
+		Description: "Specifies a list of options to pass on to the provider for configuring this token exchange.",
 	},
 }
 

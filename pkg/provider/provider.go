@@ -2,10 +2,17 @@ package provider
 
 import (
 	"context"
-	"net/http"
 
 	"golang.org/x/oauth2"
 )
+
+// Token is an extension of *oauth2.Token that also provides complementary data
+// to store (usually from the token's own raw data).
+type Token struct {
+	*oauth2.Token `json:",inline"`
+
+	ExtraData map[string]interface{} `json:"extra_data,omitempty"`
+}
 
 // AuthCodeURLConfig is the component of *oauth2.Config required for generating
 // authorization code URLs.
@@ -28,14 +35,15 @@ type AuthCodeURLConfigBuilder interface {
 // ExchangeConfig is the component of *oauth2.Config required to exchange an
 // authorization code for a token.
 type ExchangeConfig interface {
-	Exchange(ctx context.Context, code string, opts ...oauth2.AuthCodeOption) (*oauth2.Token, error)
-	TokenSource(ctx context.Context, t *oauth2.Token) oauth2.TokenSource
+	Exchange(ctx context.Context, code string, opts ...oauth2.AuthCodeOption) (*Token, error)
+	Refresh(ctx context.Context, t *Token) (*Token, error)
 }
 
 // ExchangeConfigBuilder creates ExchangeConfigs.
 type ExchangeConfigBuilder interface {
-	// WithHTTPClient uses the given HTTP client to perform the exchange.
-	WithHTTPClient(client *http.Client) ExchangeConfigBuilder
+	// WithOption sets an exchange-specific option for this provider. If the
+	// provider does not support the given option, it is ignored.
+	WithOption(name, value string) ExchangeConfigBuilder
 
 	// WithRedirectURL sets the redirect URL for the config.
 	WithRedirectURL(redirectURL string) ExchangeConfigBuilder
@@ -43,6 +51,8 @@ type ExchangeConfigBuilder interface {
 	// Build creates an ExchangeConfig from the current configuration.
 	Build() ExchangeConfig
 }
+
+const VersionLatest = -1
 
 // Provider represents an integration with a particular OAuth provider using the
 // authorization code grant.

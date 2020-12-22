@@ -9,6 +9,7 @@ import (
 
 	"github.com/hashicorp/vault/sdk/logical"
 	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/pkg/provider"
+	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/pkg/testutil"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/oauth2"
 )
@@ -17,7 +18,7 @@ func TestBasicCredentialExchange(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	client := provider.MockClient{
+	client := testutil.MockClient{
 		ID:     "abc",
 		Secret: "def",
 	}
@@ -27,7 +28,7 @@ func TestBasicCredentialExchange(t *testing.T) {
 	}
 
 	pr := provider.NewRegistry()
-	pr.MustRegister("mock", provider.MockFactory(provider.MockWithExchange(client, provider.StaticMockExchange(token))))
+	pr.MustRegister("mock", testutil.MockFactory(testutil.MockWithExchange(client, testutil.StaticMockExchange(token))))
 
 	storage := &logical.InmemStorage{}
 
@@ -86,17 +87,17 @@ func TestInvalidCredentialExchange(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	client := provider.MockClient{
+	client := testutil.MockClient{
 		ID:     "abc",
 		Secret: "def",
 	}
 
-	exchange := provider.RestrictMockExchange(map[string]provider.MockExchangeFunc{
-		"valid": provider.RandomMockExchange,
+	exchange := testutil.RestrictMockExchange(map[string]testutil.MockExchangeFunc{
+		"valid": testutil.RandomMockExchange,
 	})
 
 	pr := provider.NewRegistry()
-	pr.MustRegister("mock", provider.MockFactory(provider.MockWithExchange(client, exchange)))
+	pr.MustRegister("mock", testutil.MockFactory(testutil.MockWithExchange(client, exchange)))
 
 	storage := &logical.InmemStorage{}
 
@@ -140,7 +141,7 @@ func TestRefreshableCredentialExchange(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	client := provider.MockClient{
+	client := testutil.MockClient{
 		ID:     "abc",
 		Secret: "def",
 	}
@@ -156,10 +157,10 @@ func TestRefreshableCredentialExchange(t *testing.T) {
 		}
 	}
 
-	exchange := provider.RefreshableMockExchange(provider.IncrementMockExchange("token_"), refresh)
+	exchange := testutil.RefreshableMockExchange(testutil.IncrementMockExchange("token_"), refresh)
 
 	pr := provider.NewRegistry()
-	pr.MustRegister("mock", provider.MockFactory(provider.MockWithExchange(client, exchange)))
+	pr.MustRegister("mock", testutil.MockFactory(testutil.MockWithExchange(client, exchange)))
 
 	storage := &logical.InmemStorage{}
 
@@ -220,7 +221,7 @@ func TestRefreshFailureReturnsNotConfigured(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	client := provider.MockClient{
+	client := testutil.MockClient{
 		ID:     "abc",
 		Secret: "def",
 	}
@@ -237,10 +238,10 @@ func TestRefreshFailureReturnsNotConfigured(t *testing.T) {
 		}
 	}
 
-	exchange := provider.RefreshableMockExchange(provider.IncrementMockExchange("token_"), refresh)
+	exchange := testutil.RefreshableMockExchange(testutil.IncrementMockExchange("token_"), refresh)
 
 	pr := provider.NewRegistry()
-	pr.MustRegister("mock", provider.MockFactory(provider.MockWithExchange(client, exchange)))
+	pr.MustRegister("mock", testutil.MockFactory(testutil.MockWithExchange(client, exchange)))
 
 	storage := &logical.InmemStorage{}
 
@@ -297,7 +298,7 @@ func TestScopesAndAudienceRequests(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	client := provider.MockClient{
+	client := testutil.MockClient{
 		ID:     "hij",
 		Secret: "def",
 	}
@@ -307,7 +308,7 @@ func TestScopesAndAudienceRequests(t *testing.T) {
 	b := New(Options{ProviderRegistry: provider.GlobalRegistry})
 	require.NoError(t, b.Setup(ctx, &logical.BackendConfig{}))
 
-	tp := provider.NewMockTokenProvider()
+	tp := testutil.NewMockTokenProvider()
 	defer tp.Close()
 
 	// Write configuration.
@@ -320,8 +321,8 @@ func TestScopesAndAudienceRequests(t *testing.T) {
 			"client_secret": client.Secret,
 			"provider":      "custom",
 			"provider_options": map[string]string{
-				"auth_code_url" : "not-used",
-				"token_url" : tp.GetServerURL() + "/token",
+				"auth_code_url": "not-used",
+				"token_url":     tp.GetServerURL() + "/token",
 			},
 		},
 	}
