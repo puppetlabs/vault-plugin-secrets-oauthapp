@@ -47,8 +47,12 @@ func (c *oidcExchangeConfig) verifyUpdateToken(ctx context.Context, t *Token) er
 		return fmt.Errorf("provider: oidc: verification error: %+v", err)
 	}
 
-	if subtle.ConstantTimeEq(int32(len(idToken.Nonce)), int32(len(c.nonce))) == 0 ||
-		subtle.ConstantTimeCompare([]byte(idToken.Nonce), []byte(c.nonce)) == 0 {
+	// If nonce is configured, make sure it matches the nonce in
+	// the ID token.  It is not configured when refresh_token is
+	// sent in from an external source.
+	if len(c.nonce) > 0 &&
+		(subtle.ConstantTimeEq(int32(len(idToken.Nonce)), int32(len(c.nonce))) == 0 ||
+			subtle.ConstantTimeCompare([]byte(idToken.Nonce), []byte(c.nonce)) == 0) {
 		return ErrOIDCNonceMismatch
 	}
 
