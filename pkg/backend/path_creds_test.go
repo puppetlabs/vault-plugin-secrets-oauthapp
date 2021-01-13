@@ -22,8 +22,10 @@ func TestBasicCredentialExchange(t *testing.T) {
 		Secret: "def",
 	}
 
-	token := &oauth2.Token{
-		AccessToken: "valid",
+	token := &provider.Token{
+		Token: &oauth2.Token{
+			AccessToken: "valid",
+		},
 	}
 
 	pr := provider.NewRegistry()
