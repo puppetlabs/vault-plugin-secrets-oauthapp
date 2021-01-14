@@ -143,7 +143,7 @@ func CustomFactory(ctx context.Context, vsn int, opts map[string]string) (Provid
 		if discoveryURL != "" {
 			provider, err := gooidc.NewProvider(ctx, discoveryURL)
 			if err != nil {
-				return nil, &OptionError{Option: "discovery_url", Message: "error making new provider: " + err.Error()}
+				return nil, &OptionError{Option: "discovery_url", Message: "error making new provider", Cause: err}
 			}
 
 			opts["auth_code_url"] = provider.Endpoint().AuthURL

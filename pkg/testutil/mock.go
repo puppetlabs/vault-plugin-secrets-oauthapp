@@ -114,15 +114,15 @@ func IncrementMockExchange(prefix string) MockExchangeFunc {
 	}
 }
 
-func ErrorMockExchange(_ string) (*oauth2.Token, error) {
-	return nil, &oauth2.RetrieveError{}
+func ErrorMockExchange(_ string) (*provider.Token, error) {
+	return nil, &oauth2.RetrieveError{Response: &http.Response{Status: http.StatusText(http.StatusForbidden)}}
 }
 
 func RestrictMockExchange(m map[string]MockExchangeFunc) MockExchangeFunc {
 	return func(token string) (*provider.Token, error) {
 		fn, found := m[token]
 		if !found {
-			return nil, &oauth2.RetrieveError{}
+			fn = ErrorMockExchange
 		}
 
 		return fn(token)
@@ -136,7 +136,7 @@ type mockExchangeConfig struct {
 
 func (c *mockExchangeConfig) Exchange(ctx context.Context, code string, opts ...oauth2.AuthCodeOption) (*provider.Token, error) {
 	if c.fn == nil {
-		return nil, &oauth2.RetrieveError{}
+		return nil, &oauth2.RetrieveError{Response: &http.Response{Status: http.StatusText(http.StatusInternalServerError)}}
 	}
 
 	tok, err := c.fn(code)

@@ -9,6 +9,7 @@ import (
 	gooidc "github.com/coreos/go-oidc"
 	"github.com/hashicorp/vault/sdk/helper/parseutil"
 	"github.com/hashicorp/vault/sdk/helper/strutil"
+	"github.com/puppetlabs/leg/errmap/pkg/errmark"
 	"golang.org/x/oauth2"
 )
 
@@ -21,8 +22,8 @@ const (
 )
 
 var (
-	ErrOIDCMissingIDToken = errors.New("provider: oidc: missing ID token in response")
-	ErrOIDCNonceMismatch  = errors.New("provider: oidc: nonce does not match")
+	ErrOIDCMissingIDToken = errors.New("oidc: missing ID token in response")
+	ErrOIDCNonceMismatch  = errors.New("oidc: nonce does not match")
 )
 
 func init() {
@@ -39,17 +40,17 @@ type oidcExchangeConfig struct {
 func (c *oidcExchangeConfig) verifyUpdateToken(ctx context.Context, t *Token) error {
 	rawIDToken, ok := t.Extra("id_token").(string)
 	if !ok {
-		return ErrOIDCMissingIDToken
+		return errmark.MarkUser(ErrOIDCMissingIDToken)
 	}
 
 	idToken, err := c.p.Verifier(&gooidc.Config{ClientID: c.delegate.config.ClientID}).Verify(ctx, rawIDToken)
 	if err != nil {
-		return fmt.Errorf("provider: oidc: verification error: %+v", err)
+		return errmark.MarkUser(fmt.Errorf("oidc: verification error: %w", err))
 	}
 
 	if subtle.ConstantTimeEq(int32(len(idToken.Nonce)), int32(len(c.nonce))) == 0 ||
 		subtle.ConstantTimeCompare([]byte(idToken.Nonce), []byte(c.nonce)) == 0 {
-		return ErrOIDCNonceMismatch
+		return errmark.MarkUser(ErrOIDCNonceMismatch)
 	}
 
 	if len(c.extraDataFields) > 0 {
@@ -62,19 +63,19 @@ func (c *oidcExchangeConfig) verifyUpdateToken(ctx context.Context, t *Token) er
 			case oidcExtraDataFieldIDTokenClaims:
 				claims := make(map[string]interface{})
 				if err := idToken.Claims(&claims); err != nil {
-					return fmt.Errorf("provider: oidc: error parsing token claims: %+v", err)
+					return errmark.MarkUser(fmt.Errorf("oidc: error parsing token claims: %w", err))
 				}
 
 				t.ExtraData[field] = claims
 			case oidcExtraDataFieldUserInfo:
 				userInfo, err := c.p.UserInfo(ctx, c.delegate.config.TokenSource(ctx, t.Token))
 				if err != nil {
-					return fmt.Errorf("provider: oidc: error fetching user info: %+v", err)
+					return errmark.MarkTransient(fmt.Errorf("oidc: error fetching user info: %w", err))
 				}
 
 				claims := make(map[string]interface{})
 				if err := userInfo.Claims(&claims); err != nil {
-					return fmt.Errorf("provider: oidc: error parsing user info: %+v", err)
+					return errmark.MarkUser(fmt.Errorf("oidc: error parsing user info: %w", err))
 				}
 
 				t.ExtraData[field] = claims

@@ -10,6 +10,7 @@ require (
 	github.com/hashicorp/vault/api v1.0.4
 	github.com/hashicorp/vault/sdk v0.1.14-0.20190909201848-e0fbf9b652e2
 	github.com/pquerna/cachecontrol v0.0.0-20180517163645-1555304b9b35 // indirect
+	github.com/puppetlabs/leg/errmap v0.0.0-20210114071727-81c4a243ca52
 	github.com/stretchr/testify v1.6.1
 	golang.org/x/oauth2 v0.0.0-20190604053449-0f29369cfe45
 	google.golang.org/appengine v1.6.2 // indirect
