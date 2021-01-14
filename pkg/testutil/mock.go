@@ -41,16 +41,16 @@ type MockClient struct {
 	Secret string
 }
 
-type MockExchangeFunc func(code string) (*oauth2.Token, error)
+type MockExchangeFunc func(code string) (*provider.Token, error)
 
-func StaticMockExchange(token *oauth2.Token) MockExchangeFunc {
-	return func(_ string) (*oauth2.Token, error) {
+func StaticMockExchange(token *provider.Token) MockExchangeFunc {
+	return func(_ string) (*provider.Token, error) {
 		return token, nil
 	}
 }
 
-func AmendTokenMockExchange(get MockExchangeFunc, amend func(token *oauth2.Token) error) MockExchangeFunc {
-	return func(candidate string) (*oauth2.Token, error) {
+func AmendTokenMockExchange(get MockExchangeFunc, amend func(token *provider.Token) error) MockExchangeFunc {
+	return func(candidate string) (*provider.Token, error) {
 		token, err := get(candidate)
 		if err != nil {
 			return nil, err
@@ -65,7 +65,7 @@ func AmendTokenMockExchange(get MockExchangeFunc, amend func(token *oauth2.Token
 }
 
 func ExpiringMockExchange(fn MockExchangeFunc, duration time.Duration) MockExchangeFunc {
-	return AmendTokenMockExchange(fn, func(t *oauth2.Token) error {
+	return AmendTokenMockExchange(fn, func(t *provider.Token) error {
 		t.Expiry = time.Now().Add(duration)
 		return nil
 	})
@@ -84,7 +84,7 @@ func RefreshableMockExchange(fn MockExchangeFunc, step func(i int) (time.Duratio
 	refreshToken := randomToken(40)
 	var i int32
 
-	return AmendTokenMockExchange(fn, func(t *oauth2.Token) error {
+	return AmendTokenMockExchange(fn, func(t *provider.Token) error {
 		exp, err := step(int(atomic.AddInt32(&i, 1)))
 		if err != nil {
 			return err
@@ -96,21 +96,21 @@ func RefreshableMockExchange(fn MockExchangeFunc, step func(i int) (time.Duratio
 	})
 }
 
-func RandomMockExchange(_ string) (*oauth2.Token, error) {
+func RandomMockExchange(_ string) (*provider.Token, error) {
 	t := &oauth2.Token{
 		AccessToken: randomToken(10),
 	}
-	return t, nil
+	return &provider.Token{Token: t}, nil
 }
 
 func IncrementMockExchange(prefix string) MockExchangeFunc {
 	var i int32
 
-	return func(_ string) (*oauth2.Token, error) {
+	return func(_ string) (*provider.Token, error) {
 		t := &oauth2.Token{
 			AccessToken: fmt.Sprintf("%s%d", prefix, atomic.AddInt32(&i, 1)),
 		}
-		return t, nil
+		return &provider.Token{Token: t}, nil
 	}
 }
 
@@ -119,7 +119,7 @@ func ErrorMockExchange(_ string) (*oauth2.Token, error) {
 }
 
 func RestrictMockExchange(m map[string]MockExchangeFunc) MockExchangeFunc {
-	return func(token string) (*oauth2.Token, error) {
+	return func(token string) (*provider.Token, error) {
 		fn, found := m[token]
 		if !found {
 			return nil, &oauth2.RetrieveError{}
@@ -148,7 +148,7 @@ func (c *mockExchangeConfig) Exchange(ctx context.Context, code string, opts ...
 		c.owner.putRefreshTokenCode(tok.RefreshToken, code)
 	}
 
-	return &provider.Token{Token: tok}, nil
+	return tok, nil
 }
 
 func (c *mockExchangeConfig) Refresh(ctx context.Context, t *provider.Token) (*provider.Token, error) {
@@ -170,7 +170,7 @@ func (c *mockExchangeConfig) Refresh(ctx context.Context, t *provider.Token) (*p
 		return nil, err
 	}
 
-	return &provider.Token{Token: tok}, nil
+	return tok, nil
 }
 
 type mockExchangeConfigBuilder struct {
