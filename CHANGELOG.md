@@ -8,6 +8,11 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+* The `testutil` package now uses a `*provider.Token` instead of a
+  `*oauth2.Token` for mocks, allowing the `ExtraData` to be customized.
+
 ## [1.8.3] - 2020-12-17
 
 ### Build
