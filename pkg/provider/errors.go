@@ -6,16 +6,25 @@ import (
 )
 
 var (
-	ErrNoSuchProvider        = errors.New("provider: no provider with the given name")
-	ErrNoProviderWithVersion = errors.New("provider: version not supported")
-	ErrNoOptions             = errors.New("provider: options provided but none accepted")
+	ErrNoSuchProvider        = errors.New("no provider with the given name")
+	ErrNoProviderWithVersion = errors.New("version not supported")
+	ErrNoOptions             = errors.New("options provided but none accepted")
 )
 
 type OptionError struct {
 	Option  string
 	Message string
+	Cause   error
 }
 
 func (oe *OptionError) Error() string {
-	return fmt.Sprintf("provider: option %q: %s", oe.Option, oe.Message)
+	msg := fmt.Sprintf("option %q: %s", oe.Option, oe.Message)
+	if oe.Cause != nil {
+		msg += ": " + oe.Cause.Error()
+	}
+	return msg
+}
+
+func (oe *OptionError) Unwrap() error {
+	return oe.Cause
 }

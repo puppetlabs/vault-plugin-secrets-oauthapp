@@ -135,7 +135,7 @@ func TestInvalidCredentialExchange(t *testing.T) {
 	resp, err = b.HandleRequest(ctx, req)
 	require.NoError(t, err)
 	require.NotNil(t, resp)
-	require.EqualError(t, resp.Error(), "invalid code")
+	require.EqualError(t, resp.Error(), "exchange failed: oauth2: cannot fetch token: Forbidden\nResponse: ")
 }
 
 func TestRefreshableCredentialExchange(t *testing.T) {

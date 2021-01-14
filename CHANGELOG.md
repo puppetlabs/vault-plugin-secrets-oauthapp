@@ -8,6 +8,11 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+* Errors caused by configuration problems in the OIDC provider are now correctly
+  propagated to the HTTP response with a 400 status code.
+
 ### Changed
 
 * The `testutil` package now uses a `*provider.Token` instead of a

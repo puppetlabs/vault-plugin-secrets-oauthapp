@@ -13,6 +13,8 @@ import (
 	"github.com/hashicorp/vault/sdk/framework"
 	"github.com/hashicorp/vault/sdk/helper/locksutil"
 	"github.com/hashicorp/vault/sdk/logical"
+	"github.com/puppetlabs/leg/errmap/pkg/errmap"
+	"github.com/puppetlabs/leg/errmap/pkg/errmark"
 	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/pkg/provider"
 	"golang.org/x/oauth2"
 )
@@ -96,9 +98,8 @@ func (b *backend) credsUpdateOperation(ctx context.Context, req *logical.Request
 		}
 
 		tok, err = cb.Build().Exchange(ctx, code.(string))
-		if rErr, ok := err.(*oauth2.RetrieveError); ok {
-			b.logger.Error("invalid code", "error", rErr)
-			return logical.ErrorResponse("invalid code"), nil
+		if errmark.Matches(err, errmark.RuleType(&oauth2.RetrieveError{})) || errmark.MarkedUser(err) {
+			return logical.ErrorResponse(errmap.Wrap(errmark.MarkShort(err), "exchange failed").Error()), nil
 		} else if err != nil {
 			return nil, err
 		}
@@ -109,9 +110,8 @@ func (b *backend) credsUpdateOperation(ctx context.Context, req *logical.Request
 			},
 		}
 		tok, err = cb.Build().Refresh(ctx, tok)
-		if rErr, ok := err.(*oauth2.RetrieveError); ok {
-			b.logger.Error("invalid refresh_token", "error", rErr)
-			return logical.ErrorResponse("invalid refresh_token"), nil
+		if errmark.Matches(err, errmark.RuleType(&oauth2.RetrieveError{})) || errmark.MarkedUser(err) {
+			return logical.ErrorResponse(errmap.Wrap(errmark.MarkShort(err), "refresh failed").Error()), nil
 		} else if err != nil {
 			return nil, err
 		}

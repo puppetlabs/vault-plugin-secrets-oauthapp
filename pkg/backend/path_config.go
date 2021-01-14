@@ -2,10 +2,12 @@ package backend
 
 import (
 	"context"
+	"errors"
 	"strings"
 
 	"github.com/hashicorp/vault/sdk/framework"
 	"github.com/hashicorp/vault/sdk/logical"
+	"github.com/puppetlabs/leg/errmap/pkg/errmark"
 	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/pkg/provider"
 	"golang.org/x/oauth2"
 )
@@ -49,8 +51,10 @@ func (b *backend) configUpdateOperation(ctx context.Context, req *logical.Reques
 	providerOptions := data.Get("provider_options").(map[string]string)
 
 	p, err := b.providerRegistry.New(ctx, providerName.(string), providerOptions)
-	if err == provider.ErrNoSuchProvider {
+	if errors.Is(err, provider.ErrNoSuchProvider) {
 		return logical.ErrorResponse("provider %q does not exist", providerName), nil
+	} else if errmark.MarkedUser(err) {
+		return logical.ErrorResponse(errmark.MarkShort(err).Error()), nil
 	} else if err != nil {
 		return nil, err
 	}
