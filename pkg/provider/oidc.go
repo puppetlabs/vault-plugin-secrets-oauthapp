@@ -40,17 +40,17 @@ type oidcExchangeConfig struct {
 func (c *oidcExchangeConfig) verifyUpdateToken(ctx context.Context, t *Token) error {
 	rawIDToken, ok := t.Extra("id_token").(string)
 	if !ok {
-		return errmark.MarkUser(ErrOIDCMissingIDToken)
+		return ErrOIDCMissingIDToken
 	}
 
 	idToken, err := c.p.Verifier(&gooidc.Config{ClientID: c.delegate.config.ClientID}).Verify(ctx, rawIDToken)
 	if err != nil {
-		return errmark.MarkUser(fmt.Errorf("oidc: verification error: %w", err))
+		return fmt.Errorf("oidc: verification error: %w", err)
 	}
 
 	if subtle.ConstantTimeEq(int32(len(idToken.Nonce)), int32(len(c.nonce))) == 0 ||
 		subtle.ConstantTimeCompare([]byte(idToken.Nonce), []byte(c.nonce)) == 0 {
-		return errmark.MarkUser(ErrOIDCNonceMismatch)
+		return ErrOIDCNonceMismatch
 	}
 
 	if len(c.extraDataFields) > 0 {
@@ -63,19 +63,19 @@ func (c *oidcExchangeConfig) verifyUpdateToken(ctx context.Context, t *Token) er
 			case oidcExtraDataFieldIDTokenClaims:
 				claims := make(map[string]interface{})
 				if err := idToken.Claims(&claims); err != nil {
-					return errmark.MarkUser(fmt.Errorf("oidc: error parsing token claims: %w", err))
+					return fmt.Errorf("oidc: error parsing token claims: %w", err)
 				}
 
 				t.ExtraData[field] = claims
 			case oidcExtraDataFieldUserInfo:
 				userInfo, err := c.p.UserInfo(ctx, c.delegate.config.TokenSource(ctx, t.Token))
 				if err != nil {
-					return errmark.MarkTransient(fmt.Errorf("oidc: error fetching user info: %w", err))
+					return fmt.Errorf("oidc: error fetching user info: %w", err)
 				}
 
 				claims := make(map[string]interface{})
 				if err := userInfo.Claims(&claims); err != nil {
-					return errmark.MarkUser(fmt.Errorf("oidc: error parsing user info: %w", err))
+					return fmt.Errorf("oidc: error parsing user info: %w", err)
 				}
 
 				t.ExtraData[field] = claims
@@ -93,7 +93,7 @@ func (c *oidcExchangeConfig) Exchange(ctx context.Context, code string, opts ...
 	}
 
 	if err := c.verifyUpdateToken(ctx, t); err != nil {
-		return nil, err
+		return nil, errmark.MarkUser(err)
 	}
 
 	return t, nil
@@ -106,7 +106,7 @@ func (c *oidcExchangeConfig) Refresh(ctx context.Context, t *Token) (*Token, err
 	}
 
 	if err := c.verifyUpdateToken(ctx, t); err != nil {
-		return nil, err
+		return nil, errmark.MarkUser(err)
 	}
 
 	return t, nil
