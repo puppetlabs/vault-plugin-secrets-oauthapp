@@ -6,6 +6,7 @@ import (
 	gooidc "github.com/coreos/go-oidc"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/bitbucket"
+	"golang.org/x/oauth2/clientcredentials"
 	"golang.org/x/oauth2/github"
 	"golang.org/x/oauth2/gitlab"
 	"golang.org/x/oauth2/google"
@@ -24,12 +25,31 @@ func init() {
 	GlobalRegistry.MustRegister("custom", CustomFactory)
 }
 
-type basicExchangeConfig struct {
-	config *oauth2.Config
+type basicOperations struct {
+	base *oauth2.Config
 }
 
-func (c *basicExchangeConfig) Exchange(ctx context.Context, code string, opts ...oauth2.AuthCodeOption) (*Token, error) {
-	tok, err := c.config.Exchange(ctx, code, opts...)
+func (bo *basicOperations) AuthCodeURL(state string, opts ...AuthCodeURLOption) string {
+	o := &AuthCodeURLOptions{}
+	o.ApplyOptions(opts)
+
+	cfg := &oauth2.Config{}
+	*cfg = *bo.base
+	cfg.Scopes = o.Scopes
+	cfg.RedirectURL = o.RedirectURL
+
+	return cfg.AuthCodeURL(state, o.AuthCodeOptions...)
+}
+
+func (bo *basicOperations) AuthCodeExchange(ctx context.Context, code string, opts ...AuthCodeExchangeOption) (*Token, error) {
+	o := &AuthCodeExchangeOptions{}
+	o.ApplyOptions(opts)
+
+	cfg := &oauth2.Config{}
+	*cfg = *bo.base
+	cfg.RedirectURL = o.RedirectURL
+
+	tok, err := cfg.Exchange(ctx, code, o.AuthCodeOptions...)
 	if err != nil {
 		return nil, err
 	}
@@ -37,8 +57,8 @@ func (c *basicExchangeConfig) Exchange(ctx context.Context, code string, opts ..
 	return &Token{Token: tok}, nil
 }
 
-func (c *basicExchangeConfig) Refresh(ctx context.Context, t *Token) (*Token, error) {
-	tok, err := c.config.TokenSource(ctx, t.Token).Token()
+func (bo *basicOperations) RefreshToken(ctx context.Context, t *Token, opts ...RefreshTokenOption) (*Token, error) {
+	tok, err := bo.base.TokenSource(ctx, t.Token).Token()
 	if err != nil {
 		return nil, err
 	}
@@ -46,23 +66,25 @@ func (c *basicExchangeConfig) Refresh(ctx context.Context, t *Token) (*Token, er
 	return &Token{Token: tok}, nil
 }
 
-type basicExchangeConfigBuilder struct {
-	config *oauth2.Config
-}
+func (bo *basicOperations) ClientCredentials(ctx context.Context, opts ...ClientCredentialsOption) (*Token, error) {
+	o := &ClientCredentialsOptions{}
+	o.ApplyOptions(opts)
 
-func (cb *basicExchangeConfigBuilder) WithOption(name, value string) ExchangeConfigBuilder {
-	return cb
-}
-
-func (cb *basicExchangeConfigBuilder) WithRedirectURL(redirectURL string) ExchangeConfigBuilder {
-	cb.config.RedirectURL = redirectURL
-	return cb
-}
-
-func (cb *basicExchangeConfigBuilder) Build() ExchangeConfig {
-	return &basicExchangeConfig{
-		config: cb.config,
+	cc := &clientcredentials.Config{
+		ClientID:       bo.base.ClientID,
+		ClientSecret:   bo.base.ClientSecret,
+		TokenURL:       bo.base.Endpoint.TokenURL,
+		AuthStyle:      bo.base.Endpoint.AuthStyle,
+		Scopes:         o.Scopes,
+		EndpointParams: o.EndpointParams,
 	}
+
+	tok, err := cc.Token(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return &Token{Token: tok}, nil
 }
 
 type basic struct {
@@ -74,13 +96,13 @@ func (b *basic) Version() int {
 	return b.vsn
 }
 
-func (b *basic) NewAuthCodeURLConfigBuilder(clientID string) AuthCodeURLConfigBuilder {
-	return NewConformingAuthCodeURLConfigBuilder(b.endpoint, clientID)
+func (b *basic) Public(clientID string) PublicOperations {
+	return b.Private(clientID, "")
 }
 
-func (b *basic) NewExchangeConfigBuilder(clientID, clientSecret string) ExchangeConfigBuilder {
-	return &basicExchangeConfigBuilder{
-		config: &oauth2.Config{
+func (b *basic) Private(clientID, clientSecret string) PrivateOperations {
+	return &basicOperations{
+		base: &oauth2.Config{
 			Endpoint:     b.endpoint,
 			ClientID:     clientID,
 			ClientSecret: clientSecret,

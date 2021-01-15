@@ -9,7 +9,6 @@ import (
 	"github.com/hashicorp/vault/sdk/logical"
 	"github.com/puppetlabs/leg/errmap/pkg/errmark"
 	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/pkg/provider"
-	"golang.org/x/oauth2"
 )
 
 func (b *backend) configReadOperation(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
@@ -105,25 +104,13 @@ func (b *backend) configAuthCodeURLUpdateOperation(ctx context.Context, req *log
 		return logical.ErrorResponse("missing state"), nil
 	}
 
-	cb := c.Provider.NewAuthCodeURLConfigBuilder(c.Config.ClientID)
-
-	if redirectURL, ok := data.GetOk("redirect_url"); ok {
-		cb = cb.WithRedirectURL(redirectURL.(string))
-	}
-
-	if scopes, ok := data.GetOk("scopes"); ok {
-		cb = cb.WithScopes(scopes.([]string)...)
-	}
-
-	var opts []oauth2.AuthCodeOption
-	for k, v := range data.Get("auth_url_params").(map[string]string) {
-		opts = append(opts, oauth2.SetAuthURLParam(k, v))
-	}
-	for k, v := range c.Config.AuthURLParams {
-		opts = append(opts, oauth2.SetAuthURLParam(k, v))
-	}
-
-	url := cb.Build().AuthCodeURL(state.(string), opts...)
+	url := c.Provider.Public(c.Config.ClientID).AuthCodeURL(
+		state.(string),
+		provider.WithRedirectURL(data.Get("redirect_url").(string)),
+		provider.WithScopes(data.Get("scopes").([]string)),
+		provider.WithURLParams(data.Get("auth_url_params").(map[string]string)),
+		provider.WithURLParams(c.Config.AuthURLParams),
+	)
 
 	resp := &logical.Response{
 		Data: map[string]interface{}{
@@ -162,7 +149,7 @@ var configFields = map[string]*framework.FieldSchema{
 }
 
 const configHelpSynopsis = `
-Configures the OAuth client information for authorization code exchange.
+Configures OAuth 2.0 client information.
 `
 
 const configHelpDescription = `
