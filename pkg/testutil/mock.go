@@ -169,7 +169,7 @@ type mockOperations struct {
 	clientCredentialsFn MockClientCredentialsFunc
 }
 
-func (mo *mockOperations) AuthCodeURL(state string, opts ...provider.AuthCodeURLOption) string {
+func (mo *mockOperations) AuthCodeURL(state string, opts ...provider.AuthCodeURLOption) (string, bool) {
 	o := &provider.AuthCodeURLOptions{}
 	o.ApplyOptions(opts)
 
@@ -178,7 +178,7 @@ func (mo *mockOperations) AuthCodeURL(state string, opts ...provider.AuthCodeURL
 		Endpoint:    MockEndpoint,
 		Scopes:      o.Scopes,
 		RedirectURL: o.RedirectURL,
-	}).AuthCodeURL(state, o.AuthCodeOptions...)
+	}).AuthCodeURL(state, o.AuthCodeOptions...), true
 }
 
 func (mo *mockOperations) AuthCodeExchange(ctx context.Context, code string, opts ...provider.AuthCodeExchangeOption) (*provider.Token, error) {
