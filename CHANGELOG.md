@@ -23,6 +23,9 @@ Versioning](https://semver.org/spec/v2.0.0.html).
   refresh token flow if the plugin user specifies a nonce to validate against;
   otherwise, it is assumed that the nonce data is invalid or non-conforming to
   the OpenID Connect Core specification.
+* Per the OpenID Connect Core specification, ID tokens will only be revalidated
+  during refresh if the server sends a new ID token. Otherwise, they are passed
+  through unmodified from the original exchange.
 
 ### Changed
 

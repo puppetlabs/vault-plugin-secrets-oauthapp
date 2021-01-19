@@ -34,9 +34,9 @@ type oidcOperations struct {
 	extraDataFields []string
 }
 
-func (oo *oidcOperations) verifyUpdateToken(ctx context.Context, t *Token, nonce string) error {
+func (oo *oidcOperations) verifyUpdateIDToken(ctx context.Context, t *Token, nonce string) error {
 	rawIDToken, ok := t.Extra("id_token").(string)
-	if !ok {
+	if !ok || rawIDToken == "" {
 		return ErrOIDCMissingIDToken
 	}
 
@@ -54,34 +54,50 @@ func (oo *oidcOperations) verifyUpdateToken(ctx context.Context, t *Token, nonce
 		return ErrOIDCNonceMismatch
 	}
 
-	if len(oo.extraDataFields) > 0 {
-		t.ExtraData = make(map[string]interface{})
-
-		for _, field := range oo.extraDataFields {
-			switch field {
-			case oidcExtraDataFieldIDToken:
-				t.ExtraData[field] = rawIDToken
-			case oidcExtraDataFieldIDTokenClaims:
-				claims := make(map[string]interface{})
-				if err := idToken.Claims(&claims); err != nil {
-					return fmt.Errorf("oidc: error parsing token claims: %w", err)
-				}
-
-				t.ExtraData[field] = claims
-			case oidcExtraDataFieldUserInfo:
-				userInfo, err := oo.p.UserInfo(ctx, oo.basicOperations.base.TokenSource(ctx, t.Token))
-				if err != nil {
-					return fmt.Errorf("oidc: error fetching user info: %w", err)
-				}
-
-				claims := make(map[string]interface{})
-				if err := userInfo.Claims(&claims); err != nil {
-					return fmt.Errorf("oidc: error parsing user info: %w", err)
-				}
-
-				t.ExtraData[field] = claims
+	for _, field := range oo.extraDataFields {
+		switch field {
+		case oidcExtraDataFieldIDToken:
+			t.ExtraData[field] = rawIDToken
+		case oidcExtraDataFieldIDTokenClaims:
+			claims := make(map[string]interface{})
+			if err := idToken.Claims(&claims); err != nil {
+				return fmt.Errorf("oidc: error parsing token claims: %w", err)
 			}
+
+			t.ExtraData[field] = claims
 		}
+	}
+
+	return nil
+}
+
+func (oo *oidcOperations) copyIDToken(ctx context.Context, p, n *Token) {
+	for _, field := range oo.extraDataFields {
+		switch field {
+		case oidcExtraDataFieldIDToken, oidcExtraDataFieldIDTokenClaims:
+			n.ExtraData[field] = p.ExtraData[field]
+		}
+	}
+}
+
+func (oo *oidcOperations) updateUserInfo(ctx context.Context, t *Token) error {
+	for _, field := range oo.extraDataFields {
+		if field != oidcExtraDataFieldUserInfo {
+			continue
+		}
+
+		userInfo, err := oo.p.UserInfo(ctx, oauth2.StaticTokenSource(t.Token))
+		if err != nil {
+			return fmt.Errorf("oidc: error fetching user info: %w", err)
+		}
+
+		claims := make(map[string]interface{})
+		if err := userInfo.Claims(&claims); err != nil {
+			return fmt.Errorf("oidc: error parsing user info: %w", err)
+		}
+
+		t.ExtraData[field] = claims
+		break
 	}
 
 	return nil
@@ -96,7 +112,15 @@ func (oo *oidcOperations) AuthCodeExchange(ctx context.Context, code string, opt
 		return nil, err
 	}
 
-	if err := oo.verifyUpdateToken(ctx, t, o.ProviderOptions["nonce"]); err != nil {
+	if t.ExtraData == nil {
+		t.ExtraData = make(map[string]interface{})
+	}
+
+	if err := oo.verifyUpdateIDToken(ctx, t, o.ProviderOptions["nonce"]); err != nil {
+		return nil, errmark.MarkUser(err)
+	}
+
+	if err := oo.updateUserInfo(ctx, t); err != nil {
 		return nil, errmark.MarkUser(err)
 	}
 
@@ -107,16 +131,32 @@ func (oo *oidcOperations) RefreshToken(ctx context.Context, t *Token, opts ...Re
 	o := &RefreshTokenOptions{}
 	o.ApplyOptions(opts)
 
-	t, err := oo.basicOperations.RefreshToken(ctx, t, opts...)
+	nt, err := oo.basicOperations.RefreshToken(ctx, t, opts...)
 	if err != nil {
 		return nil, err
 	}
 
-	if err := oo.verifyUpdateToken(ctx, t, o.ProviderOptions["nonce"]); err != nil {
+	if nt.ExtraData == nil {
+		nt.ExtraData = make(map[string]interface{})
+	}
+
+	// Per OpenID Connect Core 1.0 § 12.2
+	// (https://openid.net/specs/openid-connect-core-1_0.html#RefreshTokenResponse),
+	// providing an ID token as part of a refresh is optional. We will only
+	// revalidate the token if a new one is provided.
+	if rawIDToken, ok := nt.Extra("id_token").(string); ok && rawIDToken != "" {
+		if err := oo.verifyUpdateIDToken(ctx, nt, o.ProviderOptions["nonce"]); err != nil {
+			return nil, errmark.MarkUser(err)
+		}
+	} else {
+		oo.copyIDToken(ctx, t, nt)
+	}
+
+	if err := oo.updateUserInfo(ctx, t); err != nil {
 		return nil, errmark.MarkUser(err)
 	}
 
-	return t, nil
+	return nt, nil
 }
 
 type oidc struct {

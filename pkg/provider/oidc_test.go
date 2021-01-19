@@ -145,3 +145,207 @@ func TestOIDCFlow(t *testing.T) {
 	assert.Equal(t, "test-user", userInfo["sub"])
 	assert.Equal(t, "test-user@example.com", userInfo["email"])
 }
+
+func TestOIDCRefreshWithIDToken(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	require.NoError(t, err)
+
+	signer, err := jose.NewSigner(jose.SigningKey{
+		Algorithm: jose.RS256,
+		Key:       privateKey,
+	}, (&jose.SignerOptions{}).WithType("JWT"))
+	require.NoError(t, err)
+
+	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/.well-known/openid-configuration":
+			_, _ = io.WriteString(w, testOIDCConfiguration)
+		case "/.well-known/jwks.json":
+			_ = json.NewEncoder(w).Encode(&jose.JSONWebKeySet{
+				Keys: []jose.JSONWebKey{
+					{
+						Key:   &privateKey.PublicKey,
+						KeyID: "key",
+						Use:   "sig",
+					},
+				},
+			})
+		case "/token":
+			b, err := ioutil.ReadAll(r.Body)
+			require.NoError(t, err)
+
+			data, err := url.ParseQuery(string(b))
+			require.NoError(t, err)
+
+			resp := make(url.Values)
+
+			idClaims := jwt.Claims{
+				Issuer:   "http://localhost",
+				Audience: jwt.Audience{"foo"},
+				Subject:  "test-user",
+				Expiry:   jwt.NewNumericDate(time.Now().Add(time.Hour)),
+			}
+
+			idToken, err := jwt.Signed(signer).
+				Claims(idClaims).
+				Claims(map[string]interface{}{"grant_type": data.Get("grant_type")}).
+				CompactSerialize()
+			require.NoError(t, err)
+
+			resp.Set("token_type", "bearer")
+			resp.Set("id_token", idToken)
+
+			switch data.Get("grant_type") {
+			case "authorization_code":
+				assert.Equal(t, "foo", data.Get("client_id"))
+				assert.Equal(t, "bar", data.Get("client_secret"))
+
+				resp.Set("access_token", "abcd")
+				resp.Set("refresh_token", "efgh")
+				resp.Set("expires_in", "1")
+			case "refresh_token":
+				resp.Set("access_token", "ijkl")
+				resp.Set("refresh_token", "mnop")
+				resp.Set("expires_in", "900")
+			default:
+				assert.Fail(t, "unexpected grant type %q", data.Get("grant_type"))
+			}
+
+			_, _ = io.WriteString(w, resp.Encode())
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	})
+	c := &http.Client{Transport: &testutil.MockRoundTripper{Handler: h}}
+	ctx = context.WithValue(ctx, oauth2.HTTPClient, c)
+
+	oidcTest, err := provider.GlobalRegistry.New(ctx, "oidc", map[string]string{
+		"issuer_url":        "http://localhost",
+		"extra_data_fields": "id_token,id_token_claims",
+	})
+	require.NoError(t, err)
+
+	ops := oidcTest.Private("foo", "bar")
+
+	token, err := ops.AuthCodeExchange(ctx, "123456")
+	require.NoError(t, err)
+	require.NotNil(t, token)
+	assert.Equal(t, "abcd", token.AccessToken)
+	require.Contains(t, token.ExtraData, "id_token")
+	require.Contains(t, token.ExtraData, "id_token_claims")
+	require.NotEmpty(t, token.ExtraData["id_token"])
+	initialIDToken := token.ExtraData["id_token"]
+
+	token, err = ops.RefreshToken(ctx, token)
+	require.NoError(t, err)
+	require.NotNil(t, token)
+	assert.Equal(t, "ijkl", token.AccessToken)
+	require.Contains(t, token.ExtraData, "id_token")
+	require.Contains(t, token.ExtraData, "id_token_claims")
+	assert.NotEqual(t, initialIDToken, token.ExtraData["id_token"])
+}
+
+func TestOIDCRefreshWithoutIDToken(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	require.NoError(t, err)
+
+	signer, err := jose.NewSigner(jose.SigningKey{
+		Algorithm: jose.RS256,
+		Key:       privateKey,
+	}, (&jose.SignerOptions{}).WithType("JWT"))
+	require.NoError(t, err)
+
+	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/.well-known/openid-configuration":
+			_, _ = io.WriteString(w, testOIDCConfiguration)
+		case "/.well-known/jwks.json":
+			_ = json.NewEncoder(w).Encode(&jose.JSONWebKeySet{
+				Keys: []jose.JSONWebKey{
+					{
+						Key:   &privateKey.PublicKey,
+						KeyID: "key",
+						Use:   "sig",
+					},
+				},
+			})
+		case "/token":
+			b, err := ioutil.ReadAll(r.Body)
+			require.NoError(t, err)
+
+			data, err := url.ParseQuery(string(b))
+			require.NoError(t, err)
+
+			resp := make(url.Values)
+
+			switch data.Get("grant_type") {
+			case "authorization_code":
+				assert.Equal(t, "foo", data.Get("client_id"))
+				assert.Equal(t, "bar", data.Get("client_secret"))
+
+				idClaims := jwt.Claims{
+					Issuer:   "http://localhost",
+					Audience: jwt.Audience{"foo"},
+					Subject:  "test-user",
+					Expiry:   jwt.NewNumericDate(time.Now().Add(time.Hour)),
+				}
+
+				idToken, err := jwt.Signed(signer).
+					Claims(idClaims).
+					Claims(map[string]interface{}{"grant_type": data.Get("grant_type")}).
+					CompactSerialize()
+				require.NoError(t, err)
+
+				resp.Set("access_token", "abcd")
+				resp.Set("refresh_token", "efgh")
+				resp.Set("token_type", "bearer")
+				resp.Set("id_token", idToken)
+				resp.Set("expires_in", "1")
+			case "refresh_token":
+				resp.Set("access_token", "ijkl")
+				resp.Set("refresh_token", "mnop")
+				resp.Set("token_type", "bearer")
+				resp.Set("expires_in", "900")
+			default:
+				assert.Fail(t, "unexpected grant type %q", data.Get("grant_type"))
+			}
+
+			_, _ = io.WriteString(w, resp.Encode())
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	})
+	c := &http.Client{Transport: &testutil.MockRoundTripper{Handler: h}}
+	ctx = context.WithValue(ctx, oauth2.HTTPClient, c)
+
+	oidcTest, err := provider.GlobalRegistry.New(ctx, "oidc", map[string]string{
+		"issuer_url":        "http://localhost",
+		"extra_data_fields": "id_token,id_token_claims",
+	})
+	require.NoError(t, err)
+
+	ops := oidcTest.Private("foo", "bar")
+
+	token, err := ops.AuthCodeExchange(ctx, "123456")
+	require.NoError(t, err)
+	require.NotNil(t, token)
+	assert.Equal(t, "abcd", token.AccessToken)
+	require.Contains(t, token.ExtraData, "id_token")
+	require.Contains(t, token.ExtraData, "id_token_claims")
+	require.NotEmpty(t, token.ExtraData["id_token"])
+	initialIDToken := token.ExtraData["id_token"]
+
+	token, err = ops.RefreshToken(ctx, token)
+	require.NoError(t, err)
+	require.NotNil(t, token)
+	assert.Equal(t, "ijkl", token.AccessToken)
+	require.Contains(t, token.ExtraData, "id_token")
+	require.Contains(t, token.ExtraData, "id_token_claims")
+	assert.Equal(t, initialIDToken, token.ExtraData["id_token"])
+}
