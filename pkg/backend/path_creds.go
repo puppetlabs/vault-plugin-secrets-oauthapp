@@ -35,7 +35,7 @@ func credKey(name string) string {
 func (b *backend) credsReadOperation(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
 	key := credKey(data.Get("name").(string))
 
-	tok, err := b.getRefreshToken(ctx, req.Storage, key, data)
+	tok, err := b.getRefreshAuthCodeToken(ctx, req.Storage, key, data)
 	switch {
 	case err == ErrNotConfigured:
 		return logical.ErrorResponse("not configured"), nil
@@ -82,22 +82,19 @@ func (b *backend) credsUpdateOperation(ctx context.Context, req *logical.Request
 
 	var tok *provider.Token
 
-	cb := c.Provider.NewExchangeConfigBuilder(c.Config.ClientID, c.Config.ClientSecret)
-
-	for name, value := range data.Get("provider_options").(map[string]string) {
-		cb = cb.WithOption(name, value)
-	}
+	ops := c.Provider.Private(c.Config.ClientID, c.Config.ClientSecret)
 
 	if code, ok := data.GetOk("code"); ok {
 		if _, ok := data.GetOk("refresh_token"); ok {
 			return logical.ErrorResponse("cannot use both code and refresh_token"), nil
 		}
 
-		if redirectURL, ok := data.GetOk("redirect_url"); ok {
-			cb = cb.WithRedirectURL(redirectURL.(string))
-		}
-
-		tok, err = cb.Build().Exchange(ctx, code.(string))
+		tok, err = ops.AuthCodeExchange(
+			ctx,
+			code.(string),
+			provider.WithRedirectURL(data.Get("redirect_url").(string)),
+			provider.WithProviderOptions(data.Get("provider_options").(map[string]string)),
+		)
 		if errmark.Matches(err, errmark.RuleType(&oauth2.RetrieveError{})) || errmark.MarkedUser(err) {
 			return logical.ErrorResponse(errmap.Wrap(errmark.MarkShort(err), "exchange failed").Error()), nil
 		} else if err != nil {
@@ -109,7 +106,11 @@ func (b *backend) credsUpdateOperation(ctx context.Context, req *logical.Request
 				RefreshToken: refreshToken.(string),
 			},
 		}
-		tok, err = cb.Build().Refresh(ctx, tok)
+		tok, err = ops.RefreshToken(
+			ctx,
+			tok,
+			provider.WithProviderOptions(data.Get("provider_options").(map[string]string)),
+		)
 		if errmark.Matches(err, errmark.RuleType(&oauth2.RetrieveError{})) || errmark.MarkedUser(err) {
 			return logical.ErrorResponse(errmap.Wrap(errmark.MarkShort(err), "refresh failed").Error()), nil
 		} else if err != nil {
@@ -156,6 +157,7 @@ var credsFields = map[string]*framework.FieldSchema{
 	"minimum_seconds": {
 		Type:        framework.TypeInt,
 		Description: "Minimum remaining seconds to allow when reusing access token.",
+		Query:       true,
 	},
 	// fields for write operation
 	"code": {
@@ -176,12 +178,6 @@ var credsFields = map[string]*framework.FieldSchema{
 	},
 }
 
-// Allow characters not special to urls or shells
-// Derived from framework.GenericNameWithAtRegex
-func credentialNameRegex(name string) string {
-	return fmt.Sprintf(`(?P<%s>\w(([\w.@~!_,:^-]+)?\w)?)`, name)
-}
-
 const credsHelpSynopsis = `
 Provides access tokens for authorized credentials.
 `
@@ -195,7 +191,7 @@ the access token will be available when reading the endpoint.
 
 func pathCreds(b *backend) *framework.Path {
 	return &framework.Path{
-		Pattern: credsPathPrefix + credentialNameRegex("name") + `$`,
+		Pattern: credsPathPrefix + nameRegex("name") + `$`,
 		Fields:  credsFields,
 		Operations: map[logical.Operation]framework.OperationHandler{
 			logical.ReadOperation: &framework.PathOperation{

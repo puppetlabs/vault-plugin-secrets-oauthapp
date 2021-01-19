@@ -2,6 +2,7 @@ package provider
 
 import (
 	"context"
+	"net/url"
 
 	"golang.org/x/oauth2"
 )
@@ -14,42 +15,92 @@ type Token struct {
 	ExtraData map[string]interface{} `json:"extra_data,omitempty"`
 }
 
-// AuthCodeURLConfig is the component of *oauth2.Config required for generating
-// authorization code URLs.
-type AuthCodeURLConfig interface {
-	AuthCodeURL(state string, opts ...oauth2.AuthCodeOption) string
+// AuthCodeURLOptions are options for the AuthCodeURL operation.
+type AuthCodeURLOptions struct {
+	RedirectURL     string
+	Scopes          []string
+	AuthCodeOptions []oauth2.AuthCodeOption
+	ProviderOptions map[string]string
 }
 
-// AuthCodeURLConfigBuilder creates AuthCodeURLConfigs.
-type AuthCodeURLConfigBuilder interface {
-	// WithRedirectURL sets the redirect URL for the config.
-	WithRedirectURL(redirectURL string) AuthCodeURLConfigBuilder
-
-	// WithScopes sets the scopes for the config.
-	WithScopes(scopes ...string) AuthCodeURLConfigBuilder
-
-	// Build creates an AuthCodeURLConfig from the current configuration.
-	Build() AuthCodeURLConfig
+type AuthCodeURLOption interface {
+	ApplyToAuthCodeURLOptions(target *AuthCodeURLOptions)
 }
 
-// ExchangeConfig is the component of *oauth2.Config required to exchange an
-// authorization code for a token.
-type ExchangeConfig interface {
-	Exchange(ctx context.Context, code string, opts ...oauth2.AuthCodeOption) (*Token, error)
-	Refresh(ctx context.Context, t *Token) (*Token, error)
+func (o *AuthCodeURLOptions) ApplyOptions(opts []AuthCodeURLOption) {
+	for _, opt := range opts {
+		opt.ApplyToAuthCodeURLOptions(o)
+	}
 }
 
-// ExchangeConfigBuilder creates ExchangeConfigs.
-type ExchangeConfigBuilder interface {
-	// WithOption sets an exchange-specific option for this provider. If the
-	// provider does not support the given option, it is ignored.
-	WithOption(name, value string) ExchangeConfigBuilder
+// PublicOperations defines the operations for a client that only require
+// knowledge of the client ID.
+type PublicOperations interface {
+	AuthCodeURL(state string, opts ...AuthCodeURLOption) string
+}
 
-	// WithRedirectURL sets the redirect URL for the config.
-	WithRedirectURL(redirectURL string) ExchangeConfigBuilder
+// AuthCodeExchangeOptions are options for the AuthCodeExchange operation.
+type AuthCodeExchangeOptions struct {
+	RedirectURL     string
+	AuthCodeOptions []oauth2.AuthCodeOption
+	ProviderOptions map[string]string
+}
 
-	// Build creates an ExchangeConfig from the current configuration.
-	Build() ExchangeConfig
+type AuthCodeExchangeOption interface {
+	ApplyToAuthCodeExchangeOptions(target *AuthCodeExchangeOptions)
+}
+
+func (o *AuthCodeExchangeOptions) ApplyOptions(opts []AuthCodeExchangeOption) {
+	for _, opt := range opts {
+		opt.ApplyToAuthCodeExchangeOptions(o)
+	}
+}
+
+// RefreshTokenOptions are options for the RefreshToken operation.
+type RefreshTokenOptions struct {
+	ProviderOptions map[string]string
+}
+
+type RefreshTokenOption interface {
+	ApplyToRefreshTokenOptions(target *RefreshTokenOptions)
+}
+
+func (o *RefreshTokenOptions) ApplyOptions(opts []RefreshTokenOption) {
+	for _, opt := range opts {
+		opt.ApplyToRefreshTokenOptions(o)
+	}
+}
+
+// ClientCredentialsOptions are options for the ClientCredentials operation.
+type ClientCredentialsOptions struct {
+	Scopes          []string
+	EndpointParams  url.Values
+	ProviderOptions map[string]string
+}
+
+type ClientCredentialsOption interface {
+	ApplyToClientCredentialsOptions(target *ClientCredentialsOptions)
+}
+
+func (o *ClientCredentialsOptions) ApplyOptions(opts []ClientCredentialsOption) {
+	for _, opt := range opts {
+		opt.ApplyToClientCredentialsOptions(o)
+	}
+}
+
+// PrivateOperations defines the operations for a client that require knowledge
+// of the client ID and client secret.
+type PrivateOperations interface {
+	PublicOperations
+
+	// AuthCodeExchange performs an authorization code flow exchange request.
+	AuthCodeExchange(ctx context.Context, code string, opts ...AuthCodeExchangeOption) (*Token, error)
+
+	// RefreshToken performs a refresh token flow request.
+	RefreshToken(ctx context.Context, t *Token, opts ...RefreshTokenOption) (*Token, error)
+
+	// ClientCredentials performs a client credentials flow request.
+	ClientCredentials(ctx context.Context, opts ...ClientCredentialsOption) (*Token, error)
 }
 
 const VersionLatest = -1
@@ -61,12 +112,13 @@ type Provider interface {
 	// supports.
 	Version() int
 
-	// NewAuthCodeURLConfigBuilder creates a config builder automatically scoped
-	// to this provider with the specified options.
-	NewAuthCodeURLConfigBuilder(clientID string) AuthCodeURLConfigBuilder
+	// Public returns a view of the operations for this provider for the given
+	// client ID.
+	Public(clientID string) PublicOperations
 
-	// NewExchangeConfigBuilder creates a new config builder for token exchange.
-	NewExchangeConfigBuilder(clientID, clientSecret string) ExchangeConfigBuilder
+	// Private returns a complete set of the operations for this provider for
+	// the given client ID and client secret.
+	Private(clientID, clientSecret string) PrivateOperations
 }
 
 var GlobalRegistry = NewRegistry()

@@ -23,14 +23,14 @@ func TestPeriodicRefresh(t *testing.T) {
 
 	var ti int32
 
-	exchange := testutil.RestrictMockExchange(map[string]testutil.MockExchangeFunc{
-		"first": testutil.RandomMockExchange,
-		"second": testutil.RefreshableMockExchange(
-			testutil.IncrementMockExchange("second_"),
+	exchange := testutil.RestrictMockAuthCodeExchange(map[string]testutil.MockAuthCodeExchangeFunc{
+		"first": testutil.RandomMockAuthCodeExchange,
+		"second": testutil.RefreshableMockAuthCodeExchange(
+			testutil.IncrementMockAuthCodeExchange("second_"),
 			func(_ int) (time.Duration, error) { return 30 * time.Minute, nil },
 		),
-		"third": testutil.RefreshableMockExchange(
-			testutil.IncrementMockExchange("third_"),
+		"third": testutil.RefreshableMockAuthCodeExchange(
+			testutil.IncrementMockAuthCodeExchange("third_"),
 			func(i int) (time.Duration, error) {
 				atomic.StoreInt32(&ti, int32(i))
 
@@ -44,8 +44,8 @@ func TestPeriodicRefresh(t *testing.T) {
 				}
 			},
 		),
-		"fourth": testutil.RefreshableMockExchange(
-			testutil.IncrementMockExchange("fourth_"),
+		"fourth": testutil.RefreshableMockAuthCodeExchange(
+			testutil.IncrementMockAuthCodeExchange("fourth_"),
 			func(i int) (time.Duration, error) {
 				atomic.StoreInt32(&ti, int32(i))
 
@@ -56,7 +56,7 @@ func TestPeriodicRefresh(t *testing.T) {
 	})
 
 	pr := provider.NewRegistry()
-	pr.MustRegister("mock", testutil.MockFactory(testutil.MockWithExchange(client, exchange)))
+	pr.MustRegister("mock", testutil.MockFactory(testutil.MockWithAuthCodeExchange(client, exchange)))
 
 	storage := &logical.InmemStorage{}
 

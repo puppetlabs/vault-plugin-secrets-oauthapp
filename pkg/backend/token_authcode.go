@@ -2,7 +2,6 @@ package backend
 
 import (
 	"context"
-	"time"
 
 	"github.com/hashicorp/vault/sdk/framework"
 	"github.com/hashicorp/vault/sdk/helper/locksutil"
@@ -10,24 +9,7 @@ import (
 	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/pkg/provider"
 )
 
-func tokenValid(tok *provider.Token, data *framework.FieldData) bool {
-	if !tok.Valid() {
-		return false
-	}
-	if data == nil {
-		return true
-	}
-	if minsecondsstr, ok := data.GetOk("minimum_seconds"); ok {
-		minseconds := minsecondsstr.(int)
-		zeroTime := time.Time{}
-		if tok.Expiry != zeroTime && time.Until(tok.Expiry).Seconds() < float64(minseconds) {
-			return false
-		}
-	}
-	return true
-}
-
-func getTokenLocked(ctx context.Context, storage logical.Storage, key string) (*provider.Token, error) {
+func getAuthCodeTokenLocked(ctx context.Context, storage logical.Storage, key string) (*provider.Token, error) {
 	entry, err := storage.Get(ctx, key)
 	if err != nil {
 		return nil, err
@@ -43,22 +25,22 @@ func getTokenLocked(ctx context.Context, storage logical.Storage, key string) (*
 	return tok, nil
 }
 
-func (b *backend) getToken(ctx context.Context, storage logical.Storage, key string) (*provider.Token, error) {
+func (b *backend) getAuthCodeToken(ctx context.Context, storage logical.Storage, key string) (*provider.Token, error) {
 	lock := locksutil.LockForKey(b.locks, key)
 	lock.RLock()
 	defer lock.RUnlock()
 
-	return getTokenLocked(ctx, storage, key)
+	return getAuthCodeTokenLocked(ctx, storage, key)
 }
 
-func (b *backend) refreshToken(ctx context.Context, storage logical.Storage, key string, data *framework.FieldData) (*provider.Token, error) {
+func (b *backend) refreshAuthCodeToken(ctx context.Context, storage logical.Storage, key string, data *framework.FieldData) (*provider.Token, error) {
 	lock := locksutil.LockForKey(b.locks, key)
 	lock.Lock()
 	defer lock.Unlock()
 
 	// In case someone else refreshed this token from under us, we'll re-request
 	// it here with the lock acquired.
-	tok, err := getTokenLocked(ctx, storage, key)
+	tok, err := getAuthCodeTokenLocked(ctx, storage, key)
 	switch {
 	case err != nil:
 		return nil, err
@@ -68,8 +50,6 @@ func (b *backend) refreshToken(ctx context.Context, storage logical.Storage, key
 		return tok, nil
 	}
 
-	tok.AccessToken = ""
-
 	c, err := b.getCache(ctx, storage)
 	if err != nil {
 		return nil, err
@@ -78,9 +58,7 @@ func (b *backend) refreshToken(ctx context.Context, storage logical.Storage, key
 	}
 
 	// Refresh.
-	refreshed, err := c.Provider.NewExchangeConfigBuilder(c.Config.ClientID, c.Config.ClientSecret).
-		Build().
-		Refresh(ctx, tok)
+	refreshed, err := c.Provider.Private(c.Config.ClientID, c.Config.ClientSecret).RefreshToken(ctx, tok)
 	if err != nil {
 		b.logger.Warn("unable to refresh token", "key", key, "error", err)
 		return tok, nil
@@ -99,8 +77,8 @@ func (b *backend) refreshToken(ctx context.Context, storage logical.Storage, key
 	return refreshed, nil
 }
 
-func (b *backend) getRefreshToken(ctx context.Context, storage logical.Storage, key string, data *framework.FieldData) (*provider.Token, error) {
-	tok, err := b.getToken(ctx, storage, key)
+func (b *backend) getRefreshAuthCodeToken(ctx context.Context, storage logical.Storage, key string, data *framework.FieldData) (*provider.Token, error) {
+	tok, err := b.getAuthCodeToken(ctx, storage, key)
 	if err != nil {
 		return nil, err
 	} else if tok == nil {
@@ -108,7 +86,7 @@ func (b *backend) getRefreshToken(ctx context.Context, storage logical.Storage, 
 	}
 
 	if !tokenValid(tok, data) {
-		return b.refreshToken(ctx, storage, key, data)
+		return b.refreshAuthCodeToken(ctx, storage, key, data)
 	}
 
 	return tok, nil
@@ -119,7 +97,7 @@ func (b *backend) refreshPeriodic(ctx context.Context, req *logical.Request) err
 	return logical.ScanView(ctx, view, func(path string) {
 		key := view.ExpandKey(path)
 
-		if _, err := b.getRefreshToken(ctx, req.Storage, key, nil); err != nil {
+		if _, err := b.getRefreshAuthCodeToken(ctx, req.Storage, key, nil); err != nil {
 			b.logger.Error("unable to refresh token", "key", key, "error", err)
 		}
 	})

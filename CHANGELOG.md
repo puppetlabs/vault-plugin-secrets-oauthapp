@@ -8,10 +8,21 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+* The OAuth 2.0 client credentials flow is now supported using the new `self`
+  endpoints.
+
 ### Fixed
 
 * Errors caused by configuration problems in the OIDC provider are now correctly
   propagated to the HTTP response with a 400 status code.
+* The `nonce` provider option for the OIDC authorization code exchange is now
+  passed to the ID token verification routine.
+* Nonce validation is only performed during OIDC authorization code exchange or
+  refresh token flow if the plugin user specifies a nonce to validate against;
+  otherwise, it is assumed that the nonce data is invalid or non-conforming to
+  the OpenID Connect Core specification.
 
 ### Changed
 

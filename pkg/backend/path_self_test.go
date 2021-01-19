@@ -3,6 +3,7 @@ package backend
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -13,7 +14,7 @@ import (
 	"golang.org/x/oauth2"
 )
 
-func TestBasicAuthCodeExchange(t *testing.T) {
+func TestBasicClientCredentials(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
@@ -29,7 +30,7 @@ func TestBasicAuthCodeExchange(t *testing.T) {
 	}
 
 	pr := provider.NewRegistry()
-	pr.MustRegister("mock", testutil.MockFactory(testutil.MockWithAuthCodeExchange(client, testutil.StaticMockAuthCodeExchange(token))))
+	pr.MustRegister("mock", testutil.MockFactory(testutil.MockWithClientCredentials(client, testutil.StaticMockClientCredentials(token))))
 
 	storage := &logical.InmemStorage{}
 
@@ -53,25 +54,10 @@ func TestBasicAuthCodeExchange(t *testing.T) {
 	require.False(t, resp != nil && resp.IsError(), "response has error: %+v", resp.Error())
 	require.Nil(t, resp)
 
-	// Write a valid credential.
-	req = &logical.Request{
-		Operation: logical.UpdateOperation,
-		Path:      credsPathPrefix + `test`,
-		Storage:   storage,
-		Data: map[string]interface{}{
-			"code": "test",
-		},
-	}
-
-	resp, err = b.HandleRequest(ctx, req)
-	require.NoError(t, err)
-	require.False(t, resp != nil && resp.IsError(), "response has error: %+v", resp.Error())
-	require.Nil(t, resp)
-
-	// Read the corresponding access token.
+	// Read the credential.
 	req = &logical.Request{
 		Operation: logical.ReadOperation,
-		Path:      credsPathPrefix + `test`,
+		Path:      selfPathPrefix + `test`,
 		Storage:   storage,
 	}
 
@@ -84,7 +70,7 @@ func TestBasicAuthCodeExchange(t *testing.T) {
 	require.Empty(t, resp.Data["expire_time"])
 }
 
-func TestInvalidAuthCodeExchange(t *testing.T) {
+func TestConfiguredClientCredentials(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
@@ -93,12 +79,16 @@ func TestInvalidAuthCodeExchange(t *testing.T) {
 		Secret: "def",
 	}
 
-	exchange := testutil.RestrictMockAuthCodeExchange(map[string]testutil.MockAuthCodeExchangeFunc{
-		"valid": testutil.RandomMockAuthCodeExchange,
-	})
+	handler := func(opts *provider.ClientCredentialsOptions) (*provider.Token, error) {
+		return &provider.Token{
+			Token: &oauth2.Token{
+				AccessToken: fmt.Sprintf("%s:%s", strings.Join(opts.Scopes, "."), opts.EndpointParams.Get("baz")),
+			},
+		}, nil
+	}
 
 	pr := provider.NewRegistry()
-	pr.MustRegister("mock", testutil.MockFactory(testutil.MockWithAuthCodeExchange(client, exchange)))
+	pr.MustRegister("mock", testutil.MockFactory(testutil.MockWithClientCredentials(client, handler)))
 
 	storage := &logical.InmemStorage{}
 
@@ -122,23 +112,41 @@ func TestInvalidAuthCodeExchange(t *testing.T) {
 	require.False(t, resp != nil && resp.IsError(), "response has error: %+v", resp.Error())
 	require.Nil(t, resp)
 
-	// Write an invalid credential.
+	// Write credential configuration.
 	req = &logical.Request{
 		Operation: logical.UpdateOperation,
-		Path:      credsPathPrefix + `test`,
+		Path:      selfPathPrefix + `test/config`,
 		Storage:   storage,
 		Data: map[string]interface{}{
-			"code": "invalid",
+			"scopes": []interface{}{"foo", "bar"},
+			"token_url_params": map[string]interface{}{
+				"baz": "quux",
+			},
 		},
+	}
+
+	resp, err = b.HandleRequest(ctx, req)
+	require.NoError(t, err)
+	require.False(t, resp != nil && resp.IsError(), "response has error: %+v", resp.Error())
+	require.Nil(t, resp)
+
+	// Read the credential.
+	req = &logical.Request{
+		Operation: logical.ReadOperation,
+		Path:      selfPathPrefix + `test`,
+		Storage:   storage,
 	}
 
 	resp, err = b.HandleRequest(ctx, req)
 	require.NoError(t, err)
 	require.NotNil(t, resp)
-	require.EqualError(t, resp.Error(), "exchange failed: oauth2: cannot fetch token: Forbidden\nResponse: ")
+	require.False(t, resp.IsError(), "response has error: %+v", resp.Error())
+	require.Equal(t, "foo.bar:quux", resp.Data["access_token"])
+	require.Equal(t, "Bearer", resp.Data["type"])
+	require.Empty(t, resp.Data["expire_time"])
 }
 
-func TestRefreshableAuthCodeExchange(t *testing.T) {
+func TestExpiredClientCredentials(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
@@ -147,21 +155,20 @@ func TestRefreshableAuthCodeExchange(t *testing.T) {
 		Secret: "def",
 	}
 
-	refresh := func(i int) (time.Duration, error) {
-		switch i {
-		case 1:
-			// Start with a short duration, which will force a refresh within
-			// the library's grace period (< 10 seconds to expiry).
-			return 2 * time.Second, nil
+	var handled bool
+	handler := testutil.AmendTokenMockClientCredentials(testutil.IncrementMockClientCredentials("token_"), func(t *provider.Token) error {
+		switch handled {
+		case true:
+			t.Expiry = time.Now().Add(30 * time.Second)
 		default:
-			return 10 * time.Minute, nil
+			t.Expiry = time.Now().Add(2 * time.Second)
+			handled = true
 		}
-	}
-
-	exchange := testutil.RefreshableMockAuthCodeExchange(testutil.IncrementMockAuthCodeExchange("token_"), refresh)
+		return nil
+	})
 
 	pr := provider.NewRegistry()
-	pr.MustRegister("mock", testutil.MockFactory(testutil.MockWithAuthCodeExchange(client, exchange)))
+	pr.MustRegister("mock", testutil.MockFactory(testutil.MockWithClientCredentials(client, handler)))
 
 	storage := &logical.InmemStorage{}
 
@@ -185,13 +192,13 @@ func TestRefreshableAuthCodeExchange(t *testing.T) {
 	require.False(t, resp != nil && resp.IsError(), "response has error: %+v", resp.Error())
 	require.Nil(t, resp)
 
-	// Write a valid credential.
+	// Write credential configuration.
 	req = &logical.Request{
 		Operation: logical.UpdateOperation,
-		Path:      credsPathPrefix + `test`,
+		Path:      selfPathPrefix + `test/config`,
 		Storage:   storage,
 		Data: map[string]interface{}{
-			"code": "test",
+			"scopes": []interface{}{"foo", "bar"},
 		},
 	}
 
@@ -200,12 +207,11 @@ func TestRefreshableAuthCodeExchange(t *testing.T) {
 	require.False(t, resp != nil && resp.IsError(), "response has error: %+v", resp.Error())
 	require.Nil(t, resp)
 
-	// Read the corresponding access token. This should force a refresh, meaning
-	// that our token value will be "token_2" (rather than the initial value of
-	// "token_1").
+	// Read the credential. Because our initial expiry is so small, this should
+	// force the token to update.
 	req = &logical.Request{
 		Operation: logical.ReadOperation,
-		Path:      credsPathPrefix + `test`,
+		Path:      selfPathPrefix + `test`,
 		Storage:   storage,
 	}
 
@@ -216,81 +222,4 @@ func TestRefreshableAuthCodeExchange(t *testing.T) {
 	require.Equal(t, "token_2", resp.Data["access_token"])
 	require.Equal(t, "Bearer", resp.Data["type"])
 	require.NotEmpty(t, resp.Data["expire_time"])
-}
-
-func TestRefreshFailureReturnsNotConfigured(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	client := testutil.MockClient{
-		ID:     "abc",
-		Secret: "def",
-	}
-
-	refresh := func(i int) (time.Duration, error) {
-		switch i {
-		case 1:
-			// Start with a short duration, which will force a refresh within
-			// the library's grace period (< 10 seconds to expiry).
-			return 2 * time.Second, nil
-		default:
-			// Now we'll force a refresh failure.
-			return 0, fmt.Errorf("you are not welcome")
-		}
-	}
-
-	exchange := testutil.RefreshableMockAuthCodeExchange(testutil.IncrementMockAuthCodeExchange("token_"), refresh)
-
-	pr := provider.NewRegistry()
-	pr.MustRegister("mock", testutil.MockFactory(testutil.MockWithAuthCodeExchange(client, exchange)))
-
-	storage := &logical.InmemStorage{}
-
-	b := New(Options{ProviderRegistry: pr})
-	require.NoError(t, b.Setup(ctx, &logical.BackendConfig{}))
-
-	// Write configuration.
-	req := &logical.Request{
-		Operation: logical.UpdateOperation,
-		Path:      configPath,
-		Storage:   storage,
-		Data: map[string]interface{}{
-			"client_id":     client.ID,
-			"client_secret": client.Secret,
-			"provider":      "mock",
-		},
-	}
-
-	resp, err := b.HandleRequest(ctx, req)
-	require.NoError(t, err)
-	require.False(t, resp != nil && resp.IsError(), "response has error: %+v", resp.Error())
-	require.Nil(t, resp)
-
-	// Write a valid credential.
-	req = &logical.Request{
-		Operation: logical.UpdateOperation,
-		Path:      credsPathPrefix + `test`,
-		Storage:   storage,
-		Data: map[string]interface{}{
-			"code": "test",
-		},
-	}
-
-	resp, err = b.HandleRequest(ctx, req)
-	require.NoError(t, err)
-	require.False(t, resp != nil && resp.IsError(), "response has error: %+v", resp.Error())
-	require.Nil(t, resp)
-
-	// Read the corresponding access token. This should force a refresh, which
-	// should now return an invalidation from the server.
-	req = &logical.Request{
-		Operation: logical.ReadOperation,
-		Path:      credsPathPrefix + `test`,
-		Storage:   storage,
-	}
-
-	resp, err = b.HandleRequest(ctx, req)
-	require.NoError(t, err)
-	require.NotNil(t, resp)
-	require.EqualError(t, resp.Error(), "token expired")
 }

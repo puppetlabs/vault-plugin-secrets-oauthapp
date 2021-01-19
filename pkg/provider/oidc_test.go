@@ -80,7 +80,10 @@ func TestOIDCFlow(t *testing.T) {
 				Expiry:   jwt.NewNumericDate(time.Now().Add(time.Hour)),
 			}
 
-			idToken, err := jwt.Signed(signer).Claims(idClaims).CompactSerialize()
+			idToken, err := jwt.Signed(signer).
+				Claims(idClaims).
+				Claims(map[string]interface{}{"nonce": "baz"}).
+				CompactSerialize()
 			require.NoError(t, err)
 
 			resp := make(url.Values)
@@ -112,12 +115,15 @@ func TestOIDCFlow(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	conf := oidcTest.NewExchangeConfigBuilder("foo", "bar").
-		WithOption("nonce", "baz").
-		WithRedirectURL("http://example.com/redirect").
-		Build()
+	ops := oidcTest.Private("foo", "bar")
 
-	token, err := conf.Exchange(ctx, "123456", oauth2.SetAuthURLParam("baz", "quux"))
+	token, err := ops.AuthCodeExchange(
+		ctx,
+		"123456",
+		provider.WithRedirectURL("http://example.com/redirect"),
+		provider.WithProviderOptions{"nonce": "baz"},
+		provider.WithURLParams{"baz": "quux"},
+	)
 	require.NoError(t, err)
 	require.NotNil(t, token)
 	assert.Equal(t, "abcd", token.AccessToken)

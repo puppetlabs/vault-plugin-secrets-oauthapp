@@ -41,17 +41,24 @@ type MockClient struct {
 	Secret string
 }
 
-type MockExchangeFunc func(code string) (*provider.Token, error)
+type MockAuthCodeExchangeFunc func(code string, opts *provider.AuthCodeExchangeOptions) (*provider.Token, error)
+type MockClientCredentialsFunc func(opts *provider.ClientCredentialsOptions) (*provider.Token, error)
 
-func StaticMockExchange(token *provider.Token) MockExchangeFunc {
-	return func(_ string) (*provider.Token, error) {
+func StaticMockAuthCodeExchange(token *provider.Token) MockAuthCodeExchangeFunc {
+	return func(_ string, _ *provider.AuthCodeExchangeOptions) (*provider.Token, error) {
 		return token, nil
 	}
 }
 
-func AmendTokenMockExchange(get MockExchangeFunc, amend func(token *provider.Token) error) MockExchangeFunc {
-	return func(candidate string) (*provider.Token, error) {
-		token, err := get(candidate)
+func StaticMockClientCredentials(token *provider.Token) MockClientCredentialsFunc {
+	return func(_ *provider.ClientCredentialsOptions) (*provider.Token, error) {
+		return token, nil
+	}
+}
+
+func AmendTokenMockAuthCodeExchange(get MockAuthCodeExchangeFunc, amend func(token *provider.Token) error) MockAuthCodeExchangeFunc {
+	return func(candidate string, opts *provider.AuthCodeExchangeOptions) (*provider.Token, error) {
+		token, err := get(candidate, opts)
 		if err != nil {
 			return nil, err
 		}
@@ -64,8 +71,23 @@ func AmendTokenMockExchange(get MockExchangeFunc, amend func(token *provider.Tok
 	}
 }
 
-func ExpiringMockExchange(fn MockExchangeFunc, duration time.Duration) MockExchangeFunc {
-	return AmendTokenMockExchange(fn, func(t *provider.Token) error {
+func AmendTokenMockClientCredentials(get MockClientCredentialsFunc, amend func(token *provider.Token) error) MockClientCredentialsFunc {
+	return func(opts *provider.ClientCredentialsOptions) (*provider.Token, error) {
+		token, err := get(opts)
+		if err != nil {
+			return nil, err
+		}
+
+		if err := amend(token); err != nil {
+			return nil, err
+		}
+
+		return token, nil
+	}
+}
+
+func ExpiringMockAuthCodeExchange(fn MockAuthCodeExchangeFunc, duration time.Duration) MockAuthCodeExchangeFunc {
+	return AmendTokenMockAuthCodeExchange(fn, func(t *provider.Token) error {
 		t.Expiry = time.Now().Add(duration)
 		return nil
 	})
@@ -80,11 +102,11 @@ func randomToken(n int) string {
 	return hex.EncodeToString(b)
 }
 
-func RefreshableMockExchange(fn MockExchangeFunc, step func(i int) (time.Duration, error)) MockExchangeFunc {
+func RefreshableMockAuthCodeExchange(fn MockAuthCodeExchangeFunc, step func(i int) (time.Duration, error)) MockAuthCodeExchangeFunc {
 	refreshToken := randomToken(40)
 	var i int32
 
-	return AmendTokenMockExchange(fn, func(t *provider.Token) error {
+	return AmendTokenMockAuthCodeExchange(fn, func(t *provider.Token) error {
 		exp, err := step(int(atomic.AddInt32(&i, 1)))
 		if err != nil {
 			return err
@@ -96,17 +118,17 @@ func RefreshableMockExchange(fn MockExchangeFunc, step func(i int) (time.Duratio
 	})
 }
 
-func RandomMockExchange(_ string) (*provider.Token, error) {
+func RandomMockAuthCodeExchange(_ string, _ *provider.AuthCodeExchangeOptions) (*provider.Token, error) {
 	t := &oauth2.Token{
 		AccessToken: randomToken(10),
 	}
 	return &provider.Token{Token: t}, nil
 }
 
-func IncrementMockExchange(prefix string) MockExchangeFunc {
+func IncrementMockAuthCodeExchange(prefix string) MockAuthCodeExchangeFunc {
 	var i int32
 
-	return func(_ string) (*provider.Token, error) {
+	return func(_ string, _ *provider.AuthCodeExchangeOptions) (*provider.Token, error) {
 		t := &oauth2.Token{
 			AccessToken: fmt.Sprintf("%s%d", prefix, atomic.AddInt32(&i, 1)),
 		}
@@ -114,83 +136,99 @@ func IncrementMockExchange(prefix string) MockExchangeFunc {
 	}
 }
 
-func ErrorMockExchange(_ string) (*provider.Token, error) {
+func IncrementMockClientCredentials(prefix string) MockClientCredentialsFunc {
+	var i int32
+
+	return func(_ *provider.ClientCredentialsOptions) (*provider.Token, error) {
+		t := &oauth2.Token{
+			AccessToken: fmt.Sprintf("%s%d", prefix, atomic.AddInt32(&i, 1)),
+		}
+		return &provider.Token{Token: t}, nil
+	}
+}
+
+func ErrorMockAuthCodeExchange(_ string, _ *provider.AuthCodeExchangeOptions) (*provider.Token, error) {
 	return nil, &oauth2.RetrieveError{Response: &http.Response{Status: http.StatusText(http.StatusForbidden)}}
 }
 
-func RestrictMockExchange(m map[string]MockExchangeFunc) MockExchangeFunc {
-	return func(token string) (*provider.Token, error) {
+func RestrictMockAuthCodeExchange(m map[string]MockAuthCodeExchangeFunc) MockAuthCodeExchangeFunc {
+	return func(token string, opts *provider.AuthCodeExchangeOptions) (*provider.Token, error) {
 		fn, found := m[token]
 		if !found {
-			fn = ErrorMockExchange
+			fn = ErrorMockAuthCodeExchange
 		}
 
-		return fn(token)
+		return fn(token, opts)
 	}
 }
 
-type mockExchangeConfig struct {
-	owner *mock
-	fn    MockExchangeFunc
+type mockOperations struct {
+	clientID            string
+	owner               *mock
+	authCodeExchangeFn  MockAuthCodeExchangeFunc
+	clientCredentialsFn MockClientCredentialsFunc
 }
 
-func (c *mockExchangeConfig) Exchange(ctx context.Context, code string, opts ...oauth2.AuthCodeOption) (*provider.Token, error) {
-	if c.fn == nil {
+func (mo *mockOperations) AuthCodeURL(state string, opts ...provider.AuthCodeURLOption) string {
+	o := &provider.AuthCodeURLOptions{}
+	o.ApplyOptions(opts)
+
+	return (&oauth2.Config{
+		ClientID:    mo.clientID,
+		Endpoint:    MockEndpoint,
+		Scopes:      o.Scopes,
+		RedirectURL: o.RedirectURL,
+	}).AuthCodeURL(state, o.AuthCodeOptions...)
+}
+
+func (mo *mockOperations) AuthCodeExchange(ctx context.Context, code string, opts ...provider.AuthCodeExchangeOption) (*provider.Token, error) {
+	if mo.authCodeExchangeFn == nil {
 		return nil, &oauth2.RetrieveError{Response: &http.Response{Status: http.StatusText(http.StatusInternalServerError)}}
 	}
 
-	tok, err := c.fn(code)
+	o := &provider.AuthCodeExchangeOptions{}
+	o.ApplyOptions(opts)
+
+	tok, err := mo.authCodeExchangeFn(code, o)
 	if err != nil {
 		return nil, err
 	}
 
 	if tok.RefreshToken != "" {
-		c.owner.putRefreshTokenCode(tok.RefreshToken, code)
+		mo.owner.putRefreshTokenCode(tok.RefreshToken, code)
 	}
 
 	return tok, nil
 }
 
-func (c *mockExchangeConfig) Refresh(ctx context.Context, t *provider.Token) (*provider.Token, error) {
-	if t.RefreshToken == "" || c.fn == nil {
+func (mo *mockOperations) RefreshToken(ctx context.Context, t *provider.Token, opts ...provider.RefreshTokenOption) (*provider.Token, error) {
+	if t.RefreshToken == "" || mo.authCodeExchangeFn == nil {
 		return t, nil
 	}
 
-	code, ok := c.owner.getRefreshTokenCode(t.RefreshToken)
+	code, ok := mo.owner.getRefreshTokenCode(t.RefreshToken)
 	if !ok {
 		return t, nil
 	}
 
-	if t.Valid() {
-		return t, nil
+	o := &provider.RefreshTokenOptions{}
+	o.ApplyOptions(opts)
+
+	// TODO: It feels wrong to map one option type to another like this.
+	return mo.authCodeExchangeFn(code, &provider.AuthCodeExchangeOptions{
+		ProviderOptions: o.ProviderOptions,
+	})
+}
+
+func (mo *mockOperations) ClientCredentials(ctx context.Context, opts ...provider.ClientCredentialsOption) (*provider.Token, error) {
+	if mo.clientCredentialsFn == nil {
+		return nil, &oauth2.RetrieveError{Response: &http.Response{Status: http.StatusText(http.StatusInternalServerError)}}
 	}
 
-	tok, err := c.fn(code)
-	if err != nil {
-		return nil, err
-	}
+	o := &provider.ClientCredentialsOptions{}
+	o.ApplyOptions(opts)
 
-	return tok, nil
-}
-
-type mockExchangeConfigBuilder struct {
-	owner  *mock
-	client MockClient
-}
-
-func (cb *mockExchangeConfigBuilder) WithOption(name, value string) provider.ExchangeConfigBuilder {
-	return cb
-}
-
-func (cb *mockExchangeConfigBuilder) WithRedirectURL(_ string) provider.ExchangeConfigBuilder {
-	return cb
-}
-
-func (cb *mockExchangeConfigBuilder) Build() provider.ExchangeConfig {
-	return &mockExchangeConfig{
-		owner: cb.owner,
-		fn:    cb.owner.exchanges[cb.client],
-	}
+	return mo.clientCredentialsFn(o)
 }
 
 type mockProvider struct {
@@ -201,26 +239,28 @@ func (mp *mockProvider) Version() int {
 	return mp.owner.vsn
 }
 
-func (mp *mockProvider) NewAuthCodeURLConfigBuilder(clientID string) provider.AuthCodeURLConfigBuilder {
-	return provider.NewConformingAuthCodeURLConfigBuilder(MockEndpoint, clientID)
+func (mp *mockProvider) Public(clientID string) provider.PublicOperations {
+	return mp.Private(clientID, "")
 }
 
-func (mp *mockProvider) NewExchangeConfigBuilder(clientID, clientSecret string) provider.ExchangeConfigBuilder {
-	return &mockExchangeConfigBuilder{
-		client: MockClient{
-			ID:     clientID,
-			Secret: clientSecret,
-		},
-		owner: mp.owner,
+func (mp *mockProvider) Private(clientID, clientSecret string) provider.PrivateOperations {
+	mc := MockClient{ID: clientID, Secret: clientSecret}
+
+	return &mockOperations{
+		clientID:            clientID,
+		authCodeExchangeFn:  mp.owner.authCodeExchangeFns[mc],
+		clientCredentialsFn: mp.owner.clientCredentialsFns[mc],
+		owner:               mp.owner,
 	}
 }
 
 type mock struct {
-	vsn          int
-	expectedOpts map[string]string
-	exchanges    map[MockClient]MockExchangeFunc
-	refresh      map[string]string
-	refreshMut   sync.RWMutex
+	vsn                  int
+	expectedOpts         map[string]string
+	authCodeExchangeFns  map[MockClient]MockAuthCodeExchangeFunc
+	clientCredentialsFns map[MockClient]MockClientCredentialsFunc
+	refresh              map[string]string
+	refreshMut           sync.RWMutex
 }
 
 func (m *mock) factory(ctx context.Context, vsn int, options map[string]string) (provider.Provider, error) {
@@ -282,17 +322,24 @@ func MockWithExpectedOptionValue(opt, value string) MockOption {
 	}
 }
 
-func MockWithExchange(client MockClient, fn MockExchangeFunc) MockOption {
+func MockWithAuthCodeExchange(client MockClient, fn MockAuthCodeExchangeFunc) MockOption {
 	return func(m *mock) {
-		m.exchanges[client] = fn
+		m.authCodeExchangeFns[client] = fn
+	}
+}
+
+func MockWithClientCredentials(client MockClient, fn MockClientCredentialsFunc) MockOption {
+	return func(m *mock) {
+		m.clientCredentialsFns[client] = fn
 	}
 }
 
 func MockFactory(opts ...MockOption) provider.FactoryFunc {
 	m := &mock{
-		expectedOpts: make(map[string]string),
-		exchanges:    make(map[MockClient]MockExchangeFunc),
-		refresh:      make(map[string]string),
+		expectedOpts:         make(map[string]string),
+		authCodeExchangeFns:  make(map[MockClient]MockAuthCodeExchangeFunc),
+		clientCredentialsFns: make(map[MockClient]MockClientCredentialsFunc),
+		refresh:              make(map[string]string),
 	}
 
 	MockWithVersion(1)(m)
