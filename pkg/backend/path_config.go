@@ -104,13 +104,16 @@ func (b *backend) configAuthCodeURLUpdateOperation(ctx context.Context, req *log
 		return logical.ErrorResponse("missing state"), nil
 	}
 
-	url := c.Provider.Public(c.Config.ClientID).AuthCodeURL(
+	url, ok := c.Provider.Public(c.Config.ClientID).AuthCodeURL(
 		state.(string),
 		provider.WithRedirectURL(data.Get("redirect_url").(string)),
 		provider.WithScopes(data.Get("scopes").([]string)),
 		provider.WithURLParams(data.Get("auth_url_params").(map[string]string)),
 		provider.WithURLParams(c.Config.AuthURLParams),
 	)
+	if !ok {
+		return logical.ErrorResponse("authorization code URL not available"), nil
+	}
 
 	resp := &logical.Response{
 		Data: map[string]interface{}{

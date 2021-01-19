@@ -29,7 +29,11 @@ type basicOperations struct {
 	base *oauth2.Config
 }
 
-func (bo *basicOperations) AuthCodeURL(state string, opts ...AuthCodeURLOption) string {
+func (bo *basicOperations) AuthCodeURL(state string, opts ...AuthCodeURLOption) (string, bool) {
+	if bo.base.Endpoint.AuthURL == "" {
+		return "", false
+	}
+
 	o := &AuthCodeURLOptions{}
 	o.ApplyOptions(opts)
 
@@ -38,7 +42,7 @@ func (bo *basicOperations) AuthCodeURL(state string, opts ...AuthCodeURLOption) 
 	cfg.Scopes = o.Scopes
 	cfg.RedirectURL = o.RedirectURL
 
-	return cfg.AuthCodeURL(state, o.AuthCodeOptions...)
+	return cfg.AuthCodeURL(state, o.AuthCodeOptions...), true
 }
 
 func (bo *basicOperations) AuthCodeExchange(ctx context.Context, code string, opts ...AuthCodeExchangeOption) (*Token, error) {
@@ -173,10 +177,6 @@ func CustomFactory(ctx context.Context, vsn int, opts map[string]string) (Provid
 		}
 	default:
 		return nil, ErrNoProviderWithVersion
-	}
-
-	if opts["auth_code_url"] == "" {
-		return nil, &OptionError{Option: "auth_code_url", Message: "authorization code URL is required"}
 	}
 
 	if opts["token_url"] == "" {

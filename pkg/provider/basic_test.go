@@ -32,12 +32,15 @@ func TestBasicPublic(t *testing.T) {
 
 	ops := basicTest.Public("foo")
 
-	u, err := url.Parse(ops.AuthCodeURL(
+	authCodeURL, ok := ops.AuthCodeURL(
 		"state",
 		provider.WithRedirectURL("http://example.com/redirect"),
 		provider.WithScopes{"a", "b", "c"},
 		provider.WithURLParams{"baz": "quux"},
-	))
+	)
+	require.True(t, ok)
+
+	u, err := url.Parse(authCodeURL)
 	require.NoError(t, err)
 
 	assert.Equal(t, "http", u.Scheme)

@@ -36,7 +36,7 @@ func (o *AuthCodeURLOptions) ApplyOptions(opts []AuthCodeURLOption) {
 // PublicOperations defines the operations for a client that only require
 // knowledge of the client ID.
 type PublicOperations interface {
-	AuthCodeURL(state string, opts ...AuthCodeURLOption) string
+	AuthCodeURL(state string, opts ...AuthCodeURLOption) (string, bool)
 }
 
 // AuthCodeExchangeOptions are options for the AuthCodeExchange operation.

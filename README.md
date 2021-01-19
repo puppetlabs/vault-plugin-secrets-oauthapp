@@ -141,7 +141,9 @@ tokens.
 
 #### `PUT` (`write`)
 
-Retrieve an authorization code URL for the given state.
+Retrieve an authorization code URL for the given state. Some providers may not
+provide the plugin with information about this URL, in which case accessing this
+endpoint will return an error.
 
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|----------|
@@ -284,6 +286,6 @@ arbitrary OAuth 2 authorization code grant flow.
 
 | Name | Description | Default | Required |
 |------|-------------|---------|----------|
-| `auth_code_url` | The URL to submit the initial authorization code request to. | None | Yes |
+| `auth_code_url` | The URL to submit the initial authorization code request to. | None | No |
 | `token_url` | The URL to use for exchanging temporary codes and refreshing access tokens. | None | Yes |
 | `auth_style` | How to authenticate to the token URL. If specified, must be one of `in_header` or `in_params`. | Automatically detect | No |
