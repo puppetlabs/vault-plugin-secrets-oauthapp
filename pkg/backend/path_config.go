@@ -2,12 +2,13 @@ package backend
 
 import (
 	"context"
+	"errors"
 	"strings"
 
 	"github.com/hashicorp/vault/sdk/framework"
 	"github.com/hashicorp/vault/sdk/logical"
+	"github.com/puppetlabs/leg/errmap/pkg/errmark"
 	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/pkg/provider"
-	"golang.org/x/oauth2"
 )
 
 func (b *backend) configReadOperation(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
@@ -49,8 +50,10 @@ func (b *backend) configUpdateOperation(ctx context.Context, req *logical.Reques
 	providerOptions := data.Get("provider_options").(map[string]string)
 
 	p, err := b.providerRegistry.New(ctx, providerName.(string), providerOptions)
-	if err == provider.ErrNoSuchProvider {
+	if errors.Is(err, provider.ErrNoSuchProvider) {
 		return logical.ErrorResponse("provider %q does not exist", providerName), nil
+	} else if errmark.MarkedUser(err) {
+		return logical.ErrorResponse(errmark.MarkShort(err).Error()), nil
 	} else if err != nil {
 		return nil, err
 	}
@@ -101,25 +104,16 @@ func (b *backend) configAuthCodeURLUpdateOperation(ctx context.Context, req *log
 		return logical.ErrorResponse("missing state"), nil
 	}
 
-	cb := c.Provider.NewAuthCodeURLConfigBuilder(c.Config.ClientID)
-
-	if redirectURL, ok := data.GetOk("redirect_url"); ok {
-		cb = cb.WithRedirectURL(redirectURL.(string))
+	url, ok := c.Provider.Public(c.Config.ClientID).AuthCodeURL(
+		state.(string),
+		provider.WithRedirectURL(data.Get("redirect_url").(string)),
+		provider.WithScopes(data.Get("scopes").([]string)),
+		provider.WithURLParams(data.Get("auth_url_params").(map[string]string)),
+		provider.WithURLParams(c.Config.AuthURLParams),
+	)
+	if !ok {
+		return logical.ErrorResponse("authorization code URL not available"), nil
 	}
-
-	if scopes, ok := data.GetOk("scopes"); ok {
-		cb = cb.WithScopes(scopes.([]string)...)
-	}
-
-	var opts []oauth2.AuthCodeOption
-	for k, v := range data.Get("auth_url_params").(map[string]string) {
-		opts = append(opts, oauth2.SetAuthURLParam(k, v))
-	}
-	for k, v := range c.Config.AuthURLParams {
-		opts = append(opts, oauth2.SetAuthURLParam(k, v))
-	}
-
-	url := cb.Build().AuthCodeURL(state.(string), opts...)
 
 	resp := &logical.Response{
 		Data: map[string]interface{}{
@@ -158,7 +152,7 @@ var configFields = map[string]*framework.FieldSchema{
 }
 
 const configHelpSynopsis = `
-Configures the OAuth client information for authorization code exchange.
+Configures OAuth 2.0 client information.
 `
 
 const configHelpDescription = `

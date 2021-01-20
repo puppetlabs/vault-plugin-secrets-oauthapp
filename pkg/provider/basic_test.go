@@ -21,7 +21,7 @@ var basicTestFactory = provider.BasicFactory(oauth2.Endpoint{
 	AuthStyle: oauth2.AuthStyleInParams,
 })
 
-func TestBasicAuthCodeURLConfig(t *testing.T) {
+func TestBasicPublic(t *testing.T) {
 	ctx := context.Background()
 
 	r := provider.NewRegistry()
@@ -30,12 +30,17 @@ func TestBasicAuthCodeURLConfig(t *testing.T) {
 	basicTest, err := r.New(ctx, "basic", map[string]string{})
 	require.NoError(t, err)
 
-	conf := basicTest.NewAuthCodeURLConfigBuilder("foo").
-		WithRedirectURL("http://example.com/redirect").
-		WithScopes("a", "b", "c").
-		Build()
+	ops := basicTest.Public("foo")
 
-	u, err := url.Parse(conf.AuthCodeURL("state", oauth2.SetAuthURLParam("baz", "quux")))
+	authCodeURL, ok := ops.AuthCodeURL(
+		"state",
+		provider.WithRedirectURL("http://example.com/redirect"),
+		provider.WithScopes{"a", "b", "c"},
+		provider.WithURLParams{"baz": "quux"},
+	)
+	require.True(t, ok)
+
+	u, err := url.Parse(authCodeURL)
 	require.NoError(t, err)
 
 	assert.Equal(t, "http", u.Scheme)
@@ -51,7 +56,7 @@ func TestBasicAuthCodeURLConfig(t *testing.T) {
 	assert.Equal(t, "quux", qs.Get("baz"))
 }
 
-func TestBasicExchangeConfig(t *testing.T) {
+func TestBasicPrivate(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
@@ -82,6 +87,8 @@ func TestBasicExchangeConfig(t *testing.T) {
 				assert.Equal(t, "efgh", data.Get("refresh_token"))
 
 				_, _ = w.Write([]byte(`access_token=ijkl&refresh_token=efgh&token_type=bearer&expires_in=3600`))
+			case "client_credentials":
+				_, _ = w.Write([]byte(`access_token=mnop&token_type=bearer&expires_in=86400`))
 			default:
 				assert.Fail(t, "unexpected `grant_type` value: %q", data.Get("grant_type"))
 			}
@@ -95,11 +102,14 @@ func TestBasicExchangeConfig(t *testing.T) {
 	basicTest, err := r.New(ctx, "basic", map[string]string{})
 	require.NoError(t, err)
 
-	conf := basicTest.NewExchangeConfigBuilder("foo", "bar").
-		WithRedirectURL("http://example.com/redirect").
-		Build()
+	ops := basicTest.Private("foo", "bar")
 
-	token, err := conf.Exchange(ctx, "123456", oauth2.SetAuthURLParam("baz", "quux"))
+	token, err := ops.AuthCodeExchange(
+		ctx,
+		"123456",
+		provider.WithURLParams{"baz": "quux"},
+		provider.WithRedirectURL("http://example.com/redirect"),
+	)
 	require.NoError(t, err)
 	require.NotNil(t, token)
 	require.Equal(t, "abcd", token.AccessToken)
@@ -110,11 +120,17 @@ func TestBasicExchangeConfig(t *testing.T) {
 	// This token is already invalid, so let's try to refresh it.
 	require.False(t, token.Valid())
 
-	token, err = conf.Refresh(ctx, token)
+	token, err = ops.RefreshToken(ctx, token)
 	require.NoError(t, err)
 	require.NotNil(t, token)
 
 	// Our refreshed response is good for an hour.
 	require.Equal(t, "ijkl", token.AccessToken)
+	require.True(t, token.Valid())
+
+	token, err = ops.ClientCredentials(ctx)
+	require.NoError(t, err)
+	require.NotNil(t, token)
+	require.Equal(t, "mnop", token.AccessToken)
 	require.True(t, token.Valid())
 }

@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"sync"
+
+	"github.com/puppetlabs/leg/errmap/pkg/errmark"
 )
 
 type FactoryFunc func(ctx context.Context, vsn int, opts map[string]string) (Provider, error)
@@ -19,7 +21,7 @@ func (r *Registry) Register(name string, factory FactoryFunc) error {
 	defer r.mut.Unlock()
 
 	if _, found := r.factories[name]; found {
-		return fmt.Errorf("provider: factory with name %q already exists", name)
+		return fmt.Errorf("factory with name %q already exists", name)
 	}
 
 	r.factories[name] = factory
@@ -45,12 +47,21 @@ func (r *Registry) NewAt(ctx context.Context, name string, vsn int, opts map[str
 	r.mut.RLock()
 	defer r.mut.RUnlock()
 
-	p, found := r.factories[name]
+	fn, found := r.factories[name]
 	if !found {
-		return nil, ErrNoSuchProvider
+		return nil, errmark.MarkUser(ErrNoSuchProvider)
 	}
 
-	return p(ctx, vsn, opts)
+	p, err := fn(ctx, vsn, opts)
+	if err != nil {
+		return nil, errmark.MarkUserIf(err, errmark.RuleAny(
+			errmark.RuleIs(ErrNoProviderWithVersion),
+			errmark.RuleIs(ErrNoOptions),
+			errmark.RuleType(&OptionError{}),
+		))
+	}
+
+	return p, nil
 }
 
 func NewRegistry() *Registry {
