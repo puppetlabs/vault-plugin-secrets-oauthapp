@@ -13,6 +13,8 @@ import (
 	"github.com/hashicorp/vault/sdk/framework"
 	"github.com/hashicorp/vault/sdk/helper/locksutil"
 	"github.com/hashicorp/vault/sdk/logical"
+	"github.com/puppetlabs/leg/errmap/pkg/errmap"
+	"github.com/puppetlabs/leg/errmap/pkg/errmark"
 	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/pkg/provider"
 	"golang.org/x/oauth2"
 )
@@ -33,7 +35,7 @@ func credKey(name string) string {
 func (b *backend) credsReadOperation(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
 	key := credKey(data.Get("name").(string))
 
-	tok, err := b.getRefreshToken(ctx, req.Storage, key, data)
+	tok, err := b.getRefreshAuthCodeToken(ctx, req.Storage, key, data)
 	switch {
 	case err == ErrNotConfigured:
 		return logical.ErrorResponse("not configured"), nil
@@ -49,22 +51,26 @@ func (b *backend) credsReadOperation(ctx context.Context, req *logical.Request, 
 	audiences := data.Get("audience").([]string)
 	if len(scopes) > 0 || len(audiences) > 0 {
 		// Do an RFC8693 token exchange to limit the access token
-		options := []oauth2.AuthCodeOption{
-			oauth2.SetAuthURLParam("grant_type", "urn:ietf:params:oauth:grant-type:token-exchange"),
-			oauth2.SetAuthURLParam("subject_token", tok.AccessToken),
-			oauth2.SetAuthURLParam("subject_token_type", "urn:ietf:params:oauth:token-type:access_token"),
+		options := map[string]string{
+			"grant_type":         "urn:ietf:params:oauth:grant-type:token-exchange",
+			"subject_token":      tok.AccessToken,
+			"subject_token_type": "urn:ietf:params:oauth:token-type:access_token",
 		}
 		if len(scopes) > 0 {
-			options = append(options, oauth2.SetAuthURLParam("scope", strings.Join(scopes, " ")))
+			options["scope"] = strings.Join(scopes, " ")
 		}
 		if len(audiences) > 0 {
-			options = append(options, oauth2.SetAuthURLParam("audience", audiences[0]))
+			options["audience"] = audiences[0]
 		}
-		ec, err := b.getExchangeConfig(ctx, req.Storage)
+
+		c, err := b.getCache(ctx, req.Storage)
 		if err != nil {
 			return nil, err
+		} else if c == nil {
+			return logical.ErrorResponse("not configured"), nil
 		}
-		tok, err = ec.Exchange(ctx, "", options...)
+		ops := c.Provider.Private(c.Config.ClientID, c.Config.ClientSecret)
+		tok, err = ops.AuthCodeExchange(ctx, "", provider.WithURLParams(options))
 		if err != nil {
 			return nil, err
 		}
@@ -105,25 +111,21 @@ func (b *backend) credsUpdateOperation(ctx context.Context, req *logical.Request
 
 	var tok *provider.Token
 
-	cb := c.Provider.NewExchangeConfigBuilder(c.Config.ClientID, c.Config.ClientSecret)
-
-	for name, value := range data.Get("provider_options").(map[string]string) {
-		cb = cb.WithOption(name, value)
-	}
+	ops := c.Provider.Private(c.Config.ClientID, c.Config.ClientSecret)
 
 	if code, ok := data.GetOk("code"); ok {
 		if _, ok := data.GetOk("refresh_token"); ok {
 			return logical.ErrorResponse("cannot use both code and refresh_token"), nil
 		}
 
-		if redirectURL, ok := data.GetOk("redirect_url"); ok {
-			cb = cb.WithRedirectURL(redirectURL.(string))
-		}
-
-		tok, err = cb.Build().Exchange(ctx, code.(string))
-		if rErr, ok := err.(*oauth2.RetrieveError); ok {
-			b.logger.Error("invalid code", "error", rErr)
-			return logical.ErrorResponse("invalid code"), nil
+		tok, err = ops.AuthCodeExchange(
+			ctx,
+			code.(string),
+			provider.WithRedirectURL(data.Get("redirect_url").(string)),
+			provider.WithProviderOptions(data.Get("provider_options").(map[string]string)),
+		)
+		if errmark.Matches(err, errmark.RuleType(&oauth2.RetrieveError{})) || errmark.MarkedUser(err) {
+			return logical.ErrorResponse(errmap.Wrap(errmark.MarkShort(err), "exchange failed").Error()), nil
 		} else if err != nil {
 			return nil, err
 		}
@@ -133,10 +135,13 @@ func (b *backend) credsUpdateOperation(ctx context.Context, req *logical.Request
 				RefreshToken: refreshToken.(string),
 			},
 		}
-		tok, err = cb.Build().Refresh(ctx, tok)
-		if rErr, ok := err.(*oauth2.RetrieveError); ok {
-			b.logger.Error("invalid refresh_token", "error", rErr)
-			return logical.ErrorResponse("invalid refresh_token"), nil
+		tok, err = ops.RefreshToken(
+			ctx,
+			tok,
+			provider.WithProviderOptions(data.Get("provider_options").(map[string]string)),
+		)
+		if errmark.Matches(err, errmark.RuleType(&oauth2.RetrieveError{})) || errmark.MarkedUser(err) {
+			return logical.ErrorResponse(errmap.Wrap(errmark.MarkShort(err), "refresh failed").Error()), nil
 		} else if err != nil {
 			return nil, err
 		}
@@ -189,6 +194,7 @@ var credsFields = map[string]*framework.FieldSchema{
 	"minimum_seconds": {
 		Type:        framework.TypeInt,
 		Description: "Minimum remaining seconds to allow when reusing access token.",
+		Query:       true,
 	},
 	// fields for write operation
 	"code": {
@@ -209,12 +215,6 @@ var credsFields = map[string]*framework.FieldSchema{
 	},
 }
 
-// Allow characters not special to urls or shells
-// Derived from framework.GenericNameWithAtRegex
-func credentialNameRegex(name string) string {
-	return fmt.Sprintf(`(?P<%s>\w(([\w.@~!_,:^-]+)?\w)?)`, name)
-}
-
 const credsHelpSynopsis = `
 Provides access tokens for authorized credentials.
 `
@@ -228,7 +228,7 @@ the access token will be available when reading the endpoint.
 
 func pathCreds(b *backend) *framework.Path {
 	return &framework.Path{
-		Pattern: credsPathPrefix + credentialNameRegex("name") + `$`,
+		Pattern: credsPathPrefix + nameRegex("name") + `$`,
 		Fields:  credsFields,
 		Operations: map[logical.Operation]framework.OperationHandler{
 			logical.ReadOperation: &framework.PathOperation{

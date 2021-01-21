@@ -34,6 +34,8 @@ Success! Data written to: oauth2/bitbucket/config
 
 Once the client secret has been written, it will never be exposed again.
 
+### Authorization code exchange flow
+
 From a Vault client, request an authorization code URL:
 
 ```console
@@ -69,18 +71,43 @@ skip the auth_code_url step and pass the token directly to the creds
 write instead of the response code:
 
 ```console
-$ vault write oauth2/bitbucket/creds/my-user-tokens refresh_token=eyJhbGciOiJub25lIn0.eyJqdGkiOiI4YTE0NDRjMi0wYjQxLTRiZDUtODI3My0yZDBkMDczODQ4MDAifQ.
-Success! Data written to: oauth2/bitbucket/creds/my-user-tokens
+$ vault write oauth2/bitbucket/creds/my-user-auth \
+    refresh_token=TGUgZ3JpbGxlPw==
+Success! Data written to: oauth2/bitbucket/creds/my-user-auth
 ```
+
+### Client credentials flow
+
+From a Vault client, simply read an arbitrary token using the `self` endpoints:
+
+```console
+$ vault read oauth2/bitbucket/self/my-machine-auth
+Key             Value
+---             -----
+access_token    SSBhbSBzbyBzbWFydC4gUy1NLVItVC4=
+expire_time     2021-01-16T15:38:21.105335834Z
+type            Bearer
+```
+
+You can configure the parameters of the identity provider's token endpoint if
+needed:
+
+```console
+$ vault write oauth2/bitbucket/self/my-machine-auth/config \
+    scopes=repositories:read
+Success! Data written to: oauth2/bitbucket/self/my-machine-auth/config
+```
+
+## Tips
 
 For some operations, you may find that you need to provide a map of data for a
 field. When using the CLI, you can repeat the name of the field for each
 key-value pair of the map and use `=` to separate keys from values. For example:
 
 ```console
-$ vault write oauth2/oidc/config [...] \
-  provider_options=issuer_url=https://login.example.com \
-  provider_options=extra_data_fields=id_token_claims
+$ vault write oauth2/oidc/config \
+    provider_options=issuer_url=https://login.example.com \
+    provider_options=extra_data_fields=id_token_claims
 ```
 
 ## Endpoints
@@ -114,7 +141,9 @@ tokens.
 
 #### `PUT` (`write`)
 
-Retrieve an authorization code URL for the given state.
+Retrieve an authorization code URL for the given state. Some providers may not
+provide the plugin with information about this URL, in which case accessing this
+endpoint will return an error.
 
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|----------|
@@ -125,10 +154,14 @@ Retrieve an authorization code URL for the given state.
 
 ### `creds/:name`
 
+This path is for tokens to be obtained using the OAuth 2.0 authorization code
+and refresh token flows.
+
 #### `GET` (`read`)
 
-Retrieve a current access token for the given credential.
-Reuses previous token if it is not yet expired or close to it.
+Retrieve a current access token for the given credential. Reuses previous token
+if it is not yet expired or close to it. Otherwise, requests a new credential
+using the `refresh_token` grant type if possible.
 
 If scopes or audience are requested, the current access token will be
 exchanged for another access token with more limited scopes or audience,
@@ -147,8 +180,9 @@ saved as usual.
 
 #### `PUT` (`write`)
 
-Create or update a credential after an authorization flow has returned to the
-application.
+Create or update a credential after an authorization code flow has returned to
+the application. This request will make a request for a new credential using the
+`authorization_code` grant type.
 
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|----------|
@@ -160,6 +194,45 @@ application.
 #### `DELETE` (`delete`)
 
 Remove the credential information from storage.
+
+### `self/:name`
+
+This path is for tokens to be obtained using the OAuth 2.0 client credentials
+flow.
+
+#### `GET` (`read`)
+
+Retrieve a current access token for the underlying OAuth 2.0 application. Reuses
+previous token if it is not yet expired or close to it. Otherwise, requests a
+new credential using the `client_credentials` grant type.
+
+| Name | Description | Type | Default | Required |
+|------|-------------|------|---------|----------|
+| `minimum_seconds` | Minimum seconds before access token expires | Integer | * | No |
+
+\* Defaults to underlying library default, which is 10 seconds unless
+  the token expiration time is set to zero.
+
+#### `DELETE` (`delete`)
+
+Remove the credential information from storage.
+
+### `self/:name/config`
+
+#### `GET` (`read`)
+
+Retrieve the configuration for the given credential, if any is present.
+
+#### `PUT` (`write`)
+
+Configure the credential for the given name. Writing configuration will cause a
+new token to be retrieved and validated using the `client_credentials` grant
+type.
+
+| Name | Description | Type | Default | Required |
+|------|-------------|------|---------|----------|
+| `token_url_params` | A map of additional query string parameters to provide to the token URL. If any keys in this map conflict with the parameters stored in the configuration, the configuration's parameters take precedence. | Map of String🠦String | None | No |
+| `scopes` | A list of explicit scopes to request. | List of String | None | No |
 
 ## Providers
 
@@ -221,6 +294,6 @@ arbitrary OAuth 2 authorization code grant flow.
 
 | Name | Description | Default | Required |
 |------|-------------|---------|----------|
-| `auth_code_url` | The URL to submit the initial authorization code request to. | None | Yes |
+| `auth_code_url` | The URL to submit the initial authorization code request to. | None | No |
 | `token_url` | The URL to use for exchanging temporary codes and refreshing access tokens. | None | Yes |
 | `auth_style` | How to authenticate to the token URL. If specified, must be one of `in_header` or `in_params`. | Automatically detect | No |

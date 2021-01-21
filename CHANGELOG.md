@@ -8,6 +8,33 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.9.0] - 2021-01-19
+
+### Added
+
+* The OAuth 2.0 client credentials flow is now supported using the new `self`
+  endpoints.
+
+### Fixed
+
+* Errors caused by configuration problems in the OIDC provider are now correctly
+  propagated to the HTTP response with a 400 status code.
+* The `nonce` provider option for the OIDC authorization code exchange is now
+  passed to the ID token verification routine.
+* Nonce validation is only performed during OIDC authorization code exchange or
+  refresh token flow if the plugin user specifies a nonce to validate against;
+  otherwise, it is assumed that the nonce data is invalid or non-conforming to
+  the OpenID Connect Core specification.
+* Per the OpenID Connect Core specification, ID tokens will only be revalidated
+  during refresh if the server sends a new ID token. Otherwise, they are passed
+  through unmodified from the original exchange.
+
+### Changed
+
+* The `testutil` package now uses a `*provider.Token` instead of a
+  `*oauth2.Token` for mocks, allowing the `ExtraData` to be customized.
+* It is now optional for providers to expose an authorization code URL.
+
 ## [1.8.3] - 2020-12-17
 
 ### Build
@@ -101,7 +128,8 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 * Initial release of the plugin.
 
-[Unreleased]: https://github.com/puppetlabs/vault-plugin-secrets-oauthapp/compare/v1.8.3...HEAD
+[Unreleased]: https://github.com/puppetlabs/vault-plugin-secrets-oauthapp/compare/v1.9.0...HEAD
+[1.9.0]: https://github.com/puppetlabs/vault-plugin-secrets-oauthapp/compare/v1.8.3...v1.9.0
 [1.8.3]: https://github.com/puppetlabs/vault-plugin-secrets-oauthapp/compare/v1.8.2...v1.8.3
 [1.8.2]: https://github.com/puppetlabs/vault-plugin-secrets-oauthapp/compare/v1.8.1...v1.8.2
 [1.8.1]: https://github.com/puppetlabs/vault-plugin-secrets-oauthapp/compare/v1.8.0...v1.8.1

@@ -14,7 +14,7 @@ import (
 	"golang.org/x/oauth2"
 )
 
-func TestBasicCredentialExchange(t *testing.T) {
+func TestBasicAuthCodeExchange(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
@@ -23,12 +23,14 @@ func TestBasicCredentialExchange(t *testing.T) {
 		Secret: "def",
 	}
 
-	token := &oauth2.Token{
-		AccessToken: "valid",
+	token := &provider.Token{
+		Token: &oauth2.Token{
+			AccessToken: "valid",
+		},
 	}
 
 	pr := provider.NewRegistry()
-	pr.MustRegister("mock", testutil.MockFactory(testutil.MockWithExchange(client, testutil.StaticMockExchange(token))))
+	pr.MustRegister("mock", testutil.MockFactory(testutil.MockWithAuthCodeExchange(client, testutil.StaticMockAuthCodeExchange(token))))
 
 	storage := &logical.InmemStorage{}
 
@@ -83,7 +85,7 @@ func TestBasicCredentialExchange(t *testing.T) {
 	require.Empty(t, resp.Data["expire_time"])
 }
 
-func TestInvalidCredentialExchange(t *testing.T) {
+func TestInvalidAuthCodeExchange(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
@@ -92,12 +94,12 @@ func TestInvalidCredentialExchange(t *testing.T) {
 		Secret: "def",
 	}
 
-	exchange := testutil.RestrictMockExchange(map[string]testutil.MockExchangeFunc{
-		"valid": testutil.RandomMockExchange,
+	exchange := testutil.RestrictMockAuthCodeExchange(map[string]testutil.MockAuthCodeExchangeFunc{
+		"valid": testutil.RandomMockAuthCodeExchange,
 	})
 
 	pr := provider.NewRegistry()
-	pr.MustRegister("mock", testutil.MockFactory(testutil.MockWithExchange(client, exchange)))
+	pr.MustRegister("mock", testutil.MockFactory(testutil.MockWithAuthCodeExchange(client, exchange)))
 
 	storage := &logical.InmemStorage{}
 
@@ -134,10 +136,10 @@ func TestInvalidCredentialExchange(t *testing.T) {
 	resp, err = b.HandleRequest(ctx, req)
 	require.NoError(t, err)
 	require.NotNil(t, resp)
-	require.EqualError(t, resp.Error(), "invalid code")
+	require.EqualError(t, resp.Error(), "exchange failed: oauth2: cannot fetch token: Forbidden\nResponse: ")
 }
 
-func TestRefreshableCredentialExchange(t *testing.T) {
+func TestRefreshableAuthCodeExchange(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
@@ -157,10 +159,10 @@ func TestRefreshableCredentialExchange(t *testing.T) {
 		}
 	}
 
-	exchange := testutil.RefreshableMockExchange(testutil.IncrementMockExchange("token_"), refresh)
+	exchange := testutil.RefreshableMockAuthCodeExchange(testutil.IncrementMockAuthCodeExchange("token_"), refresh)
 
 	pr := provider.NewRegistry()
-	pr.MustRegister("mock", testutil.MockFactory(testutil.MockWithExchange(client, exchange)))
+	pr.MustRegister("mock", testutil.MockFactory(testutil.MockWithAuthCodeExchange(client, exchange)))
 
 	storage := &logical.InmemStorage{}
 
@@ -238,10 +240,10 @@ func TestRefreshFailureReturnsNotConfigured(t *testing.T) {
 		}
 	}
 
-	exchange := testutil.RefreshableMockExchange(testutil.IncrementMockExchange("token_"), refresh)
+	exchange := testutil.RefreshableMockAuthCodeExchange(testutil.IncrementMockAuthCodeExchange("token_"), refresh)
 
 	pr := provider.NewRegistry()
-	pr.MustRegister("mock", testutil.MockFactory(testutil.MockWithExchange(client, exchange)))
+	pr.MustRegister("mock", testutil.MockFactory(testutil.MockWithAuthCodeExchange(client, exchange)))
 
 	storage := &logical.InmemStorage{}
 

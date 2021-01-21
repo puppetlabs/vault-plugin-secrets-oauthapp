@@ -128,3 +128,52 @@ func TestConfigAuthCodeURL(t *testing.T) {
 	assert.Equal(t, "geoff", qs.Get("foo")) // Configuration takes precedence!
 	assert.Equal(t, "quux", qs.Get("baz"))
 }
+
+func TestConfigClientCredentials(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	storage := &logical.InmemStorage{}
+
+	b := New(Options{})
+	require.NoError(t, b.Setup(ctx, &logical.BackendConfig{}))
+
+	// Write configuration.
+	req := &logical.Request{
+		Operation: logical.UpdateOperation,
+		Path:      configPath,
+		Storage:   storage,
+		Data: map[string]interface{}{
+			"client_id":     "abc",
+			"client_secret": "def",
+			"provider":      "custom",
+			"provider_options": map[string]interface{}{
+				"token_url": "http://localhost/auth/token",
+			},
+		},
+	}
+
+	resp, err := b.HandleRequest(ctx, req)
+	require.NoError(t, err)
+	require.False(t, resp != nil && resp.IsError(), "response has error: %+v", resp.Error())
+	require.Nil(t, resp)
+
+	// Retrieve an auth code URL.
+	req = &logical.Request{
+		Operation: logical.UpdateOperation,
+		Path:      configAuthCodeURLPath,
+		Storage:   storage,
+		Data: map[string]interface{}{
+			"state":           "qwerty",
+			"scopes":          []string{"read", "write"},
+			"redirect_url":    "http://example.com/redirect",
+			"auth_url_params": map[string]string{"foo": "bar", "baz": "quux"},
+		},
+	}
+
+	resp, err = b.HandleRequest(ctx, req)
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	require.True(t, resp.IsError())
+	require.EqualError(t, resp.Error(), "authorization code URL not available")
+}
