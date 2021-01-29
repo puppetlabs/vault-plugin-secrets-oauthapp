@@ -116,8 +116,12 @@ func (oo *oidcOperations) AuthCodeExchange(ctx context.Context, code string, opt
 		t.ExtraData = make(map[string]interface{})
 	}
 
-	if err := oo.verifyUpdateIDToken(ctx, t, o.ProviderOptions["nonce"]); err != nil {
-		return nil, errmark.MarkUser(err)
+	// If code is empty we're doing an RFC8693 token exchange and then
+	// the ID token is optional. Otherwise, verify the ID token.
+	if code != "" {
+		if err := oo.verifyUpdateIDToken(ctx, t, o.ProviderOptions["nonce"]); err != nil {
+			return nil, errmark.MarkUser(err)
+		}
 	}
 
 	if err := oo.updateUserInfo(ctx, t); err != nil {
