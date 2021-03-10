@@ -18,6 +18,7 @@ func pathsSpecial() *logical.Paths {
 		SealWrapStorage: []string{
 			configPath,
 			credsPathPrefix,
+			selfPathPrefix,
 		},
 	}
 }

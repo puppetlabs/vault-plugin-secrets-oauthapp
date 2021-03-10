@@ -24,6 +24,20 @@ const (
 	credsPathPrefix = credsPath + "/"
 )
 
+const (
+	grantTypeAuthorizationCode = "authorization_code"
+	grantTypeRefreshToken      = "refresh_token"
+	grantTypeDeviceCode        = "urn:ietf:params:oauth:grant-type:device_code"
+)
+
+var (
+	schemaAllowedGrantTypeValues = []interface{}{
+		grantTypeAuthorizationCode,
+		grantTypeRefreshToken,
+		grantTypeDeviceCode,
+	}
+)
+
 // credKey hashes the name and splits the first few bytes into separate buckets
 // for performance reasons.
 func credKey(name string) string {
@@ -80,13 +94,28 @@ func (b *backend) credsUpdateOperation(ctx context.Context, req *logical.Request
 	lock.Lock()
 	defer lock.Unlock()
 
-	var tok *provider.Token
-
 	ops := c.Provider.Private(c.Config.ClientID, c.Config.ClientSecret)
 
-	if code, ok := data.GetOk("code"); ok {
+	// Figure out which mode we want to operate in: authorization code
+	// (default), refresh token, or device code.
+	grantType, ok := data.GetOk("grant_type")
+	if !ok {
 		if _, ok := data.GetOk("refresh_token"); ok {
-			return logical.ErrorResponse("cannot use both code and refresh_token"), nil
+			grantType = grantTypeRefreshToken
+		} else {
+			grantType = grantTypeAuthorizationCode
+		}
+	}
+
+	var tok *provider.Token
+	switch grantType {
+	case grantTypeAuthorizationCode:
+		code, ok := data.GetOk("code")
+		if !ok {
+			return logical.ErrorResponse("missing code"), nil
+		}
+		if _, ok := data.GetOk("refresh_token"); ok {
+			return logical.ErrorResponse("cannot use refresh_token with authorization_code grant type"), nil
 		}
 
 		tok, err = ops.AuthCodeExchange(
@@ -100,7 +129,15 @@ func (b *backend) credsUpdateOperation(ctx context.Context, req *logical.Request
 		} else if err != nil {
 			return nil, err
 		}
-	} else if refreshToken, ok := data.GetOk("refresh_token"); ok {
+	case grantTypeRefreshToken:
+		refreshToken, ok := data.GetOk("refresh_token")
+		if !ok {
+			return logical.ErrorResponse("missing refresh_token"), nil
+		}
+		if _, ok := data.GetOk("code"); ok {
+			return logical.ErrorResponse("cannot use code with refresh_token grant type"), nil
+		}
+
 		tok = &provider.Token{
 			Token: &oauth2.Token{
 				RefreshToken: refreshToken.(string),
@@ -116,9 +153,17 @@ func (b *backend) credsUpdateOperation(ctx context.Context, req *logical.Request
 		} else if err != nil {
 			return nil, err
 		}
-		// tok now contains a refresh token and an access token
-	} else {
-		return logical.ErrorResponse("missing code or refresh_token"), nil
+	case grantTypeDeviceCode:
+		// TODO: Response will contain:
+		//
+		// {
+		//   "user_code": "BDWD-HQPK",
+		//   "verification_uri": "https://example.okta.com/device",
+		//   "verification_uri_complete": "https://example.okta.com/device?user_code=BDWD-HQPK",
+		//   "expire_time": "2021-03-10T23:00:00Z"
+		// }
+	default:
+		return logical.ErrorResponse("unknown grant_type"), nil
 	}
 
 	entry, err := logical.StorageEntryJSON(key, tok)
@@ -160,6 +205,11 @@ var credsFields = map[string]*framework.FieldSchema{
 		Query:       true,
 	},
 	// fields for write operation
+	"grant_type": {
+		Type:          framework.TypeString,
+		Description:   "The grant type to use for this operation.",
+		AllowedValues: schemaAllowedGrantTypeValues,
+	},
 	"code": {
 		Type:        framework.TypeString,
 		Description: "Specifies the response code to exchange for a full token.",

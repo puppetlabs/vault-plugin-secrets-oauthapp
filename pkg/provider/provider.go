@@ -33,10 +33,26 @@ func (o *AuthCodeURLOptions) ApplyOptions(opts []AuthCodeURLOption) {
 	}
 }
 
+// DeviceCodeURLOptions are options for the DeviceCodeURL operation.
+type DeviceCodeURLOptions struct {
+	Scopes []string
+}
+
+type DeviceCodeURLOption interface {
+	ApplyToDeviceCodeURLOptions(target *DeviceCodeURLOptions)
+}
+
+func (o *DeviceCodeURLOptions) ApplyOptions(opts []DeviceCodeURLOption) {
+	for _, opt := range opts {
+		opt.ApplyToDeviceCodeURLOptions(o)
+	}
+}
+
 // PublicOperations defines the operations for a client that only require
 // knowledge of the client ID.
 type PublicOperations interface {
 	AuthCodeURL(state string, opts ...AuthCodeURLOption) (string, bool)
+	DeviceCodeURL(opts ...DeviceCodeURLOption) (string, bool)
 }
 
 // AuthCodeExchangeOptions are options for the AuthCodeExchange operation.
