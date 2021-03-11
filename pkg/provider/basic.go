@@ -2,8 +2,10 @@ package provider
 
 import (
 	"context"
+	"net/url"
 
 	gooidc "github.com/coreos/go-oidc"
+	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/pkg/grant/devicecode"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/bitbucket"
 	"golang.org/x/oauth2/clientcredentials"
@@ -15,43 +17,94 @@ import (
 )
 
 func init() {
-	GlobalRegistry.MustRegister("bitbucket", BasicFactory(bitbucket.Endpoint))
-	GlobalRegistry.MustRegister("github", BasicFactory(github.Endpoint))
-	GlobalRegistry.MustRegister("gitlab", BasicFactory(gitlab.Endpoint))
-	GlobalRegistry.MustRegister("google", BasicFactory(google.Endpoint))
+	GlobalRegistry.MustRegister("bitbucket", BasicFactory(Endpoint{Endpoint: bitbucket.Endpoint}))
+	GlobalRegistry.MustRegister("github", BasicFactory(Endpoint{
+		Endpoint:  github.Endpoint,
+		DeviceURL: "https://github.com/login/device/code", // https://docs.github.com/en/developers/apps/authorizing-oauth-apps#device-flow
+	}))
+	GlobalRegistry.MustRegister("gitlab", BasicFactory(Endpoint{Endpoint: gitlab.Endpoint}))
+	GlobalRegistry.MustRegister("google", BasicFactory(Endpoint{
+		Endpoint:  google.Endpoint,
+		DeviceURL: "https://oauth2.googleapis.com/device/code", // https://developers.google.com/identity/protocols/oauth2/limited-input-device#step-1:-request-device-and-user-codes
+	}))
 	GlobalRegistry.MustRegister("microsoft_azure_ad", AzureADFactory)
-	GlobalRegistry.MustRegister("slack", BasicFactory(slack.Endpoint))
+	GlobalRegistry.MustRegister("slack", BasicFactory(Endpoint{Endpoint: slack.Endpoint}))
 
 	GlobalRegistry.MustRegister("custom", CustomFactory)
 }
 
 type basicOperations struct {
-	base *oauth2.Config
+	endpoint     Endpoint
+	clientID     string
+	clientSecret string
 }
 
 func (bo *basicOperations) AuthCodeURL(state string, opts ...AuthCodeURLOption) (string, bool) {
-	if bo.base.Endpoint.AuthURL == "" {
+	if bo.endpoint.AuthURL == "" {
 		return "", false
 	}
 
 	o := &AuthCodeURLOptions{}
 	o.ApplyOptions(opts)
 
-	cfg := &oauth2.Config{}
-	*cfg = *bo.base
-	cfg.Scopes = o.Scopes
-	cfg.RedirectURL = o.RedirectURL
+	cfg := &oauth2.Config{
+		Endpoint:    bo.endpoint.Endpoint,
+		ClientID:    bo.clientID,
+		Scopes:      o.Scopes,
+		RedirectURL: o.RedirectURL,
+	}
 
 	return cfg.AuthCodeURL(state, o.AuthCodeOptions...), true
+}
+
+func (bo *basicOperations) DeviceCodeAuth(ctx context.Context, opts ...DeviceCodeAuthOption) (*devicecode.Auth, bool, error) {
+	if bo.endpoint.DeviceURL == "" {
+		return nil, false, nil
+	}
+
+	o := &DeviceCodeAuthOptions{}
+	o.ApplyOptions(opts)
+
+	cfg := &devicecode.Config{
+		Config: &oauth2.Config{
+			Endpoint: bo.endpoint.Endpoint,
+			ClientID: bo.clientID,
+			Scopes:   o.Scopes,
+		},
+		DeviceURL: bo.endpoint.DeviceURL,
+	}
+
+	auth, err := cfg.DeviceCodeAuth(ctx)
+	return auth, err == nil, err
+}
+
+func (bo *basicOperations) DeviceCodeExchange(ctx context.Context, deviceCode string) (*Token, error) {
+	cfg := &devicecode.Config{
+		Config: &oauth2.Config{
+			Endpoint: bo.endpoint.Endpoint,
+			ClientID: bo.clientID,
+		},
+		DeviceURL: bo.endpoint.DeviceURL,
+	}
+
+	tok, err := cfg.DeviceCodeExchange(ctx, deviceCode)
+	if err != nil {
+		return nil, err
+	}
+
+	return &Token{Token: tok}, nil
 }
 
 func (bo *basicOperations) AuthCodeExchange(ctx context.Context, code string, opts ...AuthCodeExchangeOption) (*Token, error) {
 	o := &AuthCodeExchangeOptions{}
 	o.ApplyOptions(opts)
 
-	cfg := &oauth2.Config{}
-	*cfg = *bo.base
-	cfg.RedirectURL = o.RedirectURL
+	cfg := &oauth2.Config{
+		Endpoint:     bo.endpoint.Endpoint,
+		ClientID:     bo.clientID,
+		ClientSecret: bo.clientSecret,
+		RedirectURL:  o.RedirectURL,
+	}
 
 	tok, err := cfg.Exchange(ctx, code, o.AuthCodeOptions...)
 	if err != nil {
@@ -62,7 +115,13 @@ func (bo *basicOperations) AuthCodeExchange(ctx context.Context, code string, op
 }
 
 func (bo *basicOperations) RefreshToken(ctx context.Context, t *Token, opts ...RefreshTokenOption) (*Token, error) {
-	tok, err := bo.base.TokenSource(ctx, t.Token).Token()
+	cfg := &oauth2.Config{
+		Endpoint:     bo.endpoint.Endpoint,
+		ClientID:     bo.clientID,
+		ClientSecret: bo.clientSecret,
+	}
+
+	tok, err := cfg.TokenSource(ctx, t.Token).Token()
 	if err != nil {
 		return nil, err
 	}
@@ -75,10 +134,10 @@ func (bo *basicOperations) ClientCredentials(ctx context.Context, opts ...Client
 	o.ApplyOptions(opts)
 
 	cc := &clientcredentials.Config{
-		ClientID:       bo.base.ClientID,
-		ClientSecret:   bo.base.ClientSecret,
-		TokenURL:       bo.base.Endpoint.TokenURL,
-		AuthStyle:      bo.base.Endpoint.AuthStyle,
+		ClientID:       bo.clientID,
+		ClientSecret:   bo.clientSecret,
+		TokenURL:       bo.endpoint.TokenURL,
+		AuthStyle:      bo.endpoint.AuthStyle,
 		Scopes:         o.Scopes,
 		EndpointParams: o.EndpointParams,
 	}
@@ -93,7 +152,7 @@ func (bo *basicOperations) ClientCredentials(ctx context.Context, opts ...Client
 
 type basic struct {
 	vsn      int
-	endpoint oauth2.Endpoint
+	endpoint Endpoint
 }
 
 func (b *basic) Version() int {
@@ -106,15 +165,13 @@ func (b *basic) Public(clientID string) PublicOperations {
 
 func (b *basic) Private(clientID, clientSecret string) PrivateOperations {
 	return &basicOperations{
-		base: &oauth2.Config{
-			Endpoint:     b.endpoint,
-			ClientID:     clientID,
-			ClientSecret: clientSecret,
-		},
+		endpoint:     b.endpoint,
+		clientID:     clientID,
+		clientSecret: clientSecret,
 	}
 }
 
-func BasicFactory(endpoint oauth2.Endpoint) FactoryFunc {
+func BasicFactory(endpoint Endpoint) FactoryFunc {
 	return func(ctx context.Context, vsn int, opts map[string]string) (Provider, error) {
 		vsn = selectVersion(vsn, 1)
 
@@ -150,9 +207,15 @@ func AzureADFactory(ctx context.Context, vsn int, opts map[string]string) (Provi
 		return nil, &OptionError{Option: "tenant", Message: "tenant is required"}
 	}
 
+	// Upstream function does not escape this name, so we will here.
+	tenant = url.PathEscape(tenant)
+
 	p := &basic{
-		vsn:      1,
-		endpoint: microsoft.AzureADEndpoint(tenant),
+		vsn: 1,
+		endpoint: Endpoint{
+			Endpoint:  microsoft.AzureADEndpoint(tenant),
+			DeviceURL: "https://login.microsoftonline.com/" + tenant + "/oauth2/v2.0/devicecode", // https://docs.microsoft.com/en-us/azure/active-directory/develop/v2-oauth2-device-code
+		},
 	}
 	return p, nil
 }
@@ -194,10 +257,13 @@ func CustomFactory(ctx context.Context, vsn int, opts map[string]string) (Provid
 		return nil, &OptionError{Option: "auth_style", Message: `unknown authentication style; expected one of "in_header" or "in_params"`}
 	}
 
-	endpoint := oauth2.Endpoint{
-		AuthURL:   opts["auth_code_url"],
-		TokenURL:  opts["token_url"],
-		AuthStyle: authStyle,
+	endpoint := Endpoint{
+		Endpoint: oauth2.Endpoint{
+			AuthURL:   opts["auth_code_url"],
+			TokenURL:  opts["token_url"],
+			AuthStyle: authStyle,
+		},
+		DeviceURL: opts["device_code_url"],
 	}
 
 	p := &basic{

@@ -11,14 +11,16 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/pkg/grant/devicecode"
 	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/pkg/provider"
 	"golang.org/x/oauth2"
 )
 
 /* #nosec G101 */
 const (
-	MockAuthCodeURL = "http://localhost/authorize"
-	MockTokenURL    = "http://localhost/token"
+	MockAuthCodeURL   = "http://localhost/authorize"
+	MockDeviceCodeURL = "http://localhost/device"
+	MockTokenURL      = "http://localhost/token"
 )
 
 type MockRoundTripper struct {
@@ -31,9 +33,12 @@ func (mrt *MockRoundTripper) RoundTrip(r *http.Request) (*http.Response, error) 
 	return w.Result(), nil
 }
 
-var MockEndpoint = oauth2.Endpoint{
-	AuthURL:  MockAuthCodeURL,
-	TokenURL: MockTokenURL,
+var MockEndpoint = provider.Endpoint{
+	Endpoint: oauth2.Endpoint{
+		AuthURL:  MockAuthCodeURL,
+		TokenURL: MockTokenURL,
+	},
+	DeviceURL: MockDeviceCodeURL,
 }
 
 type MockClient struct {
@@ -175,10 +180,20 @@ func (mo *mockOperations) AuthCodeURL(state string, opts ...provider.AuthCodeURL
 
 	return (&oauth2.Config{
 		ClientID:    mo.clientID,
-		Endpoint:    MockEndpoint,
+		Endpoint:    MockEndpoint.Endpoint,
 		Scopes:      o.Scopes,
 		RedirectURL: o.RedirectURL,
 	}).AuthCodeURL(state, o.AuthCodeOptions...), true
+}
+
+func (mo *mockOperations) DeviceCodeAuth(ctx context.Context, opts ...provider.DeviceCodeAuthOption) (*devicecode.Auth, bool, error) {
+	// XXX: FIXME: Implement this!
+	return nil, false, &oauth2.RetrieveError{Response: &http.Response{Status: http.StatusText(http.StatusInternalServerError)}}
+}
+
+func (mo *mockOperations) DeviceCodeExchange(ctx context.Context, deivceCode string) (*provider.Token, error) {
+	// XXX: FIXME: Implement this!
+	return nil, &oauth2.RetrieveError{Response: &http.Response{Status: http.StatusText(http.StatusInternalServerError)}}
 }
 
 func (mo *mockOperations) AuthCodeExchange(ctx context.Context, code string, opts ...provider.AuthCodeExchangeOption) (*provider.Token, error) {

@@ -3,9 +3,10 @@
 This is a standalone backend plugin for use with [HashiCorp
 Vault](https://github.com/hashicorp/vault).
 
-This plugin provides a secure wrapper around OAuth 2 authorization code grant
-flows, allowing a Vault client to request authorization on behalf of a user and
-perform actions using a negotiated OAuth 2 access token.
+This plugin provides a secure wrapper around OAuth 2 authorization code, refresh
+token, device code, and client credentials grant types, allowing a Vault client
+to request authorization on behalf of a user and perform actions using a
+negotiated OAuth 2 access token.
 
 ## Usage
 
@@ -72,9 +73,37 @@ write instead of the response code:
 
 ```console
 $ vault write oauth2/bitbucket/creds/my-user-auth \
+    grant_type=refresh_token \
     refresh_token=TGUgZ3JpbGxlPw==
 Success! Data written to: oauth2/bitbucket/creds/my-user-auth
 ```
+
+### Device code flow
+
+The [device code](https://oauth.net/2/grant-types/device-code/) grant type
+allows a user to authenticate outside of a browser session. This plugin supports
+the device code flow and automatically handles polling the authorization server
+for a valid access token.
+
+Not all providers support device code grants. Check the provider's documentation for more information.
+
+To initiate the device code flow (this time using [GitHub as an
+example](https://docs.github.com/en/developers/apps/authorizing-oauth-apps#device-flow)):
+
+```console
+$ vault write oauth2/github/creds/my-user-auth grant_type=urn:ietf:params:oauth:grant-type:device_code
+Key                 Value
+---                 -----
+user_code           BDWD-HQPK
+verification_uri    https://github.com/login/device
+expire_time         2021-03-10T23:35:00.295229233Z
+```
+
+The plugin will manage the device code (similar to a refresh token) and will
+never present it to you. You should forward the user code and verification URL
+to the authorization subject for them to take action to log in.
+
+XXX: Finish this once we have the errors nailed down.
 
 ### Client credentials flow
 
@@ -154,8 +183,8 @@ endpoint will return an error.
 
 ### `creds/:name`
 
-This path is for tokens to be obtained using the OAuth 2.0 authorization code
-and refresh token flows.
+This path is for tokens to be obtained using the OAuth 2.0 authorization code,
+refresh token, and device code flows.
 
 #### `GET` (`read`)
 
@@ -172,16 +201,19 @@ using the `refresh_token` grant type if possible.
 
 #### `PUT` (`write`)
 
-Create or update a credential after an authorization code flow has returned to
-the application. This request will make a request for a new credential using the
-`authorization_code` grant type.
+Create or update a credential using a supported three-legged flow. This
+operation will make a request for a new credential using the specified grant
+type.
 
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|----------|
-| `code` | The response code to exchange for a full token. | String | None | Either this or `refresh_token` |
+| `grant_type` | The grant type to use. Must be one of `authorization_code`, `refresh_token`, or `urn:ietf:params:oauth:grant-type:device_code`. | String | `authorization_code`* | No |
+| `code` | The response code to exchange for a full token. | String | None | If `grant_type` is `authorization_code` |
 | `redirect_url` | The same redirect URL as specified in the authorization code URL. | String | None | Refer to provider documentation |
-| `refresh_token` | A refresh token retrieved from the provider by some means external to this plugin. | String | None | Either this or `code` |
+| `refresh_token` | A refresh token retrieved from the provider by some means external to this plugin. | String | None | If `grant_type` is `refresh_token` |
 | `provider_options` | A list of options to pass on to the provider for configuring this token exchange. | Map of String🠦String | None | Refer to provider documentation |
+
+\* For compatibility, if `grant_type` is not provided and `refresh_token` is set, the `grant_type` will default to `refresh_token`.
 
 #### `DELETE` (`delete`)
 
@@ -271,7 +303,7 @@ This provider implements the OpenID Connect protocol version 1.0.
 
 | Name | Description | Default | Required |
 |------|-------------|---------|----------|
-| `nonce` | The same nonce as specified in the authorization code URL. | String | None | If present in the authorization code URL |
+| `nonce` | The same nonce as specified in the authorization code URL. | None | If present in the authorization code URL |
 
 ### Slack (`slack`)
 
@@ -287,5 +319,6 @@ arbitrary OAuth 2 authorization code grant flow.
 | Name | Description | Default | Required |
 |------|-------------|---------|----------|
 | `auth_code_url` | The URL to submit the initial authorization code request to. | None | No |
+| `device_code_url` | The URL to subject a device authorization request to. | None | No |
 | `token_url` | The URL to use for exchanging temporary codes and refreshing access tokens. | None | Yes |
 | `auth_style` | How to authenticate to the token URL. If specified, must be one of `in_header` or `in_params`. | Automatically detect | No |

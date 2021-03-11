@@ -40,7 +40,7 @@ func (oo *oidcOperations) verifyUpdateIDToken(ctx context.Context, t *Token, non
 		return ErrOIDCMissingIDToken
 	}
 
-	idToken, err := oo.p.Verifier(&gooidc.Config{ClientID: oo.basicOperations.base.ClientID}).Verify(ctx, rawIDToken)
+	idToken, err := oo.p.Verifier(&gooidc.Config{ClientID: oo.basicOperations.clientID}).Verify(ctx, rawIDToken)
 	if err != nil {
 		return fmt.Errorf("oidc: verification error: %w", err)
 	}
@@ -163,11 +163,15 @@ type oidc struct {
 	vsn             int
 	p               *gooidc.Provider
 	authStyle       oauth2.AuthStyle
+	deviceURL       string
 	extraDataFields []string
 }
 
-func (o *oidc) endpoint() oauth2.Endpoint {
-	ep := o.p.Endpoint()
+func (o *oidc) endpoint() Endpoint {
+	ep := Endpoint{
+		Endpoint:  o.p.Endpoint(),
+		DeviceURL: o.deviceURL,
+	}
 	ep.AuthStyle = o.authStyle
 	return ep
 }
@@ -183,11 +187,9 @@ func (o *oidc) Public(clientID string) PublicOperations {
 func (o *oidc) Private(clientID, clientSecret string) PrivateOperations {
 	return &oidcOperations{
 		basicOperations: &basicOperations{
-			base: &oauth2.Config{
-				Endpoint:     o.endpoint(),
-				ClientID:     clientID,
-				ClientSecret: clientSecret,
-			},
+			endpoint:     o.endpoint(),
+			clientID:     clientID,
+			clientSecret: clientSecret,
 		},
 		p:               o.p,
 		extraDataFields: o.extraDataFields,
@@ -212,17 +214,18 @@ func OIDCFactory(ctx context.Context, vsn int, opts map[string]string) (Provider
 		return nil, &OptionError{Option: "issuer_url", Message: fmt.Sprintf("error creating OIDC provider with given issuer URL: %+v", err)}
 	}
 
+	var metadata struct {
+		DeviceAuthorizationEndpoint       string   `json:"device_authorization_endpoint"`
+		TokenEndpointAuthMethodsSupported []string `json:"token_endpoint_auth_methods_supported"`
+	}
+	if err := delegate.Claims(&metadata); err != nil {
+		return nil, &OptionError{Option: "issuer_url", Message: fmt.Sprintf("error decoding OIDC provider metadata: %+v", err)}
+	}
+
 	// For some reason, the upstream provider does not check the
 	// "token_endpoint_auth_methods_supported" value.
 	authStyle := delegate.Endpoint().AuthStyle
 	if authStyle == oauth2.AuthStyleAutoDetect {
-		var metadata struct {
-			TokenEndpointAuthMethodsSupported []string `json:"token_endpoint_auth_methods_supported"`
-		}
-		if err := delegate.Claims(&metadata); err != nil {
-			return nil, &OptionError{Option: "issuer_url", Message: fmt.Sprintf("error decoding OIDC provider metadata: %+v", err)}
-		}
-
 		if strutil.StrListContains(metadata.TokenEndpointAuthMethodsSupported, "client_secret_post") {
 			authStyle = oauth2.AuthStyleInParams
 		} else {
@@ -233,6 +236,7 @@ func OIDCFactory(ctx context.Context, vsn int, opts map[string]string) (Provider
 	p := &oidc{
 		vsn:       vsn,
 		p:         delegate,
+		deviceURL: metadata.DeviceAuthorizationEndpoint,
 		authStyle: authStyle,
 	}
 

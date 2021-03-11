@@ -4,8 +4,17 @@ import (
 	"context"
 	"net/url"
 
+	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/pkg/grant/devicecode"
 	"golang.org/x/oauth2"
 )
+
+// Endpoint is an extension of oauth2.Endpoint that also provides information
+// about other URLs.
+type Endpoint struct {
+	oauth2.Endpoint
+
+	DeviceURL string
+}
 
 // Token is an extension of *oauth2.Token that also provides complementary data
 // to store (usually from the token's own raw data).
@@ -33,18 +42,18 @@ func (o *AuthCodeURLOptions) ApplyOptions(opts []AuthCodeURLOption) {
 	}
 }
 
-// DeviceCodeURLOptions are options for the DeviceCodeURL operation.
-type DeviceCodeURLOptions struct {
+// DeviceCodeAuthOptions are options for the DeviceCodeAuth operation.
+type DeviceCodeAuthOptions struct {
 	Scopes []string
 }
 
-type DeviceCodeURLOption interface {
-	ApplyToDeviceCodeURLOptions(target *DeviceCodeURLOptions)
+type DeviceCodeAuthOption interface {
+	ApplyToDeviceCodeAuthOptions(target *DeviceCodeAuthOptions)
 }
 
-func (o *DeviceCodeURLOptions) ApplyOptions(opts []DeviceCodeURLOption) {
+func (o *DeviceCodeAuthOptions) ApplyOptions(opts []DeviceCodeAuthOption) {
 	for _, opt := range opts {
-		opt.ApplyToDeviceCodeURLOptions(o)
+		opt.ApplyToDeviceCodeAuthOptions(o)
 	}
 }
 
@@ -52,7 +61,8 @@ func (o *DeviceCodeURLOptions) ApplyOptions(opts []DeviceCodeURLOption) {
 // knowledge of the client ID.
 type PublicOperations interface {
 	AuthCodeURL(state string, opts ...AuthCodeURLOption) (string, bool)
-	DeviceCodeURL(opts ...DeviceCodeURLOption) (string, bool)
+	DeviceCodeAuth(ctx context.Context, opts ...DeviceCodeAuthOption) (*devicecode.Auth, bool, error)
+	DeviceCodeExchange(ctx context.Context, deviceCode string) (*Token, error)
 }
 
 // AuthCodeExchangeOptions are options for the AuthCodeExchange operation.

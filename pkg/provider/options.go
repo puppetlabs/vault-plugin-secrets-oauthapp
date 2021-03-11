@@ -22,14 +22,14 @@ func (wru WithRedirectURL) ApplyToAuthCodeExchangeOptions(target *AuthCodeExchan
 type WithScopes []string
 
 var _ AuthCodeURLOption = WithScopes(nil)
-var _ DeviceCodeURLOption = WithScopes(nil)
+var _ DeviceCodeAuthOption = WithScopes(nil)
 var _ ClientCredentialsOption = WithScopes(nil)
 
 func (ws WithScopes) ApplyToAuthCodeURLOptions(target *AuthCodeURLOptions) {
 	target.Scopes = append(target.Scopes, ws...)
 }
 
-func (ws WithScopes) ApplyToDeviceCodeURLOptions(target *DeviceCodeURLOptions) {
+func (ws WithScopes) ApplyToDeviceCodeAuthOptions(target *DeviceCodeAuthOptions) {
 	target.Scopes = append(target.Scopes, ws...)
 }
 
