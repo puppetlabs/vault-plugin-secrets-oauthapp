@@ -82,7 +82,7 @@ func (b *backend) selfDeleteOperation(ctx context.Context, req *logical.Request,
 func (b *backend) selfConfigReadOperation(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
 	key := selfKey(data.Get("name").(string))
 
-	cc, err := b.getClientCreds(ctx, req.Storage, key)
+	cc, err := b.getSelfToken(ctx, req.Storage, key)
 	if err != nil {
 		return nil, err
 	} else if cc == nil {
@@ -112,7 +112,7 @@ func (b *backend) selfConfigUpdateOperation(ctx context.Context, req *logical.Re
 		return logical.ErrorResponse("not configured"), nil
 	}
 
-	cc := &clientCreds{}
+	cc := &selfToken{}
 	cc.Config.TokenURLParams = data.Get("token_url_params").(map[string]string)
 	cc.Config.Scopes = data.Get("scopes").([]string)
 

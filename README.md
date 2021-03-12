@@ -155,7 +155,7 @@ configuration, so you must specify all required fields, even when updating.
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|----------|
 | `client_id` | The OAuth 2.0 client ID. | String | None | Yes |
-| `client_secret` | The OAuth 2.0 client secret. | String | None | Yes |
+| `client_secret` | The OAuth 2.0 client secret. | String | None | No |
 | `auth_url_params` | A map of additional query string parameters to provide to the authorization code URL. | Map of String🠦String | None | No |
 | `provider` | The name of the provider to use. See [the list of providers](#providers). | String | None | Yes |
 | `provider_options` | Options to configure the specified provider. | Map of String🠦String | None | No |
@@ -208,9 +208,11 @@ type.
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|----------|
 | `grant_type` | The grant type to use. Must be one of `authorization_code`, `refresh_token`, or `urn:ietf:params:oauth:grant-type:device_code`. | String | `authorization_code`* | No |
-| `code` | The response code to exchange for a full token. | String | None | If `grant_type` is `authorization_code` |
-| `redirect_url` | The same redirect URL as specified in the authorization code URL. | String | None | Refer to provider documentation |
-| `refresh_token` | A refresh token retrieved from the provider by some means external to this plugin. | String | None | If `grant_type` is `refresh_token` |
+| `code` | For authorization code flow, the response code to exchange for a full token. | String | None | If `grant_type` is `authorization_code` |
+| `redirect_url` | For authorization code flow, the same redirect URL as specified in the authorization code URL. | String | None | Refer to provider documentation |
+| `refresh_token` | For refresh token flow, the refresh token retrieved from the provider by some means external to this plugin. | String | None | If `grant_type` is `refresh_token` |
+| `device_code` | For device code flow, a device code that has already been retrieved. If not specified, a new device code will be retrieved. | String | None | No |
+| `scopes` | For device code flow, the scopes to request. | List of String | None | No |
 | `provider_options` | A list of options to pass on to the provider for configuring this token exchange. | Map of String🠦String | None | Refer to provider documentation |
 
 \* For compatibility, if `grant_type` is not provided and `refresh_token` is set, the `grant_type` will default to `refresh_token`.

@@ -4,7 +4,7 @@ import (
 	"context"
 	"net/url"
 
-	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/pkg/grant/devicecode"
+	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/pkg/oauth2ext/devicecode"
 	"golang.org/x/oauth2"
 )
 
@@ -44,7 +44,8 @@ func (o *AuthCodeURLOptions) ApplyOptions(opts []AuthCodeURLOption) {
 
 // DeviceCodeAuthOptions are options for the DeviceCodeAuth operation.
 type DeviceCodeAuthOptions struct {
-	Scopes []string
+	Scopes          []string
+	ProviderOptions map[string]string
 }
 
 type DeviceCodeAuthOption interface {
@@ -57,12 +58,46 @@ func (o *DeviceCodeAuthOptions) ApplyOptions(opts []DeviceCodeAuthOption) {
 	}
 }
 
+// DeviceCodeExchangeOptions are options for the DeviceCodeExchange operation.
+type DeviceCodeExchangeOptions struct {
+	ProviderOptions map[string]string
+}
+
+type DeviceCodeExchangeOption interface {
+	ApplyToDeviceCodeExchangeOptions(target *DeviceCodeExchangeOptions)
+}
+
+func (o *DeviceCodeExchangeOptions) ApplyOptions(opts []DeviceCodeExchangeOption) {
+	for _, opt := range opts {
+		opt.ApplyToDeviceCodeExchangeOptions(o)
+	}
+}
+
 // PublicOperations defines the operations for a client that only require
 // knowledge of the client ID.
 type PublicOperations interface {
+	// AuthCodeURL returns a URL to send a user to for initial authentication.
+	//
+	// If this provider does not define an authorization code endpoint URL, this
+	// method returns false.
 	AuthCodeURL(state string, opts ...AuthCodeURLOption) (string, bool)
+
+	// DeviceCodeAuth performs the RFC 8628 device code authorization operation.
+	//
+	// If this provider does not support device code authorization, this method
+	// returns false.
 	DeviceCodeAuth(ctx context.Context, opts ...DeviceCodeAuthOption) (*devicecode.Auth, bool, error)
-	DeviceCodeExchange(ctx context.Context, deviceCode string) (*Token, error)
+
+	// DeviceCodeExchange performs the RFC 8628 device code exchange operation
+	// once, without polling.
+	DeviceCodeExchange(ctx context.Context, deviceCode string, opts ...DeviceCodeExchangeOption) (*Token, error)
+
+	// RefreshToken performs a refresh token flow request.
+	//
+	// Depending on the source of the token, this method may require the client
+	// secret. However, for implicit and device code grants, it only requires
+	// the client ID.
+	RefreshToken(ctx context.Context, t *Token, opts ...RefreshTokenOption) (*Token, error)
 }
 
 // AuthCodeExchangeOptions are options for the AuthCodeExchange operation.
@@ -121,9 +156,6 @@ type PrivateOperations interface {
 
 	// AuthCodeExchange performs an authorization code flow exchange request.
 	AuthCodeExchange(ctx context.Context, code string, opts ...AuthCodeExchangeOption) (*Token, error)
-
-	// RefreshToken performs a refresh token flow request.
-	RefreshToken(ctx context.Context, t *Token, opts ...RefreshTokenOption) (*Token, error)
 
 	// ClientCredentials performs a client credentials flow request.
 	ClientCredentials(ctx context.Context, opts ...ClientCredentialsOption) (*Token, error)

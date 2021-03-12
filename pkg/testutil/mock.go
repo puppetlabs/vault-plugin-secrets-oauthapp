@@ -11,7 +11,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/pkg/grant/devicecode"
+	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/pkg/oauth2ext/devicecode"
 	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/pkg/provider"
 	"golang.org/x/oauth2"
 )
@@ -191,7 +191,7 @@ func (mo *mockOperations) DeviceCodeAuth(ctx context.Context, opts ...provider.D
 	return nil, false, &oauth2.RetrieveError{Response: &http.Response{Status: http.StatusText(http.StatusInternalServerError)}}
 }
 
-func (mo *mockOperations) DeviceCodeExchange(ctx context.Context, deivceCode string) (*provider.Token, error) {
+func (mo *mockOperations) DeviceCodeExchange(ctx context.Context, deivceCode string, opts ...provider.DeviceCodeExchangeOption) (*provider.Token, error) {
 	// XXX: FIXME: Implement this!
 	return nil, &oauth2.RetrieveError{Response: &http.Response{Status: http.StatusText(http.StatusInternalServerError)}}
 }

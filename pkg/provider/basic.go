@@ -5,7 +5,9 @@ import (
 	"net/url"
 
 	gooidc "github.com/coreos/go-oidc"
-	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/pkg/grant/devicecode"
+	"github.com/puppetlabs/leg/errmap/pkg/errmark"
+	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/pkg/oauth2ext/devicecode"
+	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/pkg/oauth2ext/semerr"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/bitbucket"
 	"golang.org/x/oauth2/clientcredentials"
@@ -75,10 +77,10 @@ func (bo *basicOperations) DeviceCodeAuth(ctx context.Context, opts ...DeviceCod
 	}
 
 	auth, err := cfg.DeviceCodeAuth(ctx)
-	return auth, err == nil, err
+	return auth, err == nil, semerr.Map(err)
 }
 
-func (bo *basicOperations) DeviceCodeExchange(ctx context.Context, deviceCode string) (*Token, error) {
+func (bo *basicOperations) DeviceCodeExchange(ctx context.Context, deviceCode string, opts ...DeviceCodeExchangeOption) (*Token, error) {
 	cfg := &devicecode.Config{
 		Config: &oauth2.Config{
 			Endpoint: bo.endpoint.Endpoint,
@@ -89,6 +91,15 @@ func (bo *basicOperations) DeviceCodeExchange(ctx context.Context, deviceCode st
 
 	tok, err := cfg.DeviceCodeExchange(ctx, deviceCode)
 	if err != nil {
+		err = semerr.Map(err)
+		err = errmark.MarkUserIf(
+			err,
+			errmark.RuleAny(
+				semerr.RuleCode("access_denied"),
+				semerr.RuleCode("expired_token"),
+			),
+		)
+
 		return nil, err
 	}
 
@@ -108,7 +119,7 @@ func (bo *basicOperations) AuthCodeExchange(ctx context.Context, code string, op
 
 	tok, err := cfg.Exchange(ctx, code, o.AuthCodeOptions...)
 	if err != nil {
-		return nil, err
+		return nil, semerr.Map(err)
 	}
 
 	return &Token{Token: tok}, nil
@@ -123,7 +134,7 @@ func (bo *basicOperations) RefreshToken(ctx context.Context, t *Token, opts ...R
 
 	tok, err := cfg.TokenSource(ctx, t.Token).Token()
 	if err != nil {
-		return nil, err
+		return nil, semerr.Map(err)
 	}
 
 	return &Token{Token: tok}, nil
@@ -144,7 +155,7 @@ func (bo *basicOperations) ClientCredentials(ctx context.Context, opts ...Client
 
 	tok, err := cc.Token(ctx)
 	if err != nil {
-		return nil, err
+		return nil, semerr.Map(err)
 	}
 
 	return &Token{Token: tok}, nil

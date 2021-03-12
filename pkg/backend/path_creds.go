@@ -8,13 +8,17 @@ import (
 	"context"
 	"crypto/sha1"
 	"fmt"
+	"net"
 	"strings"
+	"time"
 
 	"github.com/hashicorp/vault/sdk/framework"
 	"github.com/hashicorp/vault/sdk/helper/locksutil"
 	"github.com/hashicorp/vault/sdk/logical"
 	"github.com/puppetlabs/leg/errmap/pkg/errmap"
 	"github.com/puppetlabs/leg/errmap/pkg/errmark"
+	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/pkg/oauth2ext/devicecode"
+	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/pkg/oauth2ext/semerr"
 	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/pkg/provider"
 	"golang.org/x/oauth2"
 )
@@ -22,20 +26,9 @@ import (
 const (
 	credsPath       = "creds"
 	credsPathPrefix = credsPath + "/"
-)
 
-const (
-	grantTypeAuthorizationCode = "authorization_code"
-	grantTypeRefreshToken      = "refresh_token"
-	grantTypeDeviceCode        = "urn:ietf:params:oauth:grant-type:device_code"
-)
-
-var (
-	schemaAllowedGrantTypeValues = []interface{}{
-		grantTypeAuthorizationCode,
-		grantTypeRefreshToken,
-		grantTypeDeviceCode,
-	}
+	devicesPath       = "devices"
+	devicesPathPrefix = devicesPath + "/"
 )
 
 // credKey hashes the name and splits the first few bytes into separate buckets
@@ -46,10 +39,46 @@ func credKey(name string) string {
 	return credsPathPrefix + fmt.Sprintf("%x/%x/%x", first, second, rest)
 }
 
+// deviceKey hashes the name and splits the first few bytes into separate
+// buckets for performance reasons.
+func deviceKey(name string) string {
+	hash := sha1.Sum([]byte(name))
+	first, second, rest := hash[:2], hash[2:4], hash[4:]
+	return devicesPathPrefix + fmt.Sprintf("%x/%x/%x", first, second, rest)
+}
+
+// credGrantType returns the grant type to be used for a given update operation.
+func credGrantType(data *framework.FieldData) string {
+	if v, ok := data.GetOk("grant_type"); ok {
+		return v.(string)
+	} else if _, ok := data.GetOk("refresh_token"); ok {
+		return "refresh_token"
+	}
+
+	return "authorization_code"
+}
+
+// credUpdateGrantHandlers implement individual handlers for the different grant
+// types that the update operation supports.
+var credUpdateGrantHandlers = map[string]func(b *backend) framework.OperationFunc{
+	"authorization_code": func(b *backend) framework.OperationFunc { return b.credsUpdateAuthorizationCodeOperation },
+	"refresh_token":      func(b *backend) framework.OperationFunc { return b.credsUpdateRefreshTokenOperation },
+	devicecode.GrantType: func(b *backend) framework.OperationFunc { return b.credsUpdateDeviceCodeOperation },
+}
+
+// credGrantTypes returns the list of supported grant types for credentials for
+// schema purposes.
+func credGrantTypes() (types []interface{}) {
+	for k := range credUpdateGrantHandlers {
+		types = append(types, k)
+	}
+	return
+}
+
 func (b *backend) credsReadOperation(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
 	key := credKey(data.Get("name").(string))
 
-	tok, err := b.getRefreshAuthCodeToken(ctx, req.Storage, key, data)
+	tok, err := b.getRefreshCredToken(ctx, req.Storage, key, data)
 	switch {
 	case err == ErrNotConfigured:
 		return logical.ErrorResponse("not configured"), nil
@@ -57,7 +86,17 @@ func (b *backend) credsReadOperation(ctx context.Context, req *logical.Request, 
 		return nil, err
 	case tok == nil:
 		return nil, nil
-	case !tokenValid(tok, data):
+	case !tok.Issued():
+		if tok.UserError != "" {
+			return logical.ErrorResponse(tok.UserError), nil
+		}
+
+		return logical.ErrorResponse("token pending issuance"), nil
+	case !tokenValid(tok.Token, data):
+		if tok.UserError != "" {
+			return logical.ErrorResponse(tok.UserError), nil
+		}
+
 		return logical.ErrorResponse("token expired"), nil
 	}
 
@@ -77,10 +116,78 @@ func (b *backend) credsReadOperation(ctx context.Context, req *logical.Request, 
 	resp := &logical.Response{
 		Data: rd,
 	}
+	if tok.UserError != "" {
+		resp.Warnings = []string{
+			fmt.Sprintf("token will expire: %s", tok.UserError),
+		}
+	} else if tok.TransientErrorsSinceLastIssue > 0 {
+		resp.Warnings = []string{
+			fmt.Sprintf(
+				"%d attempt(s) to refresh this token failed, most recently: %s",
+				tok.TransientErrorsSinceLastIssue,
+				tok.LastTransientError,
+			),
+		}
+	}
 	return resp, nil
 }
 
-func (b *backend) credsUpdateOperation(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
+func (b *backend) credsUpdateAuthorizationCodeOperation(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
+	c, err := b.getCache(ctx, req.Storage)
+	if err != nil {
+		return nil, err
+	} else if c == nil {
+		return logical.ErrorResponse("not configured"), nil
+	} else if c.Config.ClientSecret == "" {
+		return logical.ErrorResponse("missing client secret in configuration"), nil
+	}
+
+	key := credKey(data.Get("name").(string))
+
+	lock := locksutil.LockForKey(b.locks, key)
+	lock.Lock()
+	defer lock.Unlock()
+
+	ops := c.Provider.Private(c.Config.ClientID, c.Config.ClientSecret)
+
+	code, ok := data.GetOk("code")
+	if !ok {
+		return logical.ErrorResponse("missing code"), nil
+	}
+	if _, ok := data.GetOk("refresh_token"); ok {
+		return logical.ErrorResponse("cannot use refresh_token with authorization_code grant type"), nil
+	}
+
+	tok, err := ops.AuthCodeExchange(
+		ctx,
+		code.(string),
+		provider.WithRedirectURL(data.Get("redirect_url").(string)),
+		provider.WithProviderOptions(data.Get("provider_options").(map[string]string)),
+	)
+	if errmark.MarkedUser(err) {
+		return logical.ErrorResponse(errmap.Wrap(errmark.MarkShort(err), "exchange failed").Error()), nil
+	} else if err != nil {
+		return nil, err
+	}
+
+	sto := &credToken{
+		Token:         tok,
+		LastIssueTime: time.Now(),
+	}
+
+	entry, err := logical.StorageEntryJSON(key, sto)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := req.Storage.Put(ctx, entry); err != nil {
+		return nil, err
+	}
+
+	return nil, nil
+}
+
+func (b *backend) credsUpdateRefreshTokenOperation(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
 	c, err := b.getCache(ctx, req.Storage)
 	if err != nil {
 		return nil, err
@@ -96,74 +203,157 @@ func (b *backend) credsUpdateOperation(ctx context.Context, req *logical.Request
 
 	ops := c.Provider.Private(c.Config.ClientID, c.Config.ClientSecret)
 
-	// Figure out which mode we want to operate in: authorization code
-	// (default), refresh token, or device code.
-	grantType, ok := data.GetOk("grant_type")
+	refreshToken, ok := data.GetOk("refresh_token")
 	if !ok {
-		if _, ok := data.GetOk("refresh_token"); ok {
-			grantType = grantTypeRefreshToken
-		} else {
-			grantType = grantTypeAuthorizationCode
+		return logical.ErrorResponse("missing refresh_token"), nil
+	}
+	if _, ok := data.GetOk("code"); ok {
+		return logical.ErrorResponse("cannot use code with refresh_token grant type"), nil
+	}
+
+	tok := &provider.Token{
+		Token: &oauth2.Token{
+			RefreshToken: refreshToken.(string),
+		},
+	}
+	tok, err = ops.RefreshToken(
+		ctx,
+		tok,
+		provider.WithProviderOptions(data.Get("provider_options").(map[string]string)),
+	)
+	if errmark.MarkedUser(err) {
+		return logical.ErrorResponse(errmap.Wrap(errmark.MarkShort(err), "refresh failed").Error()), nil
+	} else if err != nil {
+		return nil, err
+	}
+
+	sto := &credToken{
+		Token:         tok,
+		LastIssueTime: time.Now(),
+	}
+
+	entry, err := logical.StorageEntryJSON(key, sto)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := req.Storage.Put(ctx, entry); err != nil {
+		return nil, err
+	}
+
+	return nil, nil
+}
+
+func (b *backend) credsUpdateDeviceCodeOperation(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
+	c, err := b.getCache(ctx, req.Storage)
+	if err != nil {
+		return nil, err
+	} else if c == nil {
+		return logical.ErrorResponse("not configured"), nil
+	}
+
+	key := credKey(data.Get("name").(string))
+
+	lock := locksutil.LockForKey(b.locks, key)
+	lock.Lock()
+	defer lock.Unlock()
+
+	ops := c.Provider.Public(c.Config.ClientID)
+
+	// If a device code isn't provided, we'll end up setting this response to
+	// information important to return to the user. Otherwise, it will remain
+	// nil.
+	var resp *logical.Response
+
+	// The spec provides for a default polling interval of 5 seconds, so we'll
+	// start there.
+	interval := 5 * time.Second
+
+	deviceCode, ok := data.GetOk("device_code")
+	if !ok {
+		now := time.Now()
+
+		auth, ok, err := ops.DeviceCodeAuth(
+			ctx,
+			provider.WithScopes(data.Get("scopes").([]string)),
+			provider.WithProviderOptions(data.Get("provider_options").(map[string]string)),
+		)
+		if errmark.MarkedUser(err) {
+			return logical.ErrorResponse(errmap.Wrap(errmark.MarkShort(err), "device code authorization request failed").Error()), nil
+		} else if err != nil {
+			return nil, err
+		} else if !ok {
+			return logical.ErrorResponse("device code URL not available"), nil
+		}
+
+		if auth.Interval > 0 {
+			interval = time.Duration(auth.Interval) * time.Second
+		}
+
+		// Now we have a device code, so we can continue with the request.
+		deviceCode = auth.DeviceCode
+
+		// We're going to return a response with the information the user
+		// needs to process the device code flow.
+		resp = &logical.Response{
+			Data: map[string]interface{}{
+				"user_code":        auth.UserCode,
+				"verification_uri": auth.VerificationURI,
+				"expire_time":      now.Add(time.Duration(auth.ExpiresIn) * time.Second),
+			},
+		}
+		if auth.VerificationURIComplete != "" {
+			resp.Data["verification_uri_complete"] = auth.VerificationURIComplete
 		}
 	}
 
-	var tok *provider.Token
-	switch grantType {
-	case grantTypeAuthorizationCode:
-		code, ok := data.GetOk("code")
-		if !ok {
-			return logical.ErrorResponse("missing code"), nil
-		}
-		if _, ok := data.GetOk("refresh_token"); ok {
-			return logical.ErrorResponse("cannot use refresh_token with authorization_code grant type"), nil
-		}
+	sto := &credToken{}
 
-		tok, err = ops.AuthCodeExchange(
-			ctx,
-			code.(string),
-			provider.WithRedirectURL(data.Get("redirect_url").(string)),
-			provider.WithProviderOptions(data.Get("provider_options").(map[string]string)),
-		)
-		if errmark.Matches(err, errmark.RuleType(&oauth2.RetrieveError{})) || errmark.MarkedUser(err) {
-			return logical.ErrorResponse(errmap.Wrap(errmark.MarkShort(err), "exchange failed").Error()), nil
-		} else if err != nil {
-			return nil, err
-		}
-	case grantTypeRefreshToken:
-		refreshToken, ok := data.GetOk("refresh_token")
-		if !ok {
-			return logical.ErrorResponse("missing refresh_token"), nil
-		}
-		if _, ok := data.GetOk("code"); ok {
-			return logical.ErrorResponse("cannot use code with refresh_token grant type"), nil
-		}
+	// If we get this far, we're guaranteed to have a device code. We'll do
+	// one request to make sure that it's not completely broken. Then we'll
+	// submit it to be polled.
+	tok, err := ops.DeviceCodeExchange(
+		ctx,
+		deviceCode.(string),
+		provider.WithProviderOptions(data.Get("provider_options").(map[string]string)),
+	)
+	switch {
+	case errmark.Matches(err, errmark.RuleType((*net.OpError)(nil))) || semerr.IsCode(err, "slow_down"):
+		interval += 5 * time.Second
+		fallthrough
+	case semerr.IsCode(err, "authorization_pending"):
+		sto.LastAttemptedIssueTime = time.Now()
 
-		tok = &provider.Token{
-			Token: &oauth2.Token{
-				RefreshToken: refreshToken.(string),
-			},
-		}
-		tok, err = ops.RefreshToken(
-			ctx,
-			tok,
-			provider.WithProviderOptions(data.Get("provider_options").(map[string]string)),
-		)
-		if errmark.Matches(err, errmark.RuleType(&oauth2.RetrieveError{})) || errmark.MarkedUser(err) {
-			return logical.ErrorResponse(errmap.Wrap(errmark.MarkShort(err), "refresh failed").Error()), nil
-		} else if err != nil {
-			return nil, err
-		}
-	case grantTypeDeviceCode:
-		// TODO: Response will contain:
+		// We'll write the device auth out first. In the issuer, it checks that
+		// the target entry exists first (because someone could delete it before
+		// the exchange succeeds, anyway).
 		//
-		// {
-		//   "user_code": "BDWD-HQPK",
-		//   "verification_uri": "https://example.okta.com/device",
-		//   "verification_uri_complete": "https://example.okta.com/device?user_code=BDWD-HQPK",
-		//   "expire_time": "2021-03-10T23:00:00Z"
-		// }
+		// Locks on the devices/ prefix are held by the corresponding credential
+		// lock, so we don't have to do any extra work to write this out here.
+		auth := &deviceAuth{
+			DeviceCode:             deviceCode.(string),
+			Interval:               int32(interval.Round(time.Second) / time.Second),
+			LastAttemptedIssueTime: sto.LastAttemptedIssueTime,
+			ProviderOptions:        data.Get("provider_options").(map[string]string),
+		}
+
+		entry, err := logical.StorageEntryJSON(deviceKey(data.Get("name").(string)), auth)
+		if err != nil {
+			return nil, err
+		}
+
+		if err := req.Storage.Put(ctx, entry); err != nil {
+			return nil, err
+		}
+	case errmark.MarkedUser(err):
+		return logical.ErrorResponse(errmap.Wrap(errmark.MarkShort(err), "device code exchange failed").Error()), nil
+	case err != nil:
+		return nil, err
 	default:
-		return logical.ErrorResponse("unknown grant_type"), nil
+		// Surprise! The user is already authenticated, so we'll just store this
+		// as a normal token.
+		sto.Token = tok
+		sto.LastIssueTime = time.Now()
 	}
 
 	entry, err := logical.StorageEntryJSON(key, tok)
@@ -175,7 +365,16 @@ func (b *backend) credsUpdateOperation(ctx context.Context, req *logical.Request
 		return nil, err
 	}
 
-	return nil, nil
+	return resp, nil
+}
+
+func (b *backend) credsUpdateOperation(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
+	hnd, found := credUpdateGrantHandlers[credGrantType(data)]
+	if !found {
+		return logical.ErrorResponse("unknown grant_type"), nil
+	}
+
+	return hnd(b)(ctx, req, data)
 }
 
 func (b *backend) credsDeleteOperation(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
@@ -208,7 +407,7 @@ var credsFields = map[string]*framework.FieldSchema{
 	"grant_type": {
 		Type:          framework.TypeString,
 		Description:   "The grant type to use for this operation.",
-		AllowedValues: schemaAllowedGrantTypeValues,
+		AllowedValues: credGrantTypes(),
 	},
 	"code": {
 		Type:        framework.TypeString,
@@ -221,6 +420,14 @@ var credsFields = map[string]*framework.FieldSchema{
 	"refresh_token": {
 		Type:        framework.TypeString,
 		Description: "Specifies a refresh token retrieved from the provider by some means external to this plugin.",
+	},
+	"device_code": {
+		Type:        framework.TypeString,
+		Description: "Specifies a device token retrieved from the provider by some means external to this plugin.",
+	},
+	"scopes": {
+		Type:        framework.TypeStringSlice,
+		Description: "Specifies the scopes to provide for a device code authorization request.",
 	},
 	"provider_options": {
 		Type:        framework.TypeKVPairs,

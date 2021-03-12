@@ -9,12 +9,17 @@ import (
 	"github.com/hashicorp/vault/sdk/framework"
 	"github.com/hashicorp/vault/sdk/helper/locksutil"
 	"github.com/hashicorp/vault/sdk/logical"
+	"github.com/puppetlabs/leg/scheduler"
 	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/pkg/provider"
 )
 
 type backend struct {
 	providerRegistry *provider.Registry
 	logger           hclog.Logger
+
+	// scheduler is a worker that processes token renewals with hard schedules.
+	// It will be created by the backend lifecycle in the initialize method.
+	scheduler scheduler.StartedLifecycle
 
 	// mut protects the cache value.
 	mut   sync.Mutex
@@ -52,13 +57,13 @@ func New(opts Options) *framework.Backend {
 	}
 
 	return &framework.Backend{
-		Help:         strings.TrimSpace(backendHelp),
-		PathsSpecial: pathsSpecial(),
-		Paths:        paths(b),
-		BackendType:  logical.TypeLogical,
-		Clean:        b.clean,
-		Invalidate:   b.invalidate,
-		PeriodicFunc: b.refreshPeriodic,
+		Help:           strings.TrimSpace(backendHelp),
+		PathsSpecial:   pathsSpecial(),
+		Paths:          paths(b),
+		BackendType:    logical.TypeLogical,
+		InitializeFunc: b.initialize,
+		Clean:          b.clean,
+		Invalidate:     b.invalidate,
 	}
 }
 

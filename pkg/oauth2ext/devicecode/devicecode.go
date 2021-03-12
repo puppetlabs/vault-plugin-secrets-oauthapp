@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/pkg/grant/interop"
+	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/pkg/oauth2ext/interop"
 	"golang.org/x/oauth2"
 )
 
@@ -27,15 +27,6 @@ type Auth struct {
 	VerificationURIComplete string `json:"verification_uri_complete,omitempty"`
 	ExpiresIn               int32  `json:"expires_in"`
 	Interval                int32  `json:"interval,omitempty"`
-}
-
-type AuthError struct {
-	Response *http.Response
-	Body     []byte
-}
-
-func (e *AuthError) Error() string {
-	return fmt.Sprintf("oauth2: cannot fetch device code: %v\nResponse: %s", e.Response.Status, e.Body)
 }
 
 type Config struct {
@@ -56,6 +47,7 @@ func (c *Config) DeviceCodeAuth(ctx context.Context) (*Auth, error) {
 	if err != nil {
 		return nil, err
 	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
 	resp, err := oauth2.NewClient(ctx, nil).Do(req)
 	if err != nil {
@@ -71,10 +63,10 @@ func (c *Config) DeviceCodeAuth(ctx context.Context) (*Auth, error) {
 	case resp.StatusCode < 200 || resp.StatusCode >= 300:
 		body, err := ioutil.ReadAll(reader)
 		if err != nil {
-			return nil, fmt.Errorf("oauth2: cannot fetch device code authorization: %w", err)
+			return nil, fmt.Errorf("cannot fetch device code authorization: %w", err)
 		}
 
-		return nil, &AuthError{
+		return nil, &oauth2.RetrieveError{
 			Response: resp,
 			Body:     body,
 		}
@@ -85,13 +77,13 @@ func (c *Config) DeviceCodeAuth(ctx context.Context) (*Auth, error) {
 		}
 		switch {
 		case auth.DeviceCode == "":
-			return nil, errors.New("oauth2: server response missing device_code")
+			return nil, errors.New("server response missing device_code")
 		case auth.UserCode == "":
-			return nil, errors.New("oauth2: server response missing user_code")
+			return nil, errors.New("server response missing user_code")
 		case auth.VerificationURI == "":
-			return nil, errors.New("oauth2: server response missing verification_uri")
+			return nil, errors.New("server response missing verification_uri")
 		case auth.ExpiresIn <= 0:
-			return nil, errors.New("oauth2: server response missing expires_in")
+			return nil, errors.New("server response missing expires_in")
 		}
 
 		return auth, nil
@@ -109,6 +101,7 @@ func (c *Config) DeviceCodeExchange(ctx context.Context, deviceCode string) (*oa
 	if err != nil {
 		return nil, err
 	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
 	resp, err := oauth2.NewClient(ctx, nil).Do(req)
 	if err != nil {
@@ -122,7 +115,7 @@ func (c *Config) DeviceCodeExchange(ctx context.Context, deviceCode string) (*oa
 
 	body, err := ioutil.ReadAll(reader)
 	if err != nil {
-		return nil, fmt.Errorf("oauth2: cannot fetch device code authorization: %w", err)
+		return nil, fmt.Errorf("cannot fetch device code authorization: %w", err)
 	}
 
 	switch {
@@ -137,7 +130,7 @@ func (c *Config) DeviceCodeExchange(ctx context.Context, deviceCode string) (*oa
 			return nil, err
 		}
 		if base.AccessToken == "" {
-			return nil, errors.New("oauth2: server response missing access_token")
+			return nil, errors.New("server response missing access_token")
 		}
 
 		tok := &oauth2.Token{

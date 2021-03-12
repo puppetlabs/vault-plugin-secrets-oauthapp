@@ -10,6 +10,7 @@ import (
 	"github.com/hashicorp/vault/sdk/helper/parseutil"
 	"github.com/hashicorp/vault/sdk/helper/strutil"
 	"github.com/puppetlabs/leg/errmap/pkg/errmark"
+	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/pkg/oauth2ext/devicecode"
 	"golang.org/x/oauth2"
 )
 
@@ -29,7 +30,7 @@ func init() {
 }
 
 type oidcOperations struct {
-	*basicOperations
+	delegate        *basicOperations
 	p               *gooidc.Provider
 	extraDataFields []string
 }
@@ -40,7 +41,7 @@ func (oo *oidcOperations) verifyUpdateIDToken(ctx context.Context, t *Token, non
 		return ErrOIDCMissingIDToken
 	}
 
-	idToken, err := oo.p.Verifier(&gooidc.Config{ClientID: oo.basicOperations.clientID}).Verify(ctx, rawIDToken)
+	idToken, err := oo.p.Verifier(&gooidc.Config{ClientID: oo.delegate.clientID}).Verify(ctx, rawIDToken)
 	if err != nil {
 		return fmt.Errorf("oidc: verification error: %w", err)
 	}
@@ -103,11 +104,42 @@ func (oo *oidcOperations) updateUserInfo(ctx context.Context, t *Token) error {
 	return nil
 }
 
+func (oo *oidcOperations) AuthCodeURL(state string, opts ...AuthCodeURLOption) (string, bool) {
+	opts = append([]AuthCodeURLOption{WithScopes{"openid"}}, opts...)
+	return oo.delegate.AuthCodeURL(state, opts...)
+}
+
+func (oo *oidcOperations) DeviceCodeAuth(ctx context.Context, opts ...DeviceCodeAuthOption) (*devicecode.Auth, bool, error) {
+	opts = append([]DeviceCodeAuthOption{WithScopes{"openid"}}, opts...)
+	return oo.delegate.DeviceCodeAuth(ctx, opts...)
+}
+
+func (oo *oidcOperations) DeviceCodeExchange(ctx context.Context, deviceCode string, opts ...DeviceCodeExchangeOption) (*Token, error) {
+	t, err := oo.delegate.DeviceCodeExchange(ctx, deviceCode, opts...)
+	if err != nil {
+		return nil, err
+	}
+
+	if t.ExtraData == nil {
+		t.ExtraData = make(map[string]interface{})
+	}
+
+	if err := oo.verifyUpdateIDToken(ctx, t, ""); err != nil {
+		return nil, errmark.MarkUser(err)
+	}
+
+	if err := oo.updateUserInfo(ctx, t); err != nil {
+		return nil, errmark.MarkUser(err)
+	}
+
+	return t, nil
+}
+
 func (oo *oidcOperations) AuthCodeExchange(ctx context.Context, code string, opts ...AuthCodeExchangeOption) (*Token, error) {
 	o := &AuthCodeExchangeOptions{}
 	o.ApplyOptions(opts)
 
-	t, err := oo.basicOperations.AuthCodeExchange(ctx, code, opts...)
+	t, err := oo.delegate.AuthCodeExchange(ctx, code, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -131,7 +163,7 @@ func (oo *oidcOperations) RefreshToken(ctx context.Context, t *Token, opts ...Re
 	o := &RefreshTokenOptions{}
 	o.ApplyOptions(opts)
 
-	nt, err := oo.basicOperations.RefreshToken(ctx, t, opts...)
+	nt, err := oo.delegate.RefreshToken(ctx, t, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -157,6 +189,10 @@ func (oo *oidcOperations) RefreshToken(ctx context.Context, t *Token, opts ...Re
 	}
 
 	return nt, nil
+}
+
+func (oo *oidcOperations) ClientCredentials(ctx context.Context, opts ...ClientCredentialsOption) (*Token, error) {
+	return oo.delegate.ClientCredentials(ctx, opts...)
 }
 
 type oidc struct {
@@ -186,7 +222,7 @@ func (o *oidc) Public(clientID string) PublicOperations {
 
 func (o *oidc) Private(clientID, clientSecret string) PrivateOperations {
 	return &oidcOperations{
-		basicOperations: &basicOperations{
+		delegate: &basicOperations{
 			endpoint:     o.endpoint(),
 			clientID:     clientID,
 			clientSecret: clientSecret,

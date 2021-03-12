@@ -9,43 +9,6 @@ import (
 	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/pkg/provider"
 )
 
-type clientCreds struct {
-	Config struct {
-		Scopes         []string          `json:"scopes"`
-		TokenURLParams map[string]string `json:"token_url_params"`
-	} `json:"config"`
-	Token *provider.Token `json:"token"`
-}
-
-func getClientCredsLocked(ctx context.Context, storage logical.Storage, key string) (*clientCreds, error) {
-	entry, err := storage.Get(ctx, key)
-	if err != nil {
-		return nil, err
-	} else if entry == nil {
-		return nil, nil
-	}
-
-	cc := &clientCreds{}
-	if err := entry.DecodeJSON(cc); err != nil {
-		return nil, err
-	}
-
-	return cc, nil
-}
-
-func (b *backend) getClientCreds(ctx context.Context, storage logical.Storage, key string) (*clientCreds, error) {
-	lock := locksutil.LockForKey(b.locks, key)
-	lock.RLock()
-	defer lock.RUnlock()
-
-	cc, err := getClientCredsLocked(ctx, storage, key)
-	if err != nil {
-		return nil, err
-	}
-
-	return cc, nil
-}
-
 func (b *backend) updateClientCredsToken(ctx context.Context, storage logical.Storage, key string, data *framework.FieldData) (*provider.Token, error) {
 	lock := locksutil.LockForKey(b.locks, key)
 	lock.Lock()
@@ -53,12 +16,12 @@ func (b *backend) updateClientCredsToken(ctx context.Context, storage logical.St
 
 	// In case someone else updated this token from under us, we'll re-request
 	// it here with the lock acquired.
-	cc, err := getClientCredsLocked(ctx, storage, key)
+	cc, err := getSelfTokenLocked(ctx, storage, key)
 	switch {
 	case err != nil:
 		return nil, err
 	case cc == nil:
-		cc = &clientCreds{}
+		cc = &selfToken{}
 	case tokenValid(cc.Token, data):
 		return cc.Token, nil
 	}
@@ -95,11 +58,11 @@ func (b *backend) updateClientCredsToken(ctx context.Context, storage logical.St
 }
 
 func (b *backend) getUpdateClientCredsToken(ctx context.Context, storage logical.Storage, key string, data *framework.FieldData) (*provider.Token, error) {
-	cc, err := b.getClientCreds(ctx, storage, key)
+	cc, err := b.getSelfToken(ctx, storage, key)
 	if err != nil {
 		return nil, err
 	} else if cc == nil {
-		cc = &clientCreds{}
+		cc = &selfToken{}
 	}
 
 	if !tokenValid(cc.Token, data) {

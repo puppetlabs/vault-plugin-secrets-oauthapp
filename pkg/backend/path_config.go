@@ -37,11 +37,6 @@ func (b *backend) configUpdateOperation(ctx context.Context, req *logical.Reques
 		return logical.ErrorResponse("missing client ID"), nil
 	}
 
-	clientSecret, ok := data.GetOk("client_secret")
-	if !ok {
-		return logical.ErrorResponse("missing client secret"), nil
-	}
-
 	providerName, ok := data.GetOk("provider")
 	if !ok {
 		return logical.ErrorResponse("missing provider"), nil
@@ -60,7 +55,7 @@ func (b *backend) configUpdateOperation(ctx context.Context, req *logical.Reques
 
 	c := &config{
 		ClientID:        clientID.(string),
-		ClientSecret:    clientSecret.(string),
+		ClientSecret:    data.Get("client_secret").(string),
 		AuthURLParams:   data.Get("auth_url_params").(map[string]string),
 		ProviderName:    providerName.(string),
 		ProviderVersion: p.Version(),
