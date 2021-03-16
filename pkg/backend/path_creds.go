@@ -49,7 +49,14 @@ func credGrantTypes() (types []interface{}) {
 }
 
 func (b *backend) credsReadOperation(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
-	entry, err := b.getRefreshCredToken(ctx, req.Storage, persistence.AuthCodeName(data.Get("name").(string)), data)
+	expiryDelta := time.Duration(data.Get("minimum_seconds").(int)) * time.Second
+
+	entry, err := b.getRefreshCredToken(
+		ctx,
+		req.Storage,
+		persistence.AuthCodeName(data.Get("name").(string)),
+		expiryDelta,
+	)
 	switch {
 	case err == ErrNotConfigured:
 		return logical.ErrorResponse("not configured"), nil
@@ -63,7 +70,7 @@ func (b *backend) credsReadOperation(ctx context.Context, req *logical.Request, 
 		}
 
 		return logical.ErrorResponse("token pending issuance"), nil
-	case !b.tokenValid(entry.Token, data):
+	case !b.tokenValid(entry.Token, expiryDelta):
 		if entry.UserError != "" {
 			return logical.ErrorResponse(entry.UserError), nil
 		}
@@ -321,6 +328,7 @@ var credsFields = map[string]*framework.FieldSchema{
 	"minimum_seconds": {
 		Type:        framework.TypeInt,
 		Description: "Minimum remaining seconds to allow when reusing access token.",
+		Default:     0,
 		Query:       true,
 	},
 	// fields for write operation

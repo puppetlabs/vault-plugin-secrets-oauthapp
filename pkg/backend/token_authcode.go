@@ -5,12 +5,15 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/hashicorp/vault/sdk/framework"
 	"github.com/hashicorp/vault/sdk/logical"
 	"github.com/puppetlabs/leg/errmap/pkg/errmap"
 	"github.com/puppetlabs/leg/errmap/pkg/errmark"
 	"github.com/puppetlabs/leg/scheduler"
 	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/pkg/persistence"
+)
+
+const (
+	refreshInterval = time.Minute
 )
 
 type refreshProcess struct {
@@ -26,7 +29,7 @@ func (rp *refreshProcess) Description() string {
 }
 
 func (rp *refreshProcess) Run(ctx context.Context) error {
-	_, err := rp.backend.getRefreshCredToken(ctx, rp.storage, rp.keyer, nil)
+	_, err := rp.backend.getRefreshCredToken(ctx, rp.storage, rp.keyer, refreshInterval+10*time.Second)
 	return err
 }
 
@@ -38,7 +41,7 @@ type refreshDescriptor struct {
 var _ scheduler.Descriptor = &refreshDescriptor{}
 
 func (rd *refreshDescriptor) Run(ctx context.Context, pc chan<- scheduler.Process) error {
-	ticker := rd.backend.clock.NewTicker(time.Minute)
+	ticker := rd.backend.clock.NewTicker(refreshInterval)
 	defer ticker.Stop()
 
 	for {
@@ -66,7 +69,7 @@ func (rd *refreshDescriptor) Run(ctx context.Context, pc chan<- scheduler.Proces
 	}
 }
 
-func (b *backend) refreshCredToken(ctx context.Context, storage logical.Storage, keyer persistence.AuthCodeKeyer, data *framework.FieldData) (*persistence.AuthCodeEntry, error) {
+func (b *backend) refreshCredToken(ctx context.Context, storage logical.Storage, keyer persistence.AuthCodeKeyer, expiryDelta time.Duration) (*persistence.AuthCodeEntry, error) {
 	var entry *persistence.AuthCodeEntry
 	err := b.data.Managers(storage).AuthCode().WithLock(keyer, func(cm *persistence.LockedAuthCodeManager) error {
 		// In case someone else refreshed this token from under us, we'll re-request
@@ -75,7 +78,7 @@ func (b *backend) refreshCredToken(ctx context.Context, storage logical.Storage,
 		switch {
 		case err != nil || candidate == nil:
 			return err
-		case !candidate.TokenIssued() || b.tokenValid(candidate.Token, data) || candidate.RefreshToken == "":
+		case !candidate.TokenIssued() || b.tokenValid(candidate.Token, expiryDelta) || candidate.RefreshToken == "":
 			entry = candidate
 			return nil
 		}
@@ -110,16 +113,16 @@ func (b *backend) refreshCredToken(ctx context.Context, storage logical.Storage,
 	return entry, err
 }
 
-func (b *backend) getRefreshCredToken(ctx context.Context, storage logical.Storage, keyer persistence.AuthCodeKeyer, data *framework.FieldData) (*persistence.AuthCodeEntry, error) {
+func (b *backend) getRefreshCredToken(ctx context.Context, storage logical.Storage, keyer persistence.AuthCodeKeyer, expiryDelta time.Duration) (*persistence.AuthCodeEntry, error) {
 	entry, err := b.data.Managers(storage).AuthCode().ReadAuthCodeEntry(ctx, keyer)
 	switch {
 	case err != nil:
 		return nil, err
 	case entry == nil:
 		return nil, nil
-	case !entry.TokenIssued() || b.tokenValid(entry.Token, data):
+	case !entry.TokenIssued() || b.tokenValid(entry.Token, expiryDelta):
 		return entry, nil
 	default:
-		return b.refreshCredToken(ctx, storage, keyer, data)
+		return b.refreshCredToken(ctx, storage, keyer, expiryDelta)
 	}
 }

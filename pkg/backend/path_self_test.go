@@ -160,7 +160,7 @@ func TestExpiredClientCredentials(t *testing.T) {
 	handler := testutil.AmendTokenMockClientCredentials(testutil.IncrementMockClientCredentials("token_"), func(t *provider.Token) error {
 		switch handled {
 		case true:
-			t.Expiry = time.Now().Add(time.Minute)
+			t.Expiry = time.Now().Add(10 * time.Minute)
 		default:
 			t.Expiry = time.Now().Add(2 * time.Second)
 			handled = true

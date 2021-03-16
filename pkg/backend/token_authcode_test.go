@@ -23,15 +23,22 @@ func TestPeriodicRefresh(t *testing.T) {
 		Secret: "def",
 	}
 
-	// We may have at most 2 writes with no reads (third and fourth token,
-	// below).
-	refreshed := make(chan int, 2)
+	// We may have at most 3 writes with no reads (second, third token issuance
+	// and third token refresh).
+	refreshed := make(chan int, 3)
 
-	exchange := testutil.RestrictMockAuthCodeExchange(map[string]testutil.MockAuthCodeExchangeFunc{
+	exchanges := map[string]testutil.MockAuthCodeExchangeFunc{
 		"first": testutil.RandomMockAuthCodeExchange,
 		"second": testutil.RefreshableMockAuthCodeExchange(
 			testutil.IncrementMockAuthCodeExchange("second_"),
-			func(_ int) (time.Duration, error) { return 30 * time.Minute, nil },
+			func(i int) (time.Duration, error) {
+				select {
+				case refreshed <- i:
+				default:
+				}
+
+				return 30 * time.Minute, nil
+			},
 		),
 		"third": testutil.RefreshableMockAuthCodeExchange(
 			testutil.IncrementMockAuthCodeExchange("third_"),
@@ -42,32 +49,21 @@ func TestPeriodicRefresh(t *testing.T) {
 				}
 
 				switch i {
-				case 1, 2:
-					// Start with a short duration. This will be refreshed
-					// automatically when the scheduler boots and then again by
-					// incrementing the clock.
-					return 5 * time.Second, nil
+				case 1:
+					// We start with an expiry that falls within our default
+					// expiration window (70 seconds) but will also be valid if
+					// we tick the clock forward a minute. That way we don't
+					// have a race condition on scheduler startup.
+					return 65 * time.Second, nil
 				default:
 					return 10 * time.Minute, nil
 				}
 			},
 		),
-		"fourth": testutil.RefreshableMockAuthCodeExchange(
-			testutil.IncrementMockAuthCodeExchange("fourth_"),
-			func(i int) (time.Duration, error) {
-				select {
-				case refreshed <- i:
-				default:
-				}
-
-				// add 30 seconds for each subsequent read
-				return (60 + time.Duration(i)*30) * time.Second, nil
-			},
-		),
-	})
+	}
 
 	pr := provider.NewRegistry()
-	pr.MustRegister("mock", testutil.MockFactory(testutil.MockWithAuthCodeExchange(client, exchange)))
+	pr.MustRegister("mock", testutil.MockFactory(testutil.MockWithAuthCodeExchange(client, testutil.RestrictMockAuthCodeExchange(exchanges))))
 
 	storage := &logical.InmemStorage{}
 
@@ -80,6 +76,9 @@ func TestPeriodicRefresh(t *testing.T) {
 	require.NoError(t, b.Setup(ctx, &logical.BackendConfig{}))
 	require.NoError(t, b.Initialize(ctx, &logical.InitializationRequest{Storage: storage}))
 	defer b.Clean(ctx)
+
+	// We need to activate the scheduler by ticking the clock.
+	clk.Step(1)
 
 	// Write configuration.
 	req := &logical.Request{
@@ -99,7 +98,7 @@ func TestPeriodicRefresh(t *testing.T) {
 	require.Nil(t, resp)
 
 	// Write our credentials.
-	for _, code := range []string{"first", "second", "third", "fourth"} {
+	for code := range exchanges {
 		req = &logical.Request{
 			Operation: logical.UpdateOperation,
 			Path:      backend.CredsPathPrefix + code,
@@ -127,11 +126,9 @@ func TestPeriodicRefresh(t *testing.T) {
 		}
 	}
 
-	// Move the clock forward once. This should "bump" the recovery descriptors
-	// of the segment and make them spin up our descriptors.
-	//
-	// TODO: Is it safe to depend on this behavior?
-	clk.Step(1)
+	// Now we increment the clock into the range where the third token will be
+	// refreshed regardless of where the scheduler is at in its startup routine.
+	clk.Step(time.Minute)
 
 	select {
 	case ti := <-refreshed:
@@ -140,20 +137,73 @@ func TestPeriodicRefresh(t *testing.T) {
 	case <-ctx.Done():
 		require.Fail(t, "context expired waiting for token refresh")
 	}
+}
 
-	// Now we increment the clock by a minute and we should once again get the
-	// refresh we want.
-	clk.Step(time.Minute)
+func TestMinimumSeconds(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
 
-	select {
-	case ti := <-refreshed:
-		// Now we should have incremented that token (only).
-		require.Equal(t, 3, ti)
-	case <-ctx.Done():
-		require.Fail(t, "context expired waiting for token refresh")
+	client := testutil.MockClient{
+		ID:     "abc",
+		Secret: "def",
 	}
 
-	// Run through each of our cases and make sure nothing else got messed with.
+	exchanges := map[string]testutil.MockAuthCodeExchangeFunc{
+		"first": testutil.RandomMockAuthCodeExchange,
+		"second": testutil.RefreshableMockAuthCodeExchange(
+			testutil.IncrementMockAuthCodeExchange("second_"),
+			func(i int) (time.Duration, error) {
+				// add 30 seconds for each subsequent read
+				return (70 + time.Duration(i)*30) * time.Second, nil
+			},
+		),
+	}
+
+	pr := provider.NewRegistry()
+	pr.MustRegister("mock", testutil.MockFactory(testutil.MockWithAuthCodeExchange(client, testutil.RestrictMockAuthCodeExchange(exchanges))))
+
+	storage := &logical.InmemStorage{}
+
+	b := backend.New(backend.Options{
+		ProviderRegistry: pr,
+	})
+	require.NoError(t, b.Setup(ctx, &logical.BackendConfig{}))
+	defer b.Clean(ctx)
+
+	// Write configuration.
+	req := &logical.Request{
+		Operation: logical.UpdateOperation,
+		Path:      backend.ConfigPath,
+		Storage:   storage,
+		Data: map[string]interface{}{
+			"client_id":     client.ID,
+			"client_secret": client.Secret,
+			"provider":      "mock",
+		},
+	}
+
+	resp, err := b.HandleRequest(ctx, req)
+	require.NoError(t, err)
+	require.False(t, resp != nil && resp.IsError(), "response has error: %+v", resp.Error())
+	require.Nil(t, resp)
+
+	// Write our credentials.
+	for code := range exchanges {
+		req = &logical.Request{
+			Operation: logical.UpdateOperation,
+			Path:      backend.CredsPathPrefix + code,
+			Storage:   storage,
+			Data: map[string]interface{}{
+				"code": code,
+			},
+		}
+
+		resp, err = b.HandleRequest(ctx, req)
+		require.NoError(t, err)
+		require.False(t, resp != nil && resp.IsError(), "response has error: %+v", resp.Error())
+		require.Nil(t, resp)
+	}
+
 	tokens := make(map[string]string)
 	tests := []struct {
 		Name                string
@@ -172,45 +222,38 @@ func TestPeriodicRefresh(t *testing.T) {
 			Token:               "first",
 			ExpectedAccessToken: func() string { return tokens["first"] },
 		},
+		// The initial token will be issued at +100s (70 seconds + 30 seconds),
+		// so we force a refresh with a requirement of +110s.
 		{
-			Name:                "second",
+			Name:                "second initial",
 			Token:               "second",
-			ExpectedAccessToken: func() string { return "second_1" },
+			Data:                map[string]interface{}{"minimum_seconds": "110"},
+			ExpectedAccessToken: func() string { return "second_2" },
 			ExpectedExpireTime:  true,
 		},
+		// The token should now be issued for +130s, so asking for anything
+		// under that should let us keep the token as-is.
 		{
-			Name:                "third",
-			Token:               "third",
-			ExpectedAccessToken: func() string { return "third_3" },
+			Name:                "test minimum_seconds less than the expiry of the second token",
+			Token:               "second",
+			Data:                map[string]interface{}{"minimum_seconds": "120"},
+			ExpectedAccessToken: func() string { return "second_2" },
 			ExpectedExpireTime:  true,
 		},
-		// The fourth token will now expire at +1m30s, of which we've already
-		// elapsed +1m. 40 more seconds will get us a refresh.
+		// If we ask for +140s (> +130s), we should get another refresh.
 		{
-			Name:                "fourth initial",
-			Token:               "fourth",
-			Data:                map[string]interface{}{"minimum_seconds": "40"},
-			ExpectedAccessToken: func() string { return "fourth_2" },
+			Name:                "test minimum_seconds more than the expiry of the second token",
+			Token:               "second",
+			Data:                map[string]interface{}{"minimum_seconds": "140"},
+			ExpectedAccessToken: func() string { return "second_3" },
 			ExpectedExpireTime:  true,
 		},
+		// Finally, if we ask for something outside the range of what we can
+		// reasonably issue, we'll just get an error.
 		{
-			Name:                "test minimum_seconds less than the 60 of the fourth token",
-			Token:               "fourth",
-			Data:                map[string]interface{}{"minimum_seconds": "50"},
-			ExpectedAccessToken: func() string { return "fourth_2" },
-			ExpectedExpireTime:  true,
-		},
-		{
-			Name:                "test minimum_seconds more than the 60 of the fourth token",
-			Token:               "fourth",
-			Data:                map[string]interface{}{"minimum_seconds": "70"},
-			ExpectedAccessToken: func() string { return "fourth_3" },
-			ExpectedExpireTime:  true,
-		},
-		{
-			Name:          "verify that fourth is marked expired if new token is less than request",
-			Token:         "fourth",
-			Data:          map[string]interface{}{"minimum_seconds": "125"},
+			Name:          "verify that second is marked expired if new token is less than request",
+			Token:         "second",
+			Data:          map[string]interface{}{"minimum_seconds": "200"},
 			ExpectedError: "token expired",
 		},
 	}

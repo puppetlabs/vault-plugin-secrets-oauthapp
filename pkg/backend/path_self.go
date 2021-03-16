@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"time"
 
 	"github.com/hashicorp/vault/sdk/framework"
 	"github.com/hashicorp/vault/sdk/logical"
@@ -15,7 +16,14 @@ import (
 )
 
 func (b *backend) selfReadOperation(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
-	entry, err := b.getUpdateClientCredsToken(ctx, req.Storage, persistence.ClientCredsName(data.Get("name").(string)), data)
+	expiryDelta := time.Duration(data.Get("minimum_seconds").(int)) * time.Second
+
+	entry, err := b.getUpdateClientCredsToken(
+		ctx,
+		req.Storage,
+		persistence.ClientCredsName(data.Get("name").(string)),
+		expiryDelta,
+	)
 	switch {
 	case errors.Is(err, ErrNotConfigured):
 		return logical.ErrorResponse("not configured"), nil
@@ -25,7 +33,7 @@ func (b *backend) selfReadOperation(ctx context.Context, req *logical.Request, d
 		return nil, err
 	case entry == nil:
 		return nil, nil
-	case !b.tokenValid(entry.Token, data):
+	case !b.tokenValid(entry.Token, expiryDelta):
 		return logical.ErrorResponse("token expired"), nil
 	}
 
@@ -158,6 +166,13 @@ var selfConfigFields = map[string]*framework.FieldSchema{
 	"name": {
 		Type:        framework.TypeString,
 		Description: "Specifies the name of the credential.",
+	},
+	// fields for read operation
+	"minimum_seconds": {
+		Type:        framework.TypeInt,
+		Description: "Minimum remaining seconds to allow when reusing access token.",
+		Default:     0,
+		Query:       true,
 	},
 	// fields for write operation
 	"token_url_params": {
