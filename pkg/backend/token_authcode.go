@@ -6,27 +6,27 @@ import (
 	"time"
 
 	"github.com/hashicorp/vault/sdk/framework"
-	"github.com/hashicorp/vault/sdk/helper/locksutil"
 	"github.com/hashicorp/vault/sdk/logical"
 	"github.com/puppetlabs/leg/errmap/pkg/errmap"
 	"github.com/puppetlabs/leg/errmap/pkg/errmark"
 	"github.com/puppetlabs/leg/scheduler"
+	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/pkg/persistence"
 )
 
 type refreshProcess struct {
 	backend *backend
 	storage logical.Storage
-	key     string
+	keyer   persistence.AuthCodeKeyer
 }
 
 var _ scheduler.Process = &refreshProcess{}
 
 func (rp *refreshProcess) Description() string {
-	return fmt.Sprintf("credential refresh (%s)", rp.key)
+	return fmt.Sprintf("credential refresh (%s)", rp.keyer.AuthCodeKey())
 }
 
 func (rp *refreshProcess) Run(ctx context.Context) error {
-	_, err := rp.backend.getRefreshCredToken(ctx, rp.storage, rp.key, nil)
+	_, err := rp.backend.getRefreshCredToken(ctx, rp.storage, rp.keyer, nil)
 	return err
 }
 
@@ -38,17 +38,15 @@ type refreshDescriptor struct {
 var _ scheduler.Descriptor = &refreshDescriptor{}
 
 func (rd *refreshDescriptor) Run(ctx context.Context, pc chan<- scheduler.Process) error {
-	view := logical.NewStorageView(rd.storage, credsPathPrefix)
-
-	ticker := time.NewTicker(time.Minute)
+	ticker := rd.backend.clock.NewTicker(time.Minute)
 	defer ticker.Stop()
 
 	for {
-		err := logical.ScanView(ctx, view, func(path string) {
+		err := rd.backend.data.Managers(rd.storage).AuthCode().ForEachAuthCodeKey(ctx, func(keyer persistence.AuthCodeKeyer) {
 			proc := &refreshProcess{
 				backend: rd.backend,
 				storage: rd.storage,
-				key:     view.ExpandKey(path),
+				keyer:   keyer,
 			}
 
 			select {
@@ -61,81 +59,67 @@ func (rd *refreshDescriptor) Run(ctx context.Context, pc chan<- scheduler.Proces
 		}
 
 		select {
-		case <-ticker.C:
+		case <-ticker.C():
 		case <-ctx.Done():
 			return nil
 		}
 	}
 }
 
-func (b *backend) refreshCredToken(ctx context.Context, storage logical.Storage, key string, data *framework.FieldData) (*credToken, error) {
-	lock := locksutil.LockForKey(b.locks, key)
-	lock.Lock()
-	defer lock.Unlock()
-
-	// In case someone else refreshed this token from under us, we'll re-request
-	// it here with the lock acquired.
-	tok, err := getCredTokenLocked(ctx, storage, key)
-	switch {
-	case err != nil:
-		return nil, err
-	case tok == nil:
-		return nil, nil
-	case !tok.Issued() || tokenValid(tok.Token, data) || tok.RefreshToken == "":
-		return tok, nil
-	}
-
-	c, err := b.getCache(ctx, storage)
-	if err != nil {
-		return nil, err
-	} else if c == nil {
-		return nil, ErrNotConfigured
-	}
-
-	// Refresh.
-	refreshed, err := c.Provider.Private(c.Config.ClientID, c.Config.ClientSecret).RefreshToken(ctx, tok.Token)
-	if err != nil {
-		tok.LastAttemptedIssueTime = time.Now()
-
-		msg := errmap.Wrap(errmark.MarkShort(err), "refresh failed").Error()
-		if errmark.MarkedUser(err) {
-			tok.UserError = msg
-		} else {
-			tok.TransientErrorsSinceLastIssue++
-			tok.LastTransientError = msg
+func (b *backend) refreshCredToken(ctx context.Context, storage logical.Storage, keyer persistence.AuthCodeKeyer, data *framework.FieldData) (*persistence.AuthCodeEntry, error) {
+	var entry *persistence.AuthCodeEntry
+	err := b.data.Managers(storage).AuthCode().WithLock(keyer, func(cm *persistence.LockedAuthCodeManager) error {
+		// In case someone else refreshed this token from under us, we'll re-request
+		// it here with the lock acquired.
+		candidate, err := cm.ReadAuthCodeEntry(ctx)
+		switch {
+		case err != nil || candidate == nil:
+			return err
+		case !candidate.TokenIssued() || b.tokenValid(candidate.Token, data) || candidate.RefreshToken == "":
+			entry = candidate
+			return nil
 		}
-	} else {
-		tok.Token = refreshed
-		tok.LastIssueTime = time.Now()
-		tok.UserError = ""
-		tok.TransientErrorsSinceLastIssue = 0
-		tok.LastTransientError = ""
-		tok.LastAttemptedIssueTime = time.Time{}
-	}
 
-	// Store the new token.
-	entry, err := logical.StorageEntryJSON(key, tok)
-	if err != nil {
-		return nil, err
-	}
+		c, err := b.getCache(ctx, storage)
+		if err != nil {
+			return err
+		} else if c == nil {
+			return ErrNotConfigured
+		}
 
-	if err := storage.Put(ctx, entry); err != nil {
-		return nil, err
-	}
+		// Refresh.
+		refreshed, err := c.Provider.Private(c.Config.ClientID, c.Config.ClientSecret).RefreshToken(ctx, candidate.Token)
+		if err != nil {
+			msg := errmap.Wrap(errmark.MarkShort(err), "refresh failed").Error()
+			if errmark.MarkedUser(err) {
+				candidate.SetUserError(msg)
+			} else {
+				candidate.SetTransientError(msg)
+			}
+		} else {
+			candidate.SetToken(refreshed)
+		}
 
-	return tok, nil
+		if err := cm.WriteAuthCodeEntry(ctx, candidate); err != nil {
+			return err
+		}
+
+		entry = candidate
+		return nil
+	})
+	return entry, err
 }
 
-func (b *backend) getRefreshCredToken(ctx context.Context, storage logical.Storage, key string, data *framework.FieldData) (*credToken, error) {
-	tok, err := b.getCredToken(ctx, storage, key)
+func (b *backend) getRefreshCredToken(ctx context.Context, storage logical.Storage, keyer persistence.AuthCodeKeyer, data *framework.FieldData) (*persistence.AuthCodeEntry, error) {
+	entry, err := b.data.Managers(storage).AuthCode().ReadAuthCodeEntry(ctx, keyer)
 	switch {
 	case err != nil:
 		return nil, err
-	case tok == nil:
+	case entry == nil:
 		return nil, nil
-	case !tok.Issued() || tokenValid(tok.Token, data):
-		return tok, nil
+	case !entry.TokenIssued() || b.tokenValid(entry.Token, data):
+		return entry, nil
 	default:
-		return b.refreshCredToken(ctx, storage, key, data)
+		return b.refreshCredToken(ctx, storage, keyer, data)
 	}
 }

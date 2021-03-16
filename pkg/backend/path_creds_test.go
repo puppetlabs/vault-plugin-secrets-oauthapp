@@ -1,4 +1,4 @@
-package backend
+package backend_test
 
 import (
 	"context"
@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/hashicorp/vault/sdk/logical"
+	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/pkg/backend"
 	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/pkg/provider"
 	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/pkg/testutil"
 	"github.com/stretchr/testify/require"
@@ -33,13 +34,13 @@ func TestBasicAuthCodeExchange(t *testing.T) {
 
 	storage := &logical.InmemStorage{}
 
-	b := New(Options{ProviderRegistry: pr})
+	b := backend.New(backend.Options{ProviderRegistry: pr})
 	require.NoError(t, b.Setup(ctx, &logical.BackendConfig{}))
 
 	// Write configuration.
 	req := &logical.Request{
 		Operation: logical.UpdateOperation,
-		Path:      configPath,
+		Path:      backend.ConfigPath,
 		Storage:   storage,
 		Data: map[string]interface{}{
 			"client_id":     client.ID,
@@ -56,7 +57,7 @@ func TestBasicAuthCodeExchange(t *testing.T) {
 	// Write a valid credential.
 	req = &logical.Request{
 		Operation: logical.UpdateOperation,
-		Path:      credsPathPrefix + `test`,
+		Path:      backend.CredsPathPrefix + `test`,
 		Storage:   storage,
 		Data: map[string]interface{}{
 			"code": "test",
@@ -71,7 +72,7 @@ func TestBasicAuthCodeExchange(t *testing.T) {
 	// Read the corresponding access token.
 	req = &logical.Request{
 		Operation: logical.ReadOperation,
-		Path:      credsPathPrefix + `test`,
+		Path:      backend.CredsPathPrefix + `test`,
 		Storage:   storage,
 	}
 
@@ -102,13 +103,13 @@ func TestInvalidAuthCodeExchange(t *testing.T) {
 
 	storage := &logical.InmemStorage{}
 
-	b := New(Options{ProviderRegistry: pr})
+	b := backend.New(backend.Options{ProviderRegistry: pr})
 	require.NoError(t, b.Setup(ctx, &logical.BackendConfig{}))
 
 	// Write configuration.
 	req := &logical.Request{
 		Operation: logical.UpdateOperation,
-		Path:      configPath,
+		Path:      backend.ConfigPath,
 		Storage:   storage,
 		Data: map[string]interface{}{
 			"client_id":     client.ID,
@@ -125,7 +126,7 @@ func TestInvalidAuthCodeExchange(t *testing.T) {
 	// Write an invalid credential.
 	req = &logical.Request{
 		Operation: logical.UpdateOperation,
-		Path:      credsPathPrefix + `test`,
+		Path:      backend.CredsPathPrefix + `test`,
 		Storage:   storage,
 		Data: map[string]interface{}{
 			"code": "invalid",
@@ -135,7 +136,7 @@ func TestInvalidAuthCodeExchange(t *testing.T) {
 	resp, err = b.HandleRequest(ctx, req)
 	require.NoError(t, err)
 	require.NotNil(t, resp)
-	require.EqualError(t, resp.Error(), "exchange failed: oauth2: cannot fetch token: Forbidden\nResponse: ")
+	require.EqualError(t, resp.Error(), "exchange failed: server rejected request: unauthorized_client")
 }
 
 func TestRefreshableAuthCodeExchange(t *testing.T) {
@@ -165,13 +166,13 @@ func TestRefreshableAuthCodeExchange(t *testing.T) {
 
 	storage := &logical.InmemStorage{}
 
-	b := New(Options{ProviderRegistry: pr})
+	b := backend.New(backend.Options{ProviderRegistry: pr})
 	require.NoError(t, b.Setup(ctx, &logical.BackendConfig{}))
 
 	// Write configuration.
 	req := &logical.Request{
 		Operation: logical.UpdateOperation,
-		Path:      configPath,
+		Path:      backend.ConfigPath,
 		Storage:   storage,
 		Data: map[string]interface{}{
 			"client_id":     client.ID,
@@ -188,7 +189,7 @@ func TestRefreshableAuthCodeExchange(t *testing.T) {
 	// Write a valid credential.
 	req = &logical.Request{
 		Operation: logical.UpdateOperation,
-		Path:      credsPathPrefix + `test`,
+		Path:      backend.CredsPathPrefix + `test`,
 		Storage:   storage,
 		Data: map[string]interface{}{
 			"code": "test",
@@ -205,7 +206,7 @@ func TestRefreshableAuthCodeExchange(t *testing.T) {
 	// "token_1").
 	req = &logical.Request{
 		Operation: logical.ReadOperation,
-		Path:      credsPathPrefix + `test`,
+		Path:      backend.CredsPathPrefix + `test`,
 		Storage:   storage,
 	}
 
@@ -246,13 +247,13 @@ func TestRefreshFailureReturnsNotConfigured(t *testing.T) {
 
 	storage := &logical.InmemStorage{}
 
-	b := New(Options{ProviderRegistry: pr})
+	b := backend.New(backend.Options{ProviderRegistry: pr})
 	require.NoError(t, b.Setup(ctx, &logical.BackendConfig{}))
 
 	// Write configuration.
 	req := &logical.Request{
 		Operation: logical.UpdateOperation,
-		Path:      configPath,
+		Path:      backend.ConfigPath,
 		Storage:   storage,
 		Data: map[string]interface{}{
 			"client_id":     client.ID,
@@ -269,7 +270,7 @@ func TestRefreshFailureReturnsNotConfigured(t *testing.T) {
 	// Write a valid credential.
 	req = &logical.Request{
 		Operation: logical.UpdateOperation,
-		Path:      credsPathPrefix + `test`,
+		Path:      backend.CredsPathPrefix + `test`,
 		Storage:   storage,
 		Data: map[string]interface{}{
 			"code": "test",
@@ -285,7 +286,7 @@ func TestRefreshFailureReturnsNotConfigured(t *testing.T) {
 	// should now return an invalidation from the server.
 	req = &logical.Request{
 		Operation: logical.ReadOperation,
-		Path:      credsPathPrefix + `test`,
+		Path:      backend.CredsPathPrefix + `test`,
 		Storage:   storage,
 	}
 

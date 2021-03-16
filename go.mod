@@ -12,9 +12,12 @@ require (
 	github.com/pquerna/cachecontrol v0.0.0-20180517163645-1555304b9b35 // indirect
 	github.com/puppetlabs/leg/errmap v0.1.0
 	github.com/puppetlabs/leg/scheduler v0.2.1
+	github.com/puppetlabs/leg/timeutil v0.4.0
+	github.com/spf13/afero v1.2.2 // indirect
 	github.com/stretchr/testify v1.6.1
 	golang.org/x/oauth2 v0.0.0-20190604053449-0f29369cfe45
 	google.golang.org/appengine v1.6.2 // indirect
 	gopkg.in/square/go-jose.v2 v2.3.1
 	gotest.tools/gotestsum v0.6.0
+	k8s.io/apimachinery v0.20.1
 )

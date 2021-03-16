@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -12,6 +13,8 @@ import (
 	"time"
 
 	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/pkg/oauth2ext/devicecode"
+	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/pkg/oauth2ext/interop"
+	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/pkg/oauth2ext/semerr"
 	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/pkg/provider"
 	"golang.org/x/oauth2"
 )
@@ -153,7 +156,20 @@ func IncrementMockClientCredentials(prefix string) MockClientCredentialsFunc {
 }
 
 func ErrorMockAuthCodeExchange(_ string, _ *provider.AuthCodeExchangeOptions) (*provider.Token, error) {
-	return nil, &oauth2.RetrieveError{Response: &http.Response{Status: http.StatusText(http.StatusForbidden)}}
+	body, err := json.Marshal(&interop.JSONError{
+		Error: "unauthorized_client",
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return nil, &oauth2.RetrieveError{
+		Response: &http.Response{
+			StatusCode: http.StatusUnauthorized,
+			Status:     http.StatusText(http.StatusUnauthorized),
+		},
+		Body: body,
+	}
 }
 
 func RestrictMockAuthCodeExchange(m map[string]MockAuthCodeExchangeFunc) MockAuthCodeExchangeFunc {
@@ -198,7 +214,7 @@ func (mo *mockOperations) DeviceCodeExchange(ctx context.Context, deivceCode str
 
 func (mo *mockOperations) AuthCodeExchange(ctx context.Context, code string, opts ...provider.AuthCodeExchangeOption) (*provider.Token, error) {
 	if mo.authCodeExchangeFn == nil {
-		return nil, &oauth2.RetrieveError{Response: &http.Response{Status: http.StatusText(http.StatusInternalServerError)}}
+		return nil, semerr.Map(&oauth2.RetrieveError{Response: &http.Response{Status: http.StatusText(http.StatusInternalServerError)}})
 	}
 
 	o := &provider.AuthCodeExchangeOptions{}
@@ -206,7 +222,7 @@ func (mo *mockOperations) AuthCodeExchange(ctx context.Context, code string, opt
 
 	tok, err := mo.authCodeExchangeFn(code, o)
 	if err != nil {
-		return nil, err
+		return nil, semerr.Map(err)
 	}
 
 	if tok.RefreshToken != "" {
@@ -237,7 +253,7 @@ func (mo *mockOperations) RefreshToken(ctx context.Context, t *provider.Token, o
 
 func (mo *mockOperations) ClientCredentials(ctx context.Context, opts ...provider.ClientCredentialsOption) (*provider.Token, error) {
 	if mo.clientCredentialsFn == nil {
-		return nil, &oauth2.RetrieveError{Response: &http.Response{Status: http.StatusText(http.StatusInternalServerError)}}
+		return nil, semerr.Map(&oauth2.RetrieveError{Response: &http.Response{Status: http.StatusText(http.StatusInternalServerError)}})
 	}
 
 	o := &provider.ClientCredentialsOptions{}

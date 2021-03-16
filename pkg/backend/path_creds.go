@@ -6,46 +6,19 @@ package backend
 
 import (
 	"context"
-	"crypto/sha1"
 	"fmt"
-	"net"
 	"strings"
 	"time"
 
 	"github.com/hashicorp/vault/sdk/framework"
-	"github.com/hashicorp/vault/sdk/helper/locksutil"
 	"github.com/hashicorp/vault/sdk/logical"
 	"github.com/puppetlabs/leg/errmap/pkg/errmap"
 	"github.com/puppetlabs/leg/errmap/pkg/errmark"
 	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/pkg/oauth2ext/devicecode"
-	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/pkg/oauth2ext/semerr"
+	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/pkg/persistence"
 	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/pkg/provider"
 	"golang.org/x/oauth2"
 )
-
-const (
-	credsPath       = "creds"
-	credsPathPrefix = credsPath + "/"
-
-	devicesPath       = "devices"
-	devicesPathPrefix = devicesPath + "/"
-)
-
-// credKey hashes the name and splits the first few bytes into separate buckets
-// for performance reasons.
-func credKey(name string) string {
-	hash := sha1.Sum([]byte(name))
-	first, second, rest := hash[:2], hash[2:4], hash[4:]
-	return credsPathPrefix + fmt.Sprintf("%x/%x/%x", first, second, rest)
-}
-
-// deviceKey hashes the name and splits the first few bytes into separate
-// buckets for performance reasons.
-func deviceKey(name string) string {
-	hash := sha1.Sum([]byte(name))
-	first, second, rest := hash[:2], hash[2:4], hash[4:]
-	return devicesPathPrefix + fmt.Sprintf("%x/%x/%x", first, second, rest)
-}
 
 // credGrantType returns the grant type to be used for a given update operation.
 func credGrantType(data *framework.FieldData) string {
@@ -76,56 +49,54 @@ func credGrantTypes() (types []interface{}) {
 }
 
 func (b *backend) credsReadOperation(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
-	key := credKey(data.Get("name").(string))
-
-	tok, err := b.getRefreshCredToken(ctx, req.Storage, key, data)
+	entry, err := b.getRefreshCredToken(ctx, req.Storage, persistence.AuthCodeName(data.Get("name").(string)), data)
 	switch {
 	case err == ErrNotConfigured:
 		return logical.ErrorResponse("not configured"), nil
 	case err != nil:
 		return nil, err
-	case tok == nil:
+	case entry == nil:
 		return nil, nil
-	case !tok.Issued():
-		if tok.UserError != "" {
-			return logical.ErrorResponse(tok.UserError), nil
+	case !entry.TokenIssued():
+		if entry.UserError != "" {
+			return logical.ErrorResponse(entry.UserError), nil
 		}
 
 		return logical.ErrorResponse("token pending issuance"), nil
-	case !tokenValid(tok.Token, data):
-		if tok.UserError != "" {
-			return logical.ErrorResponse(tok.UserError), nil
+	case !b.tokenValid(entry.Token, data):
+		if entry.UserError != "" {
+			return logical.ErrorResponse(entry.UserError), nil
 		}
 
 		return logical.ErrorResponse("token expired"), nil
 	}
 
 	rd := map[string]interface{}{
-		"access_token": tok.AccessToken,
-		"type":         tok.Type(),
+		"access_token": entry.AccessToken,
+		"type":         entry.Type(),
 	}
 
-	if !tok.Expiry.IsZero() {
-		rd["expire_time"] = tok.Expiry
+	if !entry.Expiry.IsZero() {
+		rd["expire_time"] = entry.Expiry
 	}
 
-	if len(tok.ExtraData) > 0 {
-		rd["extra_data"] = tok.ExtraData
+	if len(entry.ExtraData) > 0 {
+		rd["extra_data"] = entry.ExtraData
 	}
 
 	resp := &logical.Response{
 		Data: rd,
 	}
-	if tok.UserError != "" {
+	if entry.UserError != "" {
 		resp.Warnings = []string{
-			fmt.Sprintf("token will expire: %s", tok.UserError),
+			fmt.Sprintf("token will expire: %s", entry.UserError),
 		}
-	} else if tok.TransientErrorsSinceLastIssue > 0 {
+	} else if entry.TransientErrorsSinceLastIssue > 0 {
 		resp.Warnings = []string{
 			fmt.Sprintf(
 				"%d attempt(s) to refresh this token failed, most recently: %s",
-				tok.TransientErrorsSinceLastIssue,
-				tok.LastTransientError,
+				entry.TransientErrorsSinceLastIssue,
+				entry.LastTransientError,
 			),
 		}
 	}
@@ -141,12 +112,6 @@ func (b *backend) credsUpdateAuthorizationCodeOperation(ctx context.Context, req
 	} else if c.Config.ClientSecret == "" {
 		return logical.ErrorResponse("missing client secret in configuration"), nil
 	}
-
-	key := credKey(data.Get("name").(string))
-
-	lock := locksutil.LockForKey(b.locks, key)
-	lock.Lock()
-	defer lock.Unlock()
 
 	ops := c.Provider.Private(c.Config.ClientID, c.Config.ClientSecret)
 
@@ -170,17 +135,10 @@ func (b *backend) credsUpdateAuthorizationCodeOperation(ctx context.Context, req
 		return nil, err
 	}
 
-	sto := &credToken{
-		Token:         tok,
-		LastIssueTime: time.Now(),
-	}
+	entry := &persistence.AuthCodeEntry{}
+	entry.SetToken(tok)
 
-	entry, err := logical.StorageEntryJSON(key, sto)
-	if err != nil {
-		return nil, err
-	}
-
-	if err := req.Storage.Put(ctx, entry); err != nil {
+	if err := b.data.Managers(req.Storage).AuthCode().WriteAuthCodeEntry(ctx, persistence.AuthCodeName(data.Get("name").(string)), entry); err != nil {
 		return nil, err
 	}
 
@@ -194,12 +152,6 @@ func (b *backend) credsUpdateRefreshTokenOperation(ctx context.Context, req *log
 	} else if c == nil {
 		return logical.ErrorResponse("not configured"), nil
 	}
-
-	key := credKey(data.Get("name").(string))
-
-	lock := locksutil.LockForKey(b.locks, key)
-	lock.Lock()
-	defer lock.Unlock()
 
 	ops := c.Provider.Private(c.Config.ClientID, c.Config.ClientSecret)
 
@@ -227,17 +179,10 @@ func (b *backend) credsUpdateRefreshTokenOperation(ctx context.Context, req *log
 		return nil, err
 	}
 
-	sto := &credToken{
-		Token:         tok,
-		LastIssueTime: time.Now(),
-	}
+	entry := &persistence.AuthCodeEntry{}
+	entry.SetToken(tok)
 
-	entry, err := logical.StorageEntryJSON(key, sto)
-	if err != nil {
-		return nil, err
-	}
-
-	if err := req.Storage.Put(ctx, entry); err != nil {
+	if err := b.data.Managers(req.Storage).AuthCode().WriteAuthCodeEntry(ctx, persistence.AuthCodeName(data.Get("name").(string)), entry); err != nil {
 		return nil, err
 	}
 
@@ -252,12 +197,6 @@ func (b *backend) credsUpdateDeviceCodeOperation(ctx context.Context, req *logic
 		return logical.ErrorResponse("not configured"), nil
 	}
 
-	key := credKey(data.Get("name").(string))
-
-	lock := locksutil.LockForKey(b.locks, key)
-	lock.Lock()
-	defer lock.Unlock()
-
 	ops := c.Provider.Public(c.Config.ClientID)
 
 	// If a device code isn't provided, we'll end up setting this response to
@@ -271,7 +210,7 @@ func (b *backend) credsUpdateDeviceCodeOperation(ctx context.Context, req *logic
 
 	deviceCode, ok := data.GetOk("device_code")
 	if !ok {
-		now := time.Now()
+		now := b.clock.Now()
 
 		auth, ok, err := ops.DeviceCodeAuth(
 			ctx,
@@ -307,61 +246,44 @@ func (b *backend) credsUpdateDeviceCodeOperation(ctx context.Context, req *logic
 		}
 	}
 
-	sto := &credToken{}
+	dae := &persistence.DeviceAuthEntry{
+		DeviceCode:      deviceCode.(string),
+		Interval:        int32(interval.Round(time.Second) / time.Second),
+		ProviderOptions: data.Get("provider_options").(map[string]string),
+	}
+	ace := &persistence.AuthCodeEntry{}
 
 	// If we get this far, we're guaranteed to have a device code. We'll do
 	// one request to make sure that it's not completely broken. Then we'll
 	// submit it to be polled.
-	tok, err := ops.DeviceCodeExchange(
-		ctx,
-		deviceCode.(string),
-		provider.WithProviderOptions(data.Get("provider_options").(map[string]string)),
-	)
-	switch {
-	case errmark.Matches(err, errmark.RuleType((*net.OpError)(nil))) || semerr.IsCode(err, "slow_down"):
-		interval += 5 * time.Second
-		fallthrough
-	case semerr.IsCode(err, "authorization_pending"):
-		sto.LastAttemptedIssueTime = time.Now()
-
-		// We'll write the device auth out first. In the issuer, it checks that
-		// the target entry exists first (because someone could delete it before
-		// the exchange succeeds, anyway).
-		//
-		// Locks on the devices/ prefix are held by the corresponding credential
-		// lock, so we don't have to do any extra work to write this out here.
-		auth := &deviceAuth{
-			DeviceCode:             deviceCode.(string),
-			Interval:               int32(interval.Round(time.Second) / time.Second),
-			LastAttemptedIssueTime: sto.LastAttemptedIssueTime,
-			ProviderOptions:        data.Get("provider_options").(map[string]string),
-		}
-
-		entry, err := logical.StorageEntryJSON(deviceKey(data.Get("name").(string)), auth)
-		if err != nil {
-			return nil, err
-		}
-
-		if err := req.Storage.Put(ctx, entry); err != nil {
-			return nil, err
-		}
-	case errmark.MarkedUser(err):
-		return logical.ErrorResponse(errmap.Wrap(errmark.MarkShort(err), "device code exchange failed").Error()), nil
-	case err != nil:
-		return nil, err
-	default:
-		// Surprise! The user is already authenticated, so we'll just store this
-		// as a normal token.
-		sto.Token = tok
-		sto.LastIssueTime = time.Now()
-	}
-
-	entry, err := logical.StorageEntryJSON(key, tok)
+	dae, ace, err = deviceAuthExchange(ctx, ops, dae, ace)
 	if err != nil {
 		return nil, err
+	} else if ace.UserError != "" {
+		return logical.ErrorResponse(ace.UserError), nil
 	}
 
-	if err := req.Storage.Put(ctx, entry); err != nil {
+	err = b.data.Managers(req.Storage).AuthCode().WithLock(persistence.AuthCodeName(data.Get("name").(string)), func(acm *persistence.LockedAuthCodeManager) error {
+		if !ace.TokenIssued() {
+			// We'll write the device auth out first. In the issuer, it checks
+			// that the target entry exists first (because someone could delete
+			// it before the exchange succeeds, anyway).
+			//
+			// Locks on the devices/ prefix are held by the corresponding
+			// credential lock, so we don't have to do any extra work to write
+			// this out here.
+			if err := acm.WriteDeviceAuthEntry(ctx, dae); err != nil {
+				return err
+			}
+		}
+
+		if err := acm.WriteAuthCodeEntry(ctx, ace); err != nil {
+			return err
+		}
+
+		return nil
+	})
+	if err != nil {
 		return nil, err
 	}
 
@@ -378,18 +300,16 @@ func (b *backend) credsUpdateOperation(ctx context.Context, req *logical.Request
 }
 
 func (b *backend) credsDeleteOperation(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
-	key := credKey(data.Get("name").(string))
-
-	lock := locksutil.LockForKey(b.locks, key)
-	lock.Lock()
-	defer lock.Unlock()
-
-	if err := req.Storage.Delete(ctx, key); err != nil {
+	if err := b.data.Managers(req.Storage).AuthCode().DeleteAuthCodeEntry(ctx, persistence.AuthCodeName(data.Get("name").(string))); err != nil {
 		return nil, err
 	}
 
 	return nil, nil
 }
+
+const (
+	CredsPathPrefix = "creds/"
+)
 
 var credsFields = map[string]*framework.FieldSchema{
 	// fields for both read & write operations
@@ -448,7 +368,7 @@ the access token will be available when reading the endpoint.
 
 func pathCreds(b *backend) *framework.Path {
 	return &framework.Path{
-		Pattern: credsPathPrefix + nameRegex("name") + `$`,
+		Pattern: CredsPathPrefix + nameRegex("name") + `$`,
 		Fields:  credsFields,
 		Operations: map[logical.Operation]framework.OperationHandler{
 			logical.ReadOperation: &framework.PathOperation{

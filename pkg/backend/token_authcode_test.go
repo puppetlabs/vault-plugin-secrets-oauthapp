@@ -1,15 +1,17 @@
-package backend
+package backend_test
 
 import (
 	"context"
-	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/hashicorp/vault/sdk/logical"
+	"github.com/puppetlabs/leg/timeutil/pkg/clock/k8sext"
+	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/pkg/backend"
 	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/pkg/provider"
 	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/pkg/testutil"
 	"github.com/stretchr/testify/require"
+	"k8s.io/apimachinery/pkg/util/clock"
 )
 
 func TestPeriodicRefresh(t *testing.T) {
@@ -21,7 +23,9 @@ func TestPeriodicRefresh(t *testing.T) {
 		Secret: "def",
 	}
 
-	var ti int32
+	// We may have at most 2 writes with no reads (third and fourth token,
+	// below).
+	refreshed := make(chan int, 2)
 
 	exchange := testutil.RestrictMockAuthCodeExchange(map[string]testutil.MockAuthCodeExchangeFunc{
 		"first": testutil.RandomMockAuthCodeExchange,
@@ -32,13 +36,17 @@ func TestPeriodicRefresh(t *testing.T) {
 		"third": testutil.RefreshableMockAuthCodeExchange(
 			testutil.IncrementMockAuthCodeExchange("third_"),
 			func(i int) (time.Duration, error) {
-				atomic.StoreInt32(&ti, int32(i))
+				select {
+				case refreshed <- i:
+				default:
+				}
 
 				switch i {
-				case 1:
-					// Start with a short duration, which will force a refresh within
-					// the library's grace period (< 10 seconds to expiry).
-					return 2 * time.Second, nil
+				case 1, 2:
+					// Start with a short duration. This will be refreshed
+					// automatically when the scheduler boots and then again by
+					// incrementing the clock.
+					return 5 * time.Second, nil
 				default:
 					return 10 * time.Minute, nil
 				}
@@ -47,10 +55,13 @@ func TestPeriodicRefresh(t *testing.T) {
 		"fourth": testutil.RefreshableMockAuthCodeExchange(
 			testutil.IncrementMockAuthCodeExchange("fourth_"),
 			func(i int) (time.Duration, error) {
-				atomic.StoreInt32(&ti, int32(i))
+				select {
+				case refreshed <- i:
+				default:
+				}
 
 				// add 30 seconds for each subsequent read
-				return time.Duration(i*30) * time.Second, nil
+				return (60 + time.Duration(i)*30) * time.Second, nil
 			},
 		),
 	})
@@ -60,13 +71,20 @@ func TestPeriodicRefresh(t *testing.T) {
 
 	storage := &logical.InmemStorage{}
 
-	b := New(Options{ProviderRegistry: pr})
+	clk := clock.NewFakeClock(time.Now())
+
+	b := backend.New(backend.Options{
+		ProviderRegistry: pr,
+		Clock:            k8sext.NewClock(clk),
+	})
 	require.NoError(t, b.Setup(ctx, &logical.BackendConfig{}))
+	require.NoError(t, b.Initialize(ctx, &logical.InitializationRequest{Storage: storage}))
+	defer b.Clean(ctx)
 
 	// Write configuration.
 	req := &logical.Request{
 		Operation: logical.UpdateOperation,
-		Path:      configPath,
+		Path:      backend.ConfigPath,
 		Storage:   storage,
 		Data: map[string]interface{}{
 			"client_id":     client.ID,
@@ -84,7 +102,7 @@ func TestPeriodicRefresh(t *testing.T) {
 	for _, code := range []string{"first", "second", "third", "fourth"} {
 		req = &logical.Request{
 			Operation: logical.UpdateOperation,
-			Path:      credsPathPrefix + code,
+			Path:      backend.CredsPathPrefix + code,
 			Storage:   storage,
 			Data: map[string]interface{}{
 				"code": code,
@@ -97,110 +115,132 @@ func TestPeriodicRefresh(t *testing.T) {
 		require.Nil(t, resp)
 	}
 
-	// We should have the initial step value (1) at this point.
-	require.Equal(t, int32(1), ti)
-
-	req = &logical.Request{
-		Operation: logical.RollbackOperation,
-		Storage:   storage,
+	// We should have the initial step value (1) at this point for tokens 3 and
+	// 4.
+	for i := 0; i < 2; i++ {
+		select {
+		case ti := <-refreshed:
+			// Now we should have incremented that token (only).
+			require.Equal(t, 1, ti)
+		case <-ctx.Done():
+			require.Fail(t, "context expired waiting for token issuance")
+		}
 	}
 
-	require.NoError(t, b.PeriodicFunc(ctx, req))
+	// Move the clock forward once. This should "bump" the recovery descriptors
+	// of the segment and make them spin up our descriptors.
+	//
+	// TODO: Is it safe to depend on this behavior?
+	clk.Step(1)
 
-	// Now we should have incremented that token (only).
-	require.Equal(t, int32(2), ti)
+	select {
+	case ti := <-refreshed:
+		// Now we should have incremented that token (only).
+		require.Equal(t, 2, ti)
+	case <-ctx.Done():
+		require.Fail(t, "context expired waiting for token refresh")
+	}
+
+	// Now we increment the clock by a minute and we should once again get the
+	// refresh we want.
+	clk.Step(time.Minute)
+
+	select {
+	case ti := <-refreshed:
+		// Now we should have incremented that token (only).
+		require.Equal(t, 3, ti)
+	case <-ctx.Done():
+		require.Fail(t, "context expired waiting for token refresh")
+	}
 
 	// Run through each of our cases and make sure nothing else got messed with.
-
-	// "first"
-	req = &logical.Request{
-		Operation: logical.ReadOperation,
-		Path:      credsPathPrefix + "first",
-		Storage:   storage,
-	}
-
-	resp, err = b.HandleRequest(ctx, req)
-	require.NoError(t, err)
-	require.False(t, resp != nil && resp.IsError(), "response has error: %+v", resp.Error())
-	require.NotEmpty(t, resp.Data["access_token"])
-	require.Empty(t, resp.Data["expire_time"])
-
-	// make sure minimum_seconds added to first does not generate new token
-	first_token := resp.Data["access_token"]
-	req.Data = map[string]interface{}{
-		"minimum_seconds": "60000",
-	}
-	resp, err = b.HandleRequest(ctx, req)
-	require.NoError(t, err)
-	require.False(t, resp != nil && resp.IsError(), "response has error: %+v", resp.Error())
-	require.Equal(t, first_token, resp.Data["access_token"])
-	require.Empty(t, resp.Data["expire_time"])
-
-	// "second"
-	req = &logical.Request{
-		Operation: logical.ReadOperation,
-		Path:      credsPathPrefix + "second",
-		Storage:   storage,
-	}
-
-	resp, err = b.HandleRequest(ctx, req)
-	require.NoError(t, err)
-	require.False(t, resp != nil && resp.IsError(), "response has error: %+v", resp.Error())
-	require.Equal(t, "second_1", resp.Data["access_token"])
-	require.NotEmpty(t, resp.Data["expire_time"])
-
-	// "third"
-	req = &logical.Request{
-		Operation: logical.ReadOperation,
-		Path:      credsPathPrefix + "third",
-		Storage:   storage,
-	}
-
-	resp, err = b.HandleRequest(ctx, req)
-	require.NoError(t, err)
-	require.False(t, resp != nil && resp.IsError(), "response has error: %+v", resp.Error())
-	require.Equal(t, "third_2", resp.Data["access_token"])
-	require.NotEmpty(t, resp.Data["expire_time"])
-
-	// test minimum_seconds more than the 30 of the first token
-	req = &logical.Request{
-		Operation: logical.ReadOperation,
-		Path:      credsPathPrefix + "fourth",
-		Storage:   storage,
-		Data: map[string]interface{}{
-			"minimum_seconds": "40",
+	tokens := make(map[string]string)
+	tests := []struct {
+		Name                string
+		Token               string
+		Data                map[string]interface{}
+		ExpectedAccessToken func() string
+		ExpectedExpireTime  bool
+		ExpectedError       string
+	}{
+		{
+			Name:  "first",
+			Token: "first",
+		},
+		{
+			Name:                "make sure minimum_seconds added to first does not generate new token",
+			Token:               "first",
+			ExpectedAccessToken: func() string { return tokens["first"] },
+		},
+		{
+			Name:                "second",
+			Token:               "second",
+			ExpectedAccessToken: func() string { return "second_1" },
+			ExpectedExpireTime:  true,
+		},
+		{
+			Name:                "third",
+			Token:               "third",
+			ExpectedAccessToken: func() string { return "third_3" },
+			ExpectedExpireTime:  true,
+		},
+		// The fourth token will now expire at +1m30s, of which we've already
+		// elapsed +1m. 40 more seconds will get us a refresh.
+		{
+			Name:                "fourth initial",
+			Token:               "fourth",
+			Data:                map[string]interface{}{"minimum_seconds": "40"},
+			ExpectedAccessToken: func() string { return "fourth_2" },
+			ExpectedExpireTime:  true,
+		},
+		{
+			Name:                "test minimum_seconds less than the 60 of the fourth token",
+			Token:               "fourth",
+			Data:                map[string]interface{}{"minimum_seconds": "50"},
+			ExpectedAccessToken: func() string { return "fourth_2" },
+			ExpectedExpireTime:  true,
+		},
+		{
+			Name:                "test minimum_seconds more than the 60 of the fourth token",
+			Token:               "fourth",
+			Data:                map[string]interface{}{"minimum_seconds": "70"},
+			ExpectedAccessToken: func() string { return "fourth_3" },
+			ExpectedExpireTime:  true,
+		},
+		{
+			Name:          "verify that fourth is marked expired if new token is less than request",
+			Token:         "fourth",
+			Data:          map[string]interface{}{"minimum_seconds": "125"},
+			ExpectedError: "token expired",
 		},
 	}
+	for _, test := range tests {
+		t.Run(test.Name, func(t *testing.T) {
+			req := &logical.Request{
+				Operation: logical.ReadOperation,
+				Path:      backend.CredsPathPrefix + test.Token,
+				Storage:   storage,
+				Data:      test.Data,
+			}
 
-	resp, err = b.HandleRequest(ctx, req)
-	require.NoError(t, err)
-	require.False(t, resp != nil && resp.IsError(), "response has error: %+v", resp.Error())
-	require.Equal(t, "fourth_2", resp.Data["access_token"])
-	require.NotEmpty(t, resp.Data["expire_time"])
+			resp, err := b.HandleRequest(ctx, req)
+			require.NoError(t, err)
+			require.NotNil(t, resp)
+			if test.ExpectedError != "" {
+				require.True(t, resp.IsError())
+				require.EqualError(t, resp.Error(), test.ExpectedError)
+			} else {
+				require.False(t, resp.IsError(), "response has error: %+v", resp.Error())
+				require.Equal(t, test.ExpectedExpireTime, resp.Data["expire_time"] != nil)
 
-	// test minimum_seconds less than the 60 of the second token
-	req.Data["minimum_seconds"] = "50"
+				if test.ExpectedAccessToken != nil {
+					require.Equal(t, test.ExpectedAccessToken(), resp.Data["access_token"])
+				} else {
+					require.NotEmpty(t, resp.Data["access_token"])
+				}
 
-	resp, err = b.HandleRequest(ctx, req)
-	require.NoError(t, err)
-	require.False(t, resp != nil && resp.IsError(), "response has error: %+v", resp.Error())
-	require.Equal(t, "fourth_2", resp.Data["access_token"])
-	require.NotEmpty(t, resp.Data["expire_time"])
-
-	// test minimum_seconds more than the 60 of the second token
-	req.Data["minimum_seconds"] = "70"
-
-	resp, err = b.HandleRequest(ctx, req)
-	require.NoError(t, err)
-	require.False(t, resp != nil && resp.IsError(), "response has error: %+v", resp.Error())
-	require.Equal(t, "fourth_3", resp.Data["access_token"])
-	require.NotEmpty(t, resp.Data["expire_time"])
-
-	// verify that it is marked expired if new token is less than request
-	req.Data["minimum_seconds"] = "125"
-
-	resp, err = b.HandleRequest(ctx, req)
-	require.NoError(t, err)
-	require.NotNil(t, resp)
-	require.EqualError(t, resp.Error(), "token expired")
+				tokens[test.Token] = resp.Data["access_token"].(string)
+			}
+		})
+	}
 }
