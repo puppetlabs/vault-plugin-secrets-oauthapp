@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"encoding/json"
+	"errors"
 	"io"
 	"io/ioutil"
 	"net/http"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/coreos/go-oidc"
 	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/pkg/oauth2ext/devicecode"
+	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/pkg/oauth2ext/semerr"
 	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/pkg/provider"
 	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/pkg/testutil"
 	"github.com/stretchr/testify/assert"
@@ -334,6 +336,11 @@ func TestOIDCDeviceCodeFlow(t *testing.T) {
 						"error":             "authorization_pending",
 						"error_description": "User code still pending",
 					}
+
+					resp, err := json.Marshal(payload)
+					require.NoError(t, err)
+					w.WriteHeader(http.StatusUnauthorized)
+					_, _ = io.WriteString(w, string(resp))
 				} else {
 					idClaims := jwt.Claims{
 						Issuer:   "http://localhost",
@@ -355,11 +362,11 @@ func TestOIDCDeviceCodeFlow(t *testing.T) {
 						"token_type":    "Bearer",
 						"expires_in":    900,
 					}
-				}
 
-				resp, err := json.Marshal(payload)
-				require.NoError(t, err)
-				_, _ = io.WriteString(w, string(resp))
+					resp, err := json.Marshal(payload)
+					require.NoError(t, err)
+					_, _ = io.WriteString(w, string(resp))
+				}
 			default:
 				assert.Fail(t, "unexpected grant type", data.Get("grant_type"))
 			}
@@ -387,7 +394,9 @@ func TestOIDCDeviceCodeFlow(t *testing.T) {
 
 	_, err = ops.DeviceCodeExchange(ctx, auth.UserCode, provider.WithProviderOptions{})
 	require.Error(t, err)
-	require.Equal(t, "server response error authorization_pending: User code still pending", err.Error())
+	var oe *semerr.Error
+	errors.As(err, &oe)
+	require.Equal(t, "authorization_pending", oe.Code)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, auth.VerificationURIComplete, nil)
 	require.NoError(t, err)
