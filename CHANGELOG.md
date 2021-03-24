@@ -8,6 +8,10 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+* The OAuth 2.0 device authorization flow (RFC 8628) is now supported by specifying `grant_type=urn:ietf:params:oauth:grant-type:device_code` when creating a credential.
+
 ## [1.9.0] - 2021-01-19
 
 ### Added
