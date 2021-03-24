@@ -22,9 +22,14 @@ func (wru WithRedirectURL) ApplyToAuthCodeExchangeOptions(target *AuthCodeExchan
 type WithScopes []string
 
 var _ AuthCodeURLOption = WithScopes(nil)
+var _ DeviceCodeAuthOption = WithScopes(nil)
 var _ ClientCredentialsOption = WithScopes(nil)
 
 func (ws WithScopes) ApplyToAuthCodeURLOptions(target *AuthCodeURLOptions) {
+	target.Scopes = append(target.Scopes, ws...)
+}
+
+func (ws WithScopes) ApplyToDeviceCodeAuthOptions(target *DeviceCodeAuthOptions) {
 	target.Scopes = append(target.Scopes, ws...)
 }
 
@@ -63,11 +68,33 @@ func (wup WithURLParams) ApplyToClientCredentialsOptions(target *ClientCredentia
 type WithProviderOptions map[string]string
 
 var _ AuthCodeURLOption = WithProviderOptions(nil)
+var _ DeviceCodeAuthOption = WithProviderOptions(nil)
+var _ DeviceCodeExchangeOption = WithProviderOptions(nil)
 var _ AuthCodeExchangeOption = WithProviderOptions(nil)
 var _ RefreshTokenOption = WithProviderOptions(nil)
 var _ ClientCredentialsOption = WithProviderOptions(nil)
 
 func (wpo WithProviderOptions) ApplyToAuthCodeURLOptions(target *AuthCodeURLOptions) {
+	if target.ProviderOptions == nil {
+		target.ProviderOptions = make(map[string]string, len(wpo))
+	}
+
+	for k, v := range wpo {
+		target.ProviderOptions[k] = v
+	}
+}
+
+func (wpo WithProviderOptions) ApplyToDeviceCodeAuthOptions(target *DeviceCodeAuthOptions) {
+	if target.ProviderOptions == nil {
+		target.ProviderOptions = make(map[string]string, len(wpo))
+	}
+
+	for k, v := range wpo {
+		target.ProviderOptions[k] = v
+	}
+}
+
+func (wpo WithProviderOptions) ApplyToDeviceCodeExchangeOptions(target *DeviceCodeExchangeOptions) {
 	if target.ProviderOptions == nil {
 		target.ProviderOptions = make(map[string]string, len(wpo))
 	}

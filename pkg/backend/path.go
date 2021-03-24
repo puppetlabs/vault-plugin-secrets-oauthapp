@@ -16,8 +16,9 @@ func nameRegex(name string) string {
 func pathsSpecial() *logical.Paths {
 	return &logical.Paths{
 		SealWrapStorage: []string{
-			configPath,
-			credsPathPrefix,
+			ConfigPath,
+			CredsPathPrefix,
+			SelfPathPrefix,
 		},
 	}
 }

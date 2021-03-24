@@ -15,10 +15,12 @@ import (
 	"golang.org/x/oauth2"
 )
 
-var basicTestFactory = provider.BasicFactory(oauth2.Endpoint{
-	AuthURL:   "http://localhost/authorize",
-	TokenURL:  "http://localhost/token",
-	AuthStyle: oauth2.AuthStyleInParams,
+var basicTestFactory = provider.BasicFactory(provider.Endpoint{
+	Endpoint: oauth2.Endpoint{
+		AuthURL:   "http://localhost/authorize",
+		TokenURL:  "http://localhost/token",
+		AuthStyle: oauth2.AuthStyleInParams,
+	},
 })
 
 func TestBasicPublic(t *testing.T) {

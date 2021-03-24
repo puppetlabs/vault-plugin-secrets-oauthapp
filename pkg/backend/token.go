@@ -3,23 +3,26 @@ package backend
 import (
 	"time"
 
-	"github.com/hashicorp/vault/sdk/framework"
+	"github.com/puppetlabs/leg/timeutil/pkg/clock"
 	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/pkg/provider"
 )
 
-func tokenValid(tok *provider.Token, data *framework.FieldData) bool {
-	if tok == nil || !tok.Valid() {
+const (
+	defaultExpiryDelta = 10 * time.Second
+)
+
+func tokenExpired(clk clock.Clock, t *provider.Token, expiryDelta time.Duration) bool {
+	if t.Expiry.IsZero() {
 		return false
 	}
-	if data == nil {
-		return true
+
+	if expiryDelta < defaultExpiryDelta {
+		expiryDelta = defaultExpiryDelta
 	}
-	if minsecondsstr, ok := data.GetOk("minimum_seconds"); ok {
-		minseconds := minsecondsstr.(int)
-		zeroTime := time.Time{}
-		if tok.Expiry != zeroTime && time.Until(tok.Expiry).Seconds() < float64(minseconds) {
-			return false
-		}
-	}
-	return true
+
+	return t.Expiry.Round(0).Add(-expiryDelta).Before(clk.Now())
+}
+
+func (b *backend) tokenValid(tok *provider.Token, expiryDelta time.Duration) bool {
+	return tok != nil && tok.AccessToken != "" && !tokenExpired(b.clock, tok, expiryDelta)
 }

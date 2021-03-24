@@ -1,4 +1,4 @@
-package backend
+package backend_test
 
 import (
 	"context"
@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/hashicorp/vault/sdk/logical"
+	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/pkg/backend"
 	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/pkg/provider"
 	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/pkg/testutil"
 	"github.com/stretchr/testify/require"
@@ -34,13 +35,13 @@ func TestBasicClientCredentials(t *testing.T) {
 
 	storage := &logical.InmemStorage{}
 
-	b := New(Options{ProviderRegistry: pr})
+	b := backend.New(backend.Options{ProviderRegistry: pr})
 	require.NoError(t, b.Setup(ctx, &logical.BackendConfig{}))
 
 	// Write configuration.
 	req := &logical.Request{
 		Operation: logical.UpdateOperation,
-		Path:      configPath,
+		Path:      backend.ConfigPath,
 		Storage:   storage,
 		Data: map[string]interface{}{
 			"client_id":     client.ID,
@@ -57,7 +58,7 @@ func TestBasicClientCredentials(t *testing.T) {
 	// Read the credential.
 	req = &logical.Request{
 		Operation: logical.ReadOperation,
-		Path:      selfPathPrefix + `test`,
+		Path:      backend.SelfPathPrefix + `test`,
 		Storage:   storage,
 	}
 
@@ -92,13 +93,13 @@ func TestConfiguredClientCredentials(t *testing.T) {
 
 	storage := &logical.InmemStorage{}
 
-	b := New(Options{ProviderRegistry: pr})
+	b := backend.New(backend.Options{ProviderRegistry: pr})
 	require.NoError(t, b.Setup(ctx, &logical.BackendConfig{}))
 
 	// Write configuration.
 	req := &logical.Request{
 		Operation: logical.UpdateOperation,
-		Path:      configPath,
+		Path:      backend.ConfigPath,
 		Storage:   storage,
 		Data: map[string]interface{}{
 			"client_id":     client.ID,
@@ -115,7 +116,7 @@ func TestConfiguredClientCredentials(t *testing.T) {
 	// Write credential configuration.
 	req = &logical.Request{
 		Operation: logical.UpdateOperation,
-		Path:      selfPathPrefix + `test/config`,
+		Path:      backend.SelfPathPrefix + `test/config`,
 		Storage:   storage,
 		Data: map[string]interface{}{
 			"scopes": []interface{}{"foo", "bar"},
@@ -133,7 +134,7 @@ func TestConfiguredClientCredentials(t *testing.T) {
 	// Read the credential.
 	req = &logical.Request{
 		Operation: logical.ReadOperation,
-		Path:      selfPathPrefix + `test`,
+		Path:      backend.SelfPathPrefix + `test`,
 		Storage:   storage,
 	}
 
@@ -159,7 +160,7 @@ func TestExpiredClientCredentials(t *testing.T) {
 	handler := testutil.AmendTokenMockClientCredentials(testutil.IncrementMockClientCredentials("token_"), func(t *provider.Token) error {
 		switch handled {
 		case true:
-			t.Expiry = time.Now().Add(30 * time.Second)
+			t.Expiry = time.Now().Add(10 * time.Minute)
 		default:
 			t.Expiry = time.Now().Add(2 * time.Second)
 			handled = true
@@ -172,13 +173,13 @@ func TestExpiredClientCredentials(t *testing.T) {
 
 	storage := &logical.InmemStorage{}
 
-	b := New(Options{ProviderRegistry: pr})
+	b := backend.New(backend.Options{ProviderRegistry: pr})
 	require.NoError(t, b.Setup(ctx, &logical.BackendConfig{}))
 
 	// Write configuration.
 	req := &logical.Request{
 		Operation: logical.UpdateOperation,
-		Path:      configPath,
+		Path:      backend.ConfigPath,
 		Storage:   storage,
 		Data: map[string]interface{}{
 			"client_id":     client.ID,
@@ -195,7 +196,7 @@ func TestExpiredClientCredentials(t *testing.T) {
 	// Write credential configuration.
 	req = &logical.Request{
 		Operation: logical.UpdateOperation,
-		Path:      selfPathPrefix + `test/config`,
+		Path:      backend.SelfPathPrefix + `test/config`,
 		Storage:   storage,
 		Data: map[string]interface{}{
 			"scopes": []interface{}{"foo", "bar"},
@@ -211,7 +212,7 @@ func TestExpiredClientCredentials(t *testing.T) {
 	// force the token to update.
 	req = &logical.Request{
 		Operation: logical.ReadOperation,
-		Path:      selfPathPrefix + `test`,
+		Path:      backend.SelfPathPrefix + `test`,
 		Storage:   storage,
 	}
 
