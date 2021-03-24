@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -51,6 +52,26 @@ type MockClient struct {
 
 type MockAuthCodeExchangeFunc func(code string, opts *provider.AuthCodeExchangeOptions) (*provider.Token, error)
 type MockClientCredentialsFunc func(opts *provider.ClientCredentialsOptions) (*provider.Token, error)
+type MockDeviceCodeAuthFunc func(opts *provider.DeviceCodeAuthOptions) (*devicecode.Auth, bool, error)
+type MockDeviceCodeExchangeFunc func(deviceCode string, opts *provider.DeviceCodeExchangeOptions) (*provider.Token, error)
+
+func PendingMockDeviceAuthCodeExchange(code string) MockDeviceCodeExchangeFunc {
+	return func(_ string, _ *provider.DeviceCodeExchangeOptions) (*provider.Token, error) {
+		return nil, errors.New(`{ "error": "authorization_pending", "error_description": "..." }`)
+	}
+}
+
+func ExpiredMockDeviceAuthCodeExchange(code string) MockDeviceCodeExchangeFunc {
+	return func(_ string, _ *provider.DeviceCodeExchangeOptions) (*provider.Token, error) {
+		return nil, errors.New(`{ "error": "expired_token", "error_description": "..." }`)
+	}
+}
+
+func SlowDownMockDeviceAuthCodeExchange(code string) MockDeviceCodeExchangeFunc {
+	return func(_ string, _ *provider.DeviceCodeExchangeOptions) (*provider.Token, error) {
+		return nil, errors.New(`{ "error": "slow_down", "error_description": "..." }`)
+	}
+}
 
 func StaticMockAuthCodeExchange(token *provider.Token) MockAuthCodeExchangeFunc {
 	return func(_ string, _ *provider.AuthCodeExchangeOptions) (*provider.Token, error) {
@@ -184,10 +205,12 @@ func RestrictMockAuthCodeExchange(m map[string]MockAuthCodeExchangeFunc) MockAut
 }
 
 type mockOperations struct {
-	clientID            string
-	owner               *mock
-	authCodeExchangeFn  MockAuthCodeExchangeFunc
-	clientCredentialsFn MockClientCredentialsFunc
+	clientID             string
+	owner                *mock
+	authCodeExchangeFn   MockAuthCodeExchangeFunc
+	clientCredentialsFn  MockClientCredentialsFunc
+	deviceCodeAuthFn     MockDeviceCodeAuthFunc
+	deviceCodeExchangeFn MockDeviceCodeExchangeFunc
 }
 
 func (mo *mockOperations) AuthCodeURL(state string, opts ...provider.AuthCodeURLOption) (string, bool) {
@@ -203,13 +226,25 @@ func (mo *mockOperations) AuthCodeURL(state string, opts ...provider.AuthCodeURL
 }
 
 func (mo *mockOperations) DeviceCodeAuth(ctx context.Context, opts ...provider.DeviceCodeAuthOption) (*devicecode.Auth, bool, error) {
-	// XXX: FIXME: Implement this!
-	return nil, false, &oauth2.RetrieveError{Response: &http.Response{Status: http.StatusText(http.StatusInternalServerError)}}
+	if mo.deviceCodeAuthFn == nil {
+		return nil, false, semerr.Map(&oauth2.RetrieveError{Response: &http.Response{Status: http.StatusText(http.StatusInternalServerError)}})
+	}
+
+	o := &provider.DeviceCodeAuthOptions{}
+	o.ApplyOptions(opts)
+
+	return mo.deviceCodeAuthFn(o)
 }
 
-func (mo *mockOperations) DeviceCodeExchange(ctx context.Context, deivceCode string, opts ...provider.DeviceCodeExchangeOption) (*provider.Token, error) {
-	// XXX: FIXME: Implement this!
-	return nil, &oauth2.RetrieveError{Response: &http.Response{Status: http.StatusText(http.StatusInternalServerError)}}
+func (mo *mockOperations) DeviceCodeExchange(ctx context.Context, deviceCode string, opts ...provider.DeviceCodeExchangeOption) (*provider.Token, error) {
+	if mo.deviceCodeExchangeFn == nil {
+		return nil, semerr.Map(&oauth2.RetrieveError{Response: &http.Response{Status: http.StatusText(http.StatusInternalServerError)}})
+	}
+
+	o := &provider.DeviceCodeExchangeOptions{}
+	o.ApplyOptions(opts)
+
+	return mo.deviceCodeExchangeFn(deviceCode, o)
 }
 
 func (mo *mockOperations) AuthCodeExchange(ctx context.Context, code string, opts ...provider.AuthCodeExchangeOption) (*provider.Token, error) {
@@ -278,20 +313,24 @@ func (mp *mockProvider) Private(clientID, clientSecret string) provider.PrivateO
 	mc := MockClient{ID: clientID, Secret: clientSecret}
 
 	return &mockOperations{
-		clientID:            clientID,
-		authCodeExchangeFn:  mp.owner.authCodeExchangeFns[mc],
-		clientCredentialsFn: mp.owner.clientCredentialsFns[mc],
-		owner:               mp.owner,
+		clientID:             clientID,
+		authCodeExchangeFn:   mp.owner.authCodeExchangeFns[mc],
+		clientCredentialsFn:  mp.owner.clientCredentialsFns[mc],
+		deviceCodeAuthFn:     mp.owner.deviceCodeAuthFns[mc],
+		deviceCodeExchangeFn: mp.owner.deviceCodeExchangeFns[mc],
+		owner:                mp.owner,
 	}
 }
 
 type mock struct {
-	vsn                  int
-	expectedOpts         map[string]string
-	authCodeExchangeFns  map[MockClient]MockAuthCodeExchangeFunc
-	clientCredentialsFns map[MockClient]MockClientCredentialsFunc
-	refresh              map[string]string
-	refreshMut           sync.RWMutex
+	vsn                   int
+	expectedOpts          map[string]string
+	authCodeExchangeFns   map[MockClient]MockAuthCodeExchangeFunc
+	clientCredentialsFns  map[MockClient]MockClientCredentialsFunc
+	deviceCodeAuthFns     map[MockClient]MockDeviceCodeAuthFunc
+	deviceCodeExchangeFns map[MockClient]MockDeviceCodeExchangeFunc
+	refresh               map[string]string
+	refreshMut            sync.RWMutex
 }
 
 func (m *mock) factory(ctx context.Context, vsn int, options map[string]string) (provider.Provider, error) {
@@ -365,12 +404,26 @@ func MockWithClientCredentials(client MockClient, fn MockClientCredentialsFunc) 
 	}
 }
 
+func MockWithDeviceCodeAuth(client MockClient, fn MockDeviceCodeAuthFunc) MockOption {
+	return func(m *mock) {
+		m.deviceCodeAuthFns[client] = fn
+	}
+}
+
+func MockWithDeviceCodeExchange(client MockClient, fn MockDeviceCodeExchangeFunc) MockOption {
+	return func(m *mock) {
+		m.deviceCodeExchangeFns[client] = fn
+	}
+}
+
 func MockFactory(opts ...MockOption) provider.FactoryFunc {
 	m := &mock{
-		expectedOpts:         make(map[string]string),
-		authCodeExchangeFns:  make(map[MockClient]MockAuthCodeExchangeFunc),
-		clientCredentialsFns: make(map[MockClient]MockClientCredentialsFunc),
-		refresh:              make(map[string]string),
+		expectedOpts:          make(map[string]string),
+		authCodeExchangeFns:   make(map[MockClient]MockAuthCodeExchangeFunc),
+		clientCredentialsFns:  make(map[MockClient]MockClientCredentialsFunc),
+		deviceCodeAuthFns:     make(map[MockClient]MockDeviceCodeAuthFunc),
+		deviceCodeExchangeFns: make(map[MockClient]MockDeviceCodeExchangeFunc),
+		refresh:               make(map[string]string),
 	}
 
 	MockWithVersion(1)(m)
