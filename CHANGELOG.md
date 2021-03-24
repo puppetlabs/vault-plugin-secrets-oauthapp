@@ -8,6 +8,8 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.10.0-beta.1] - 2021-03-24
+
 ### Added
 
 * The OAuth 2.0 device authorization flow (RFC 8628) is now supported by specifying `grant_type=urn:ietf:params:oauth:grant-type:device_code` when creating a credential.
@@ -132,7 +134,8 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 * Initial release of the plugin.
 
-[Unreleased]: https://github.com/puppetlabs/vault-plugin-secrets-oauthapp/compare/v1.9.0...HEAD
+[Unreleased]: https://github.com/puppetlabs/vault-plugin-secrets-oauthapp/compare/v1.10.1-beta.1...HEAD
+[1.10.0-beta.1]: https://github.com/puppetlabs/vault-plugin-secrets-oauthapp/compare/v1.9.0...v1.10.0-beta.1
 [1.9.0]: https://github.com/puppetlabs/vault-plugin-secrets-oauthapp/compare/v1.8.3...v1.9.0
 [1.8.3]: https://github.com/puppetlabs/vault-plugin-secrets-oauthapp/compare/v1.8.2...v1.8.3
 [1.8.2]: https://github.com/puppetlabs/vault-plugin-secrets-oauthapp/compare/v1.8.1...v1.8.2
