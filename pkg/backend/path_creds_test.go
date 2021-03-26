@@ -3,15 +3,19 @@ package backend_test
 import (
 	"context"
 	"fmt"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/hashicorp/vault/sdk/logical"
+	"github.com/puppetlabs/leg/timeutil/pkg/clock/k8sext"
 	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/pkg/backend"
+	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/pkg/oauth2ext/devicecode"
 	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/pkg/provider"
 	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/pkg/testutil"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/oauth2"
+	"k8s.io/apimachinery/pkg/util/clock"
 )
 
 func TestBasicAuthCodeExchange(t *testing.T) {
@@ -294,4 +298,124 @@ func TestRefreshFailureReturnsNotConfigured(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, resp)
 	require.EqualError(t, resp.Error(), "token expired")
+}
+
+func TestDeviceCodeAuthAndExchange(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	client := testutil.MockClient{ID: "abc"}
+
+	auth := testutil.StaticMockDeviceCodeAuth(&devicecode.Auth{
+		DeviceCode:              "xyz123",
+		UserCode:                "ABCD-1234",
+		VerificationURI:         "http://localhost/verify",
+		VerificationURIComplete: "http://localhost/verify?user_code=ABCD-1234",
+		ExpiresIn:               300,
+		Interval:                5,
+	})
+
+	var i int32
+	ch := make(chan struct{})
+	exchange := func(deviceCode string, opts *provider.DeviceCodeExchangeOptions) (*provider.Token, error) {
+		require.Equal(t, "xyz123", deviceCode)
+
+		switch atomic.AddInt32(&i, 1) {
+		case 1:
+			// Pending.
+			return testutil.AuthorizationPendingErrorMockDeviceCodeExchange(deviceCode, opts)
+		case 2:
+			// OK.
+			close(ch)
+			return &provider.Token{Token: &oauth2.Token{AccessToken: "hello"}}, nil
+		default:
+			require.Fail(t, "unexpected call to device code exchange", "iteration #%d", i)
+			return nil, nil
+		}
+	}
+
+	pr := provider.NewRegistry()
+	pr.MustRegister("mock", testutil.MockFactory(
+		testutil.MockWithDeviceCodeAuth(client, auth),
+		testutil.MockWithDeviceCodeExchange(client, exchange),
+	))
+
+	storage := &logical.InmemStorage{}
+
+	clk := clock.NewFakeClock(time.Now())
+
+	b := backend.New(backend.Options{
+		ProviderRegistry: pr,
+		Clock:            k8sext.NewClock(clk),
+	})
+	require.NoError(t, b.Setup(ctx, &logical.BackendConfig{}))
+	require.NoError(t, b.Initialize(ctx, &logical.InitializationRequest{Storage: storage}))
+	defer b.Clean(ctx)
+
+	// Write configuration.
+	req := &logical.Request{
+		Operation: logical.UpdateOperation,
+		Path:      backend.ConfigPath,
+		Storage:   storage,
+		Data: map[string]interface{}{
+			"client_id": client.ID,
+			"provider":  "mock",
+		},
+	}
+
+	resp, err := b.HandleRequest(ctx, req)
+	require.NoError(t, err)
+	require.False(t, resp != nil && resp.IsError(), "response has error: %+v", resp.Error())
+	require.Nil(t, resp)
+
+	// Write a valid credential.
+	req = &logical.Request{
+		Operation: logical.UpdateOperation,
+		Path:      backend.CredsPathPrefix + `test`,
+		Storage:   storage,
+		Data: map[string]interface{}{
+			"grant_type": devicecode.GrantType,
+			"scopes":     []interface{}{"first", "second"},
+		},
+	}
+
+	resp, err = b.HandleRequest(ctx, req)
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	require.False(t, resp.IsError(), "response has error: %+v", resp.Error())
+	require.Equal(t, "ABCD-1234", resp.Data["user_code"])
+	require.Equal(t, "http://localhost/verify", resp.Data["verification_uri"])
+	require.Equal(t, "http://localhost/verify?user_code=ABCD-1234", resp.Data["verification_uri_complete"])
+	require.NotEmpty(t, resp.Data["expire_time"])
+
+	// Token should now be pending.
+	req = &logical.Request{
+		Operation: logical.ReadOperation,
+		Path:      backend.CredsPathPrefix + `test`,
+		Storage:   storage,
+	}
+
+	resp, err = b.HandleRequest(ctx, req)
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	require.EqualError(t, resp.Error(), "token pending issuance")
+
+	require.Equal(t, int32(1), i)
+
+	// Skip forward 5 seconds; the token should issue.
+	clk.Step(5 * time.Second)
+
+	select {
+	case <-ch:
+	case <-ctx.Done():
+		require.Fail(t, "context expired waiting for device code exchange attempt")
+	}
+
+	resp, err = b.HandleRequest(ctx, req)
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	require.False(t, resp.IsError(), "response has error: %+v", resp.Error())
+	require.Equal(t, "hello", resp.Data["access_token"])
+	require.Equal(t, "Bearer", resp.Data["type"])
+	require.Empty(t, resp.Data["expire_time"])
 }

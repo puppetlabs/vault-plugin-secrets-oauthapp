@@ -308,7 +308,6 @@ func TestOIDCDeviceCodeFlow(t *testing.T) {
 				"expires_in":                900,
 				"interval":                  5,
 			}
-			// TODO Why can't device code auth receive URL encoded responses?
 			resp, err := json.Marshal(payload)
 			require.NoError(t, err)
 
