@@ -120,10 +120,11 @@ Code: 400. Errors:
 However, within a few seconds of the user verifying their identity, you should see the access token:
 
 ```
+$ vault read oauth2/github/creds/my-user-auth
 Key             Value
 ---             -----
 access_token    aGVsbG8gaGVsbG8gaGVsbG8K
-expire_time     2021-03-27T00:15:38.72796606-07:00
+expire_time     2021-03-27T00:15:38.72796606Z
 type            Bearer
 ```
 
@@ -245,14 +246,14 @@ This operation takes additional fields depending on which grant type is chosen:
 
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|----------|
-| `refresh_token` | For refresh token flow, the refresh token retrieved from the provider by some means external to this plugin. | String | None | Yes |
+| `refresh_token` | The refresh token retrieved from the provider by some means external to this plugin. | String | None | Yes |
 
 ##### `urn:ietf:params:oauth:grant-type:device_code`
 
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|----------|
-| `device_code` | For device code flow, a device code that has already been retrieved. If not specified, a new device code will be retrieved. | String | None | No |
-| `scopes` | For device code flow, the scopes to request. | List of String | None | No |
+| `device_code` | A device code that has already been retrieved. If not specified, a new device code will be retrieved. | String | None | No |
+| `scopes` | If a device code is not specified, the scopes to request. | List of String | None | No |
 
 \* For compatibility, if `grant_type` is not provided and `refresh_token` is set, the `grant_type` will default to `refresh_token`.
 
