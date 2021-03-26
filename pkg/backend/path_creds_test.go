@@ -3,6 +3,7 @@ package backend_test
 import (
 	"context"
 	"fmt"
+	"runtime"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -403,6 +404,9 @@ func TestDeviceCodeAuthAndExchange(t *testing.T) {
 	require.Equal(t, int32(1), i)
 
 	// Skip forward 5 seconds; the token should issue.
+	for !clk.HasWaiters() {
+		runtime.Gosched()
+	}
 	clk.Step(5 * time.Second)
 
 	select {
