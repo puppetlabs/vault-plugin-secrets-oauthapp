@@ -74,8 +74,8 @@ func (b *backend) selfConfigReadOperation(ctx context.Context, req *logical.Requ
 
 	resp := &logical.Response{
 		Data: map[string]interface{}{
-			"token_url_prams": entry.Config.TokenURLParams,
-			"scopes":          entry.Config.Scopes,
+			"token_url_params": entry.Config.TokenURLParams,
+			"scopes":           entry.Config.Scopes,
 		},
 	}
 	return resp, nil
