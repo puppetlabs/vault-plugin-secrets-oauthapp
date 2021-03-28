@@ -44,7 +44,7 @@ func (b *backend) updateClientCredsToken(ctx context.Context, storage logical.St
 		// Store the new creds.
 		candidate.Token = updated
 
-		if err := cm.WriteClientCredsEntry(ctx, entry); err != nil {
+		if err := cm.WriteClientCredsEntry(ctx, candidate); err != nil {
 			return err
 		}
 

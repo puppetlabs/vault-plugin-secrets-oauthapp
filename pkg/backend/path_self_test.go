@@ -216,11 +216,15 @@ func TestExpiredClientCredentials(t *testing.T) {
 		Storage:   storage,
 	}
 
-	resp, err = b.HandleRequest(ctx, req)
-	require.NoError(t, err)
-	require.NotNil(t, resp)
-	require.False(t, resp.IsError(), "response has error: %+v", resp.Error())
-	require.Equal(t, "token_2", resp.Data["access_token"])
-	require.Equal(t, "Bearer", resp.Data["type"])
-	require.NotEmpty(t, resp.Data["expire_time"])
+	// We do two reads to ensure the token stays the same once it has a longer
+	// expiration.
+	for i := 0; i < 2; i++ {
+		resp, err = b.HandleRequest(ctx, req)
+		require.NoError(t, err)
+		require.NotNil(t, resp)
+		require.False(t, resp.IsError(), "response has error: %+v", resp.Error())
+		require.Equal(t, "token_2", resp.Data["access_token"])
+		require.Equal(t, "Bearer", resp.Data["type"])
+		require.NotEmpty(t, resp.Data["expire_time"])
+	}
 }
