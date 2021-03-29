@@ -18,14 +18,14 @@ to add the plugin to the catalog. We will assume it is registered under the name
 
 Mount the plugin at the path of your choosing:
 
-```console
+```
 $ vault secrets enable -path=oauth2/bitbucket oauthapp
 Success! Enabled the oauthapp secrets engine at: oauth2/bitbucket/
 ```
 
 Configure it with the necessary information to exchange tokens:
 
-```console
+```
 $ vault write oauth2/bitbucket/config \
     provider=bitbucket \
     client_id=aBcD3FgHiJkLmN0pQ \
@@ -39,7 +39,7 @@ Once the client secret has been written, it will never be exposed again.
 
 From a Vault client, request an authorization code URL:
 
-```console
+```
 $ vault write oauth2/bitbucket/config/auth_code_url state=foo scopes=bar,baz
 Key    Value
 ---    -----
@@ -50,14 +50,14 @@ After redirecting the user to that URL and receiving the resulting temporary
 authorization code in your callback handler, you can create a permanent
 credential that automatically refreshes:
 
-```console
+```
 $ vault write oauth2/bitbucket/creds/my-user-auth code=zYxWvU7sRqP
 Success! Data written to: oauth2/bitbucket/creds/my-user-auth
 ```
 
 Assuming the refresh token remains valid, an access token is available any time at the same endpoint:
 
-```console
+```
 $ vault read oauth2/bitbucket/creds/my-user-auth
 Key             Value
 ---             -----
@@ -71,7 +71,7 @@ Alternatively, if a refresh token is obtained in some other way you can
 skip the auth_code_url step and pass the token directly to the creds
 write instead of the response code:
 
-```console
+```
 $ vault write oauth2/bitbucket/creds/my-user-auth \
     grant_type=refresh_token \
     refresh_token=TGUgZ3JpbGxlPw==
@@ -90,7 +90,7 @@ Not all providers support device code grants. Check the provider's documentation
 To initiate the device code flow (this time using [GitHub as an
 example](https://docs.github.com/en/developers/apps/authorizing-oauth-apps#device-flow)):
 
-```console
+```
 $ vault write oauth2/github/creds/my-user-auth grant_type=urn:ietf:params:oauth:grant-type:device_code
 Key                 Value
 ---                 -----
@@ -103,13 +103,36 @@ The plugin will manage the device code (similar to a refresh token) and will
 never present it to you. You should forward the user code and verification URL
 to the authorization subject for them to take action to log in.
 
-XXX: Finish this once we have the errors nailed down.
+Initially, when you try to read the credential back, you'll get an error letting
+you know the token is pending issuance because the user hasn't yet performed the
+required verification steps:
+
+```
+$ vault read oauth2/github/creds/my-user-auth
+Error reading oauth2/github/creds/my-user-auth: Error making API request.
+
+URL: GET http://localhost:8200/v1/oauth2/github/creds/my-user-auth
+Code: 400. Errors:
+
+* token pending issuance
+```
+
+However, within a few seconds of the user verifying their identity, you should see the access token:
+
+```
+$ vault read oauth2/github/creds/my-user-auth
+Key             Value
+---             -----
+access_token    aGVsbG8gaGVsbG8gaGVsbG8K
+expire_time     2021-03-27T00:15:38.72796606Z
+type            Bearer
+```
 
 ### Client credentials flow
 
 From a Vault client, simply read an arbitrary token using the `self` endpoints:
 
-```console
+```
 $ vault read oauth2/bitbucket/self/my-machine-auth
 Key             Value
 ---             -----
@@ -121,7 +144,7 @@ type            Bearer
 You can configure the parameters of the identity provider's token endpoint if
 needed:
 
-```console
+```
 $ vault write oauth2/bitbucket/self/my-machine-auth/config \
     scopes=repositories:read
 Success! Data written to: oauth2/bitbucket/self/my-machine-auth/config
@@ -133,7 +156,7 @@ For some operations, you may find that you need to provide a map of data for a
 field. When using the CLI, you can repeat the name of the field for each
 key-value pair of the map and use `=` to separate keys from values. For example:
 
-```console
+```
 $ vault write oauth2/oidc/config \
     provider_options=issuer_url=https://login.example.com \
     provider_options=extra_data_fields=id_token_claims
@@ -208,12 +231,29 @@ type.
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|----------|
 | `grant_type` | The grant type to use. Must be one of `authorization_code`, `refresh_token`, or `urn:ietf:params:oauth:grant-type:device_code`. | String | `authorization_code`* | No |
-| `code` | For authorization code flow, the response code to exchange for a full token. | String | None | If `grant_type` is `authorization_code` |
-| `redirect_url` | For authorization code flow, the same redirect URL as specified in the authorization code URL. | String | None | Refer to provider documentation |
-| `refresh_token` | For refresh token flow, the refresh token retrieved from the provider by some means external to this plugin. | String | None | If `grant_type` is `refresh_token` |
-| `device_code` | For device code flow, a device code that has already been retrieved. If not specified, a new device code will be retrieved. | String | None | No |
-| `scopes` | For device code flow, the scopes to request. | List of String | None | No |
 | `provider_options` | A list of options to pass on to the provider for configuring this token exchange. | Map of String🠦String | None | Refer to provider documentation |
+
+This operation takes additional fields depending on which grant type is chosen:
+
+##### `authorization_code` (default)
+
+| Name | Description | Type | Default | Required |
+|------|-------------|------|---------|----------|
+| `code` | The response code to exchange for a full token. | String | None | Yes |
+| `redirect_url` | The same redirect URL as specified in the authorization code URL. | String | None | Refer to provider documentation |
+
+##### `refresh_token`
+
+| Name | Description | Type | Default | Required |
+|------|-------------|------|---------|----------|
+| `refresh_token` | The refresh token retrieved from the provider by some means external to this plugin. | String | None | Yes |
+
+##### `urn:ietf:params:oauth:grant-type:device_code`
+
+| Name | Description | Type | Default | Required |
+|------|-------------|------|---------|----------|
+| `device_code` | A device code that has already been retrieved. If not specified, a new device code will be retrieved. | String | None | No |
+| `scopes` | If a device code is not specified, the scopes to request. | List of String | None | No |
 
 \* For compatibility, if `grant_type` is not provided and `refresh_token` is set, the `grant_type` will default to `refresh_token`.
 

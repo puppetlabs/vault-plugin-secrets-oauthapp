@@ -125,7 +125,6 @@ func (c *Config) DeviceCodeExchange(ctx context.Context, deviceCode string) (*oa
 			Body:     body,
 		}
 	default:
-		// TODO accept application/x-www-form-urlencoded and text/plain responses in addition to json
 		var base interop.JSONToken
 		if err := json.Unmarshal(body, &base); err != nil {
 			return nil, err

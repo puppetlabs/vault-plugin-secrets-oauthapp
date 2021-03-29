@@ -2,6 +2,7 @@ package backend_test
 
 import (
 	"context"
+	"runtime"
 	"testing"
 	"time"
 
@@ -15,7 +16,6 @@ import (
 )
 
 func TestPeriodicRefresh(t *testing.T) {
-	t.Skip("This one hangs in GitHub actions... disabling for now until we have time to figure it out")
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
@@ -78,9 +78,6 @@ func TestPeriodicRefresh(t *testing.T) {
 	require.NoError(t, b.Initialize(ctx, &logical.InitializationRequest{Storage: storage}))
 	defer b.Clean(ctx)
 
-	// We need to activate the scheduler by ticking the clock.
-	clk.Step(1)
-
 	// Write configuration.
 	req := &logical.Request{
 		Operation: logical.UpdateOperation,
@@ -115,8 +112,7 @@ func TestPeriodicRefresh(t *testing.T) {
 		require.Nil(t, resp)
 	}
 
-	// We should have the initial step value (1) at this point for tokens 3 and
-	// 4.
+	// We should have the initial step value (1) at this point for the tokens.
 	for i := 0; i < 2; i++ {
 		select {
 		case ti := <-refreshed:
@@ -129,6 +125,9 @@ func TestPeriodicRefresh(t *testing.T) {
 
 	// Now we increment the clock into the range where the third token will be
 	// refreshed regardless of where the scheduler is at in its startup routine.
+	for !clk.HasWaiters() {
+		runtime.Gosched()
+	}
 	clk.Step(time.Minute)
 
 	select {
