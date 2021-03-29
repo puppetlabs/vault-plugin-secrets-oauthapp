@@ -117,7 +117,8 @@ Code: 400. Errors:
 * token pending issuance
 ```
 
-However, within a few seconds of the user verifying their identity, you should see the access token:
+However, within a few seconds of the user verifying their identity, you should
+see the access token:
 
 ```
 $ vault read oauth2/github/creds/my-user-auth
