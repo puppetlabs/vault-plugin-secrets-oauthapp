@@ -144,7 +144,7 @@ needed.
 
 func pathSelf(b *backend) *framework.Path {
 	return &framework.Path{
-		Pattern: SelfPathPrefix + nameRegex("name") + `$`,
+		Pattern: SelfPathPrefix + nameRegex("name", "") + `$`,
 		Fields:  selfFields,
 		Operations: map[logical.Operation]framework.OperationHandler{
 			logical.ReadOperation: &framework.PathOperation{
@@ -196,7 +196,7 @@ the token endpoint of a client credentials flow.
 
 func pathSelfConfig(b *backend) *framework.Path {
 	return &framework.Path{
-		Pattern: SelfPathPrefix + nameRegex("name") + `/config$`,
+		Pattern: SelfPathPrefix + nameRegex("name", "") + `/config$`,
 		Fields:  selfConfigFields,
 		Operations: map[logical.Operation]framework.OperationHandler{
 			logical.ReadOperation: &framework.PathOperation{

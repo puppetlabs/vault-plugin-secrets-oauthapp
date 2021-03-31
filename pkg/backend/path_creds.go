@@ -376,7 +376,7 @@ the access token will be available when reading the endpoint.
 
 func pathCreds(b *backend) *framework.Path {
 	return &framework.Path{
-		Pattern: CredsPathPrefix + nameRegex("name") + `$`,
+		Pattern: CredsPathPrefix + nameRegex("name", "/") + `$`,
 		Fields:  credsFields,
 		Operations: map[logical.Operation]framework.OperationHandler{
 			logical.ReadOperation: &framework.PathOperation{

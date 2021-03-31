@@ -7,10 +7,11 @@ import (
 	"github.com/hashicorp/vault/sdk/logical"
 )
 
-// nameRegex allows most printable ASCII characters in path names that are not
-// slashes.
-func nameRegex(name string) string {
-	return fmt.Sprintf(`(?P<%s>\w(([\w.@~!_,:^-]+)?\w)?)`, name)
+// nameRegex allows characters not special to urls or shells,
+//  plus any additional characters passed in as extras
+// Derived from framework.GenericNameWithAtRegex
+func nameRegex(name, extras string) string {
+	return fmt.Sprintf(`(?P<%s>\w(([\w.@~!_,`+extras+`:^-]+)?\w)?)`, name)
 }
 
 func pathsSpecial() *logical.Paths {
