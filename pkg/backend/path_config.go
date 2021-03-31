@@ -8,6 +8,7 @@ import (
 	"github.com/hashicorp/vault/sdk/framework"
 	"github.com/hashicorp/vault/sdk/logical"
 	"github.com/puppetlabs/leg/errmap/pkg/errmark"
+	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/pkg/persistence"
 	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/pkg/provider"
 )
 
@@ -37,11 +38,6 @@ func (b *backend) configUpdateOperation(ctx context.Context, req *logical.Reques
 		return logical.ErrorResponse("missing client ID"), nil
 	}
 
-	clientSecret, ok := data.GetOk("client_secret")
-	if !ok {
-		return logical.ErrorResponse("missing client secret"), nil
-	}
-
 	providerName, ok := data.GetOk("provider")
 	if !ok {
 		return logical.ErrorResponse("missing provider"), nil
@@ -58,21 +54,15 @@ func (b *backend) configUpdateOperation(ctx context.Context, req *logical.Reques
 		return nil, err
 	}
 
-	c := &config{
+	c := &persistence.ConfigEntry{
 		ClientID:        clientID.(string),
-		ClientSecret:    clientSecret.(string),
+		ClientSecret:    data.Get("client_secret").(string),
 		AuthURLParams:   data.Get("auth_url_params").(map[string]string),
 		ProviderName:    providerName.(string),
 		ProviderVersion: p.Version(),
 		ProviderOptions: providerOptions,
 	}
-
-	entry, err := logical.StorageEntryJSON(configPath, c)
-	if err != nil {
-		return nil, err
-	}
-
-	if err := req.Storage.Put(ctx, entry); err != nil {
+	if err := b.data.Managers(req.Storage).Config().WriteConfig(ctx, c); err != nil {
 		return nil, err
 	}
 
@@ -82,7 +72,7 @@ func (b *backend) configUpdateOperation(ctx context.Context, req *logical.Reques
 }
 
 func (b *backend) configDeleteOperation(ctx context.Context, req *logical.Request, _ *framework.FieldData) (*logical.Response, error) {
-	if err := req.Storage.Delete(ctx, configPath); err != nil {
+	if err := b.data.Managers(req.Storage).Config().DeleteConfig(ctx); err != nil {
 		return nil, err
 	}
 
@@ -124,8 +114,8 @@ func (b *backend) configAuthCodeURLUpdateOperation(ctx context.Context, req *log
 }
 
 const (
-	configPath            = "config"
-	configAuthCodeURLPath = configPath + "/auth_code_url"
+	ConfigPath            = "config"
+	ConfigAuthCodeURLPath = ConfigPath + "/auth_code_url"
 )
 
 var configFields = map[string]*framework.FieldSchema{
@@ -164,7 +154,7 @@ authorization code endpoint.
 
 func pathConfig(b *backend) *framework.Path {
 	return &framework.Path{
-		Pattern: configPath + `$`,
+		Pattern: ConfigPath + `$`,
 		Fields:  configFields,
 		Operations: map[logical.Operation]framework.OperationHandler{
 			logical.ReadOperation: &framework.PathOperation{
@@ -217,7 +207,7 @@ endpoint to start managing authentication tokens.
 
 func pathConfigAuthCodeURL(b *backend) *framework.Path {
 	return &framework.Path{
-		Pattern: configAuthCodeURLPath + `$`,
+		Pattern: ConfigAuthCodeURLPath + `$`,
 		Fields:  configAuthCodeURLFields,
 		Operations: map[logical.Operation]framework.OperationHandler{
 			logical.UpdateOperation: &framework.PathOperation{

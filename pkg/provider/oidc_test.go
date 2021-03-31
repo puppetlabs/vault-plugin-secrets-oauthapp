@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"encoding/json"
+	"errors"
 	"io"
 	"io/ioutil"
 	"net/http"
@@ -13,6 +14,8 @@ import (
 	"time"
 
 	"github.com/coreos/go-oidc"
+	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/pkg/oauth2ext/devicecode"
+	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/pkg/oauth2ext/semerr"
 	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/pkg/provider"
 	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/pkg/testutil"
 	"github.com/stretchr/testify/assert"
@@ -27,6 +30,7 @@ const testOIDCConfiguration = `
 	"issuer": "http://localhost",
 	"authorization_endpoint": "http://localhost/authorize",
 	"token_endpoint": "http://localhost/token",
+	"device_authorization_endpoint": "http://localhost/device",
 	"userinfo_endpoint": "http://localhost/userinfo",
 	"jwks_uri": "http://localhost/.well-known/jwks.json",
 	"response_types_supported": ["code", "token", "id_token", "code token", "code id_token", "token id_token", "code token id_token"],
@@ -246,6 +250,161 @@ func TestOIDCRefreshWithIDToken(t *testing.T) {
 	require.Contains(t, token.ExtraData, "id_token")
 	require.Contains(t, token.ExtraData, "id_token_claims")
 	assert.NotEqual(t, initialIDToken, token.ExtraData["id_token"])
+}
+
+func TestOIDCDeviceCodeFlow(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	require.NoError(t, err)
+
+	signer, err := jose.NewSigner(jose.SigningKey{
+		Algorithm: jose.RS256,
+		Key:       privateKey,
+	}, (&jose.SignerOptions{}).WithType("JWT"))
+	require.NoError(t, err)
+
+	userAuthorized := false
+
+	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/.well-known/openid-configuration":
+			_, _ = io.WriteString(w, testOIDCConfiguration)
+		case "/.well-known/jwks.json":
+			_ = json.NewEncoder(w).Encode(&jose.JSONWebKeySet{
+				Keys: []jose.JSONWebKey{
+					{
+						Key:   &privateKey.PublicKey,
+						KeyID: "key",
+						Use:   "sig",
+					},
+				},
+			})
+		case "/userinfo":
+			assert.Equal(t, "Bearer asdf", r.Header.Get("authorization"))
+
+			_ = json.NewEncoder(w).Encode(oidc.UserInfo{
+				Subject: "test-user",
+				Profile: "https://example.com/test-user",
+				Email:   "test-user@example.com",
+			})
+		case "/device":
+			b, err := ioutil.ReadAll(r.Body)
+			require.NoError(t, err)
+
+			data, err := url.ParseQuery(string(b))
+			require.NoError(t, err)
+
+			assert.Equal(t, "foo", data.Get("client_id"))
+			assert.Equal(t, "openid", data.Get("scope"))
+			// TODO: Why no checking audience in body?
+
+			payload := map[string]interface{}{
+				"device_code":               "Ag_EE...ko1p",
+				"user_code":                 "abcd-1234",
+				"verification_uri":          "http://localhost/device/activate",
+				"verification_uri_complete": "http://localhost/device/activate?user_code=abcd-1234",
+				"expires_in":                900,
+				"interval":                  5,
+			}
+			resp, err := json.Marshal(payload)
+			require.NoError(t, err)
+
+			_, _ = io.WriteString(w, string(resp))
+		case "/device/activate":
+			code := r.URL.Query().Get("user_code")
+			if code == "abcd-1234" {
+				userAuthorized = true
+				w.WriteHeader(http.StatusAccepted)
+			} else {
+				w.WriteHeader(http.StatusUnauthorized)
+			}
+		case "/token":
+			b, err := ioutil.ReadAll(r.Body)
+			require.NoError(t, err)
+
+			data, err := url.ParseQuery(string(b))
+			require.NoError(t, err)
+
+			switch data.Get("grant_type") {
+			case devicecode.GrantType:
+				var payload map[string]interface{}
+				if !userAuthorized {
+					payload = map[string]interface{}{
+						"error":             "authorization_pending",
+						"error_description": "User code still pending",
+					}
+
+					resp, err := json.Marshal(payload)
+					require.NoError(t, err)
+					w.WriteHeader(http.StatusUnauthorized)
+					_, _ = io.WriteString(w, string(resp))
+				} else {
+					idClaims := jwt.Claims{
+						Issuer:   "http://localhost",
+						Audience: jwt.Audience{"foo"},
+						Subject:  "test-user",
+						Expiry:   jwt.NewNumericDate(time.Now().Add(time.Hour)),
+					}
+
+					idToken, err := jwt.Signed(signer).
+						Claims(idClaims).
+						Claims(map[string]interface{}{"grant_type": data.Get("grant_type")}).
+						CompactSerialize()
+					require.NoError(t, err)
+
+					payload = map[string]interface{}{
+						"access_token":  "asdf",
+						"refresh_token": "aoeu",
+						"id_token":      idToken,
+						"token_type":    "Bearer",
+						"expires_in":    900,
+					}
+
+					resp, err := json.Marshal(payload)
+					require.NoError(t, err)
+					_, _ = io.WriteString(w, string(resp))
+				}
+			default:
+				assert.Fail(t, "unexpected grant type", data.Get("grant_type"))
+			}
+		default:
+			assert.Fail(t, "unhandled path: %s", r.URL.Path)
+		}
+	})
+	c := &http.Client{Transport: &testutil.MockRoundTripper{Handler: h}}
+	ctx = context.WithValue(ctx, oauth2.HTTPClient, c)
+
+	oidcTest, err := provider.GlobalRegistry.New(ctx, "oidc", map[string]string{
+		"issuer_url":        "http://localhost",
+		"extra_data_fields": "id_token,id_token_claims,user_info",
+	})
+	require.NoError(t, err)
+
+	ops := oidcTest.Private("foo", "bar")
+
+	auth, supported, err := ops.DeviceCodeAuth(ctx, provider.WithProviderOptions{})
+	require.NoError(t, err)
+	require.True(t, supported)
+
+	assert.Equal(t, "abcd-1234", auth.UserCode)
+	assert.Equal(t, "http://localhost/device/activate", auth.VerificationURI)
+
+	_, err = ops.DeviceCodeExchange(ctx, auth.UserCode, provider.WithProviderOptions{})
+	require.Error(t, err)
+	var oe *semerr.Error
+	errors.As(err, &oe)
+	require.Equal(t, "authorization_pending", oe.Code)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, auth.VerificationURIComplete, nil)
+	require.NoError(t, err)
+	_, err = c.Do(req)
+	require.NoError(t, err)
+
+	token, err := ops.DeviceCodeExchange(ctx, auth.UserCode, provider.WithProviderOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, "asdf", token.AccessToken)
 }
 
 func TestOIDCRefreshWithoutIDToken(t *testing.T) {

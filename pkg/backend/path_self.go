@@ -2,37 +2,28 @@ package backend
 
 import (
 	"context"
-	"crypto/sha256"
 	"errors"
-	"fmt"
 	"strings"
+	"time"
 
 	"github.com/hashicorp/vault/sdk/framework"
-	"github.com/hashicorp/vault/sdk/helper/locksutil"
 	"github.com/hashicorp/vault/sdk/logical"
 	"github.com/puppetlabs/leg/errmap/pkg/errmap"
 	"github.com/puppetlabs/leg/errmap/pkg/errmark"
+	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/pkg/persistence"
 	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/pkg/provider"
 	"golang.org/x/oauth2"
 )
 
-const (
-	selfPath       = "self"
-	selfPathPrefix = selfPath + "/"
-)
-
-// selfKey hashes the name and splits the first few bytes into separate buckets
-// for performance reasons.
-func selfKey(name string) string {
-	hash := sha256.Sum224([]byte(name))
-	first, second, rest := hash[:2], hash[2:4], hash[4:]
-	return selfPathPrefix + fmt.Sprintf("%x/%x/%x", first, second, rest)
-}
-
 func (b *backend) selfReadOperation(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
-	key := selfKey(data.Get("name").(string))
+	expiryDelta := time.Duration(data.Get("minimum_seconds").(int)) * time.Second
 
-	tok, err := b.getUpdateClientCredsToken(ctx, req.Storage, key, data)
+	entry, err := b.getUpdateClientCredsToken(
+		ctx,
+		req.Storage,
+		persistence.ClientCredsName(data.Get("name").(string)),
+		expiryDelta,
+	)
 	switch {
 	case errors.Is(err, ErrNotConfigured):
 		return logical.ErrorResponse("not configured"), nil
@@ -40,23 +31,23 @@ func (b *backend) selfReadOperation(ctx context.Context, req *logical.Request, d
 		return logical.ErrorResponse(errmap.Wrap(errmark.MarkShort(err), "client credentials flow failed").Error()), nil
 	case err != nil:
 		return nil, err
-	case tok == nil:
+	case entry == nil:
 		return nil, nil
-	case !tokenValid(tok, data):
+	case !b.tokenValid(entry.Token, expiryDelta):
 		return logical.ErrorResponse("token expired"), nil
 	}
 
 	rd := map[string]interface{}{
-		"access_token": tok.AccessToken,
-		"type":         tok.Type(),
+		"access_token": entry.Token.AccessToken,
+		"type":         entry.Token.Type(),
 	}
 
-	if !tok.Expiry.IsZero() {
-		rd["expire_time"] = tok.Expiry
+	if !entry.Token.Expiry.IsZero() {
+		rd["expire_time"] = entry.Token.Expiry
 	}
 
-	if len(tok.ExtraData) > 0 {
-		rd["extra_data"] = tok.ExtraData
+	if len(entry.Token.ExtraData) > 0 {
+		rd["extra_data"] = entry.Token.ExtraData
 	}
 
 	resp := &logical.Response{
@@ -66,13 +57,7 @@ func (b *backend) selfReadOperation(ctx context.Context, req *logical.Request, d
 }
 
 func (b *backend) selfDeleteOperation(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
-	key := selfKey(data.Get("name").(string))
-
-	lock := locksutil.LockForKey(b.locks, key)
-	lock.Lock()
-	defer lock.Unlock()
-
-	if err := req.Storage.Delete(ctx, key); err != nil {
+	if err := b.data.Managers(req.Storage).ClientCreds().DeleteClientCredsEntry(ctx, persistence.ClientCredsName(data.Get("name").(string))); err != nil {
 		return nil, err
 	}
 
@@ -80,31 +65,23 @@ func (b *backend) selfDeleteOperation(ctx context.Context, req *logical.Request,
 }
 
 func (b *backend) selfConfigReadOperation(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
-	key := selfKey(data.Get("name").(string))
-
-	cc, err := b.getClientCreds(ctx, req.Storage, key)
+	entry, err := b.data.Managers(req.Storage).ClientCreds().ReadClientCredsEntry(ctx, persistence.ClientCredsName(data.Get("name").(string)))
 	if err != nil {
 		return nil, err
-	} else if cc == nil {
+	} else if entry == nil {
 		return nil, nil
 	}
 
 	resp := &logical.Response{
 		Data: map[string]interface{}{
-			"token_url_prams": cc.Config.TokenURLParams,
-			"scopes":          cc.Config.Scopes,
+			"token_url_params": entry.Config.TokenURLParams,
+			"scopes":           entry.Config.Scopes,
 		},
 	}
 	return resp, nil
 }
 
 func (b *backend) selfConfigUpdateOperation(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
-	key := selfKey(data.Get("name").(string))
-
-	lock := locksutil.LockForKey(b.locks, key)
-	lock.Lock()
-	defer lock.Unlock()
-
 	c, err := b.getCache(ctx, req.Storage)
 	if err != nil {
 		return nil, err
@@ -112,14 +89,14 @@ func (b *backend) selfConfigUpdateOperation(ctx context.Context, req *logical.Re
 		return logical.ErrorResponse("not configured"), nil
 	}
 
-	cc := &clientCreds{}
-	cc.Config.TokenURLParams = data.Get("token_url_params").(map[string]string)
-	cc.Config.Scopes = data.Get("scopes").([]string)
+	entry := &persistence.ClientCredsEntry{}
+	entry.Config.TokenURLParams = data.Get("token_url_params").(map[string]string)
+	entry.Config.Scopes = data.Get("scopes").([]string)
 
 	tok, err := c.Provider.Private(c.Config.ClientID, c.Config.ClientSecret).ClientCredentials(
 		ctx,
-		provider.WithURLParams(cc.Config.TokenURLParams),
-		provider.WithScopes(cc.Config.Scopes),
+		provider.WithURLParams(entry.Config.TokenURLParams),
+		provider.WithScopes(entry.Config.Scopes),
 	)
 	if errmark.Matches(err, errmark.RuleType(&oauth2.RetrieveError{})) || errmark.MarkedUser(err) {
 		return logical.ErrorResponse(errmap.Wrap(errmark.MarkShort(err), "client credentials flow failed").Error()), nil
@@ -127,19 +104,18 @@ func (b *backend) selfConfigUpdateOperation(ctx context.Context, req *logical.Re
 		return nil, err
 	}
 
-	cc.Token = tok
+	entry.Token = tok
 
-	entry, err := logical.StorageEntryJSON(key, cc)
-	if err != nil {
-		return nil, err
-	}
-
-	if err := req.Storage.Put(ctx, entry); err != nil {
+	if err := b.data.Managers(req.Storage).ClientCreds().WriteClientCredsEntry(ctx, persistence.ClientCredsName(data.Get("name").(string)), entry); err != nil {
 		return nil, err
 	}
 
 	return nil, nil
 }
+
+const (
+	SelfPathPrefix = "self/"
+)
 
 var selfFields = map[string]*framework.FieldSchema{
 	// fields for both read & write operations
@@ -168,7 +144,7 @@ needed.
 
 func pathSelf(b *backend) *framework.Path {
 	return &framework.Path{
-		Pattern: selfPathPrefix + nameRegex("name") + `$`,
+		Pattern: SelfPathPrefix + nameRegex("name") + `$`,
 		Fields:  selfFields,
 		Operations: map[logical.Operation]framework.OperationHandler{
 			logical.ReadOperation: &framework.PathOperation{
@@ -190,6 +166,13 @@ var selfConfigFields = map[string]*framework.FieldSchema{
 	"name": {
 		Type:        framework.TypeString,
 		Description: "Specifies the name of the credential.",
+	},
+	// fields for read operation
+	"minimum_seconds": {
+		Type:        framework.TypeInt,
+		Description: "Minimum remaining seconds to allow when reusing access token.",
+		Default:     0,
+		Query:       true,
 	},
 	// fields for write operation
 	"token_url_params": {
@@ -213,7 +196,7 @@ the token endpoint of a client credentials flow.
 
 func pathSelfConfig(b *backend) *framework.Path {
 	return &framework.Path{
-		Pattern: selfPathPrefix + nameRegex("name") + `/config$`,
+		Pattern: SelfPathPrefix + nameRegex("name") + `/config$`,
 		Fields:  selfConfigFields,
 		Operations: map[logical.Operation]framework.OperationHandler{
 			logical.ReadOperation: &framework.PathOperation{

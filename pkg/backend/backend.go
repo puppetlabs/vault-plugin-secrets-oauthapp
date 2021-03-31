@@ -7,21 +7,28 @@ import (
 
 	"github.com/hashicorp/go-hclog"
 	"github.com/hashicorp/vault/sdk/framework"
-	"github.com/hashicorp/vault/sdk/helper/locksutil"
 	"github.com/hashicorp/vault/sdk/logical"
+	"github.com/puppetlabs/leg/scheduler"
+	"github.com/puppetlabs/leg/timeutil/pkg/clock"
+	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/pkg/persistence"
 	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/pkg/provider"
 )
 
 type backend struct {
 	providerRegistry *provider.Registry
 	logger           hclog.Logger
+	clock            clock.Clock
+
+	// scheduler is a worker that processes token renewals with hard schedules.
+	// It will be created by the backend lifecycle in the initialize method.
+	scheduler scheduler.StartedLifecycle
 
 	// mut protects the cache value.
 	mut   sync.Mutex
 	cache *cache
 
-	// locks is a slice of mutexes that are used to protect credential updates.
-	locks []*locksutil.LockEntry
+	// data is the API to the internal storage.
+	data *persistence.Holder
 }
 
 const backendHelp = `
@@ -31,6 +38,7 @@ The OAuth app backend provides OAuth authorization tokens on demand given a secr
 type Options struct {
 	ProviderRegistry *provider.Registry
 	Logger           hclog.Logger
+	Clock            clock.Clock
 }
 
 func New(opts Options) *framework.Backend {
@@ -44,21 +52,27 @@ func New(opts Options) *framework.Backend {
 		logger = hclog.NewNullLogger()
 	}
 
+	clk := opts.Clock
+	if clk == nil {
+		clk = clock.RealClock
+	}
+
 	b := &backend{
 		providerRegistry: providerRegistry,
 		logger:           logger,
+		clock:            clk,
 
-		locks: locksutil.CreateLocks(),
+		data: persistence.NewHolder(),
 	}
 
 	return &framework.Backend{
-		Help:         strings.TrimSpace(backendHelp),
-		PathsSpecial: pathsSpecial(),
-		Paths:        paths(b),
-		BackendType:  logical.TypeLogical,
-		Clean:        b.clean,
-		Invalidate:   b.invalidate,
-		PeriodicFunc: b.refreshPeriodic,
+		Help:           strings.TrimSpace(backendHelp),
+		PathsSpecial:   pathsSpecial(),
+		Paths:          paths(b),
+		BackendType:    logical.TypeLogical,
+		InitializeFunc: b.initialize,
+		Clean:          b.clean,
+		Invalidate:     b.invalidate,
 	}
 }
 

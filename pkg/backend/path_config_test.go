@@ -1,4 +1,4 @@
-package backend
+package backend_test
 
 import (
 	"context"
@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/hashicorp/vault/sdk/logical"
+	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/pkg/backend"
 	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/pkg/provider"
 	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/pkg/testutil"
 	"github.com/stretchr/testify/assert"
@@ -22,13 +23,13 @@ func TestConfigReadWrite(t *testing.T) {
 
 	storage := &logical.InmemStorage{}
 
-	b := New(Options{ProviderRegistry: pr})
+	b := backend.New(backend.Options{ProviderRegistry: pr})
 	require.NoError(t, b.Setup(ctx, &logical.BackendConfig{}))
 
 	// Read configuration; we should be unconfigured at this point.
 	read := &logical.Request{
 		Operation: logical.ReadOperation,
-		Path:      configPath,
+		Path:      backend.ConfigPath,
 		Storage:   storage,
 	}
 
@@ -39,7 +40,7 @@ func TestConfigReadWrite(t *testing.T) {
 	// Write new configuration.
 	write := &logical.Request{
 		Operation: logical.UpdateOperation,
-		Path:      configPath,
+		Path:      backend.ConfigPath,
 		Storage:   storage,
 		Data: map[string]interface{}{
 			"client_id":     "abc",
@@ -72,13 +73,13 @@ func TestConfigAuthCodeURL(t *testing.T) {
 
 	storage := &logical.InmemStorage{}
 
-	b := New(Options{ProviderRegistry: pr})
+	b := backend.New(backend.Options{ProviderRegistry: pr})
 	require.NoError(t, b.Setup(ctx, &logical.BackendConfig{}))
 
 	// Write configuration.
 	req := &logical.Request{
 		Operation: logical.UpdateOperation,
-		Path:      configPath,
+		Path:      backend.ConfigPath,
 		Storage:   storage,
 		Data: map[string]interface{}{
 			"client_id":       "abc",
@@ -96,7 +97,7 @@ func TestConfigAuthCodeURL(t *testing.T) {
 	// Retrieve an auth code URL.
 	req = &logical.Request{
 		Operation: logical.UpdateOperation,
-		Path:      configAuthCodeURLPath,
+		Path:      backend.ConfigAuthCodeURLPath,
 		Storage:   storage,
 		Data: map[string]interface{}{
 			"state":           "qwerty",
@@ -135,13 +136,13 @@ func TestConfigClientCredentials(t *testing.T) {
 
 	storage := &logical.InmemStorage{}
 
-	b := New(Options{})
+	b := backend.New(backend.Options{})
 	require.NoError(t, b.Setup(ctx, &logical.BackendConfig{}))
 
 	// Write configuration.
 	req := &logical.Request{
 		Operation: logical.UpdateOperation,
-		Path:      configPath,
+		Path:      backend.ConfigPath,
 		Storage:   storage,
 		Data: map[string]interface{}{
 			"client_id":     "abc",
@@ -161,7 +162,7 @@ func TestConfigClientCredentials(t *testing.T) {
 	// Retrieve an auth code URL.
 	req = &logical.Request{
 		Operation: logical.UpdateOperation,
-		Path:      configAuthCodeURLPath,
+		Path:      backend.ConfigAuthCodeURLPath,
 		Storage:   storage,
 		Data: map[string]interface{}{
 			"state":           "qwerty",
