@@ -40,7 +40,7 @@ var _ scheduler.Descriptor = &refreshDescriptor{}
 func (rd *refreshDescriptor) Run(ctx context.Context, pc chan<- scheduler.Process) error {
 	// start out checking once per minute
 	refreshInterval := 60
-	ticker := rd.backend.clock.NewTicker(time.Duration(refreshInterval)*time.Second)
+	ticker := rd.backend.clock.NewTicker(time.Duration(refreshInterval) * time.Second)
 
 	for {
 		c, err := rd.backend.getCache(ctx, rd.storage)
@@ -48,14 +48,14 @@ func (rd *refreshDescriptor) Run(ctx context.Context, pc chan<- scheduler.Proces
 			if c.Config.RefreshInterval != refreshInterval {
 				refreshInterval = c.Config.RefreshInterval
 				ticker.Stop()
-				ticker = rd.backend.clock.NewTicker(time.Duration(refreshInterval)*time.Second)
+				ticker = rd.backend.clock.NewTicker(time.Duration(refreshInterval) * time.Second)
 			}
 			err = rd.backend.data.Managers(rd.storage).AuthCode().ForEachAuthCodeKey(ctx, func(keyer persistence.AuthCodeKeyer) {
 				proc := &refreshProcess{
 					backend: rd.backend,
 					storage: rd.storage,
 					keyer:   keyer,
-					seconds: refreshInterval+10,
+					seconds: refreshInterval + 10,
 				}
 
 				select {
