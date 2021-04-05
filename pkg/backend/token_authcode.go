@@ -91,6 +91,9 @@ func (b *backend) refreshCredToken(ctx context.Context, storage logical.Storage,
 		}
 
 		// Refresh.
+		// First clear out old AccessToken so oauth2 will not
+		//   re-use tokens we think are expired
+		candidate.AccessToken = ""
 		refreshed, err := c.Provider.Private(c.Config.ClientID, c.Config.ClientSecret).RefreshToken(ctx, candidate.Token)
 		if err != nil {
 			msg := errmap.Wrap(errmark.MarkShort(err), "refresh failed").Error()

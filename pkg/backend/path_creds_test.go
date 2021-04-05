@@ -298,7 +298,7 @@ func TestRefreshFailureReturnsNotConfigured(t *testing.T) {
 	resp, err = b.HandleRequest(ctx, req)
 	require.NoError(t, err)
 	require.NotNil(t, resp)
-	require.EqualError(t, resp.Error(), "token expired")
+	require.EqualError(t, resp.Error(), "token pending issuance")
 }
 
 func TestDeviceCodeAuthAndExchange(t *testing.T) {
