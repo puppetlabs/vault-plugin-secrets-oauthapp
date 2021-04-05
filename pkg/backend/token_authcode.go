@@ -12,14 +12,11 @@ import (
 	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/pkg/persistence"
 )
 
-const (
-	refreshInterval = time.Minute
-)
-
 type refreshProcess struct {
 	backend *backend
 	storage logical.Storage
 	keyer   persistence.AuthCodeKeyer
+	seconds int
 }
 
 var _ scheduler.Process = &refreshProcess{}
@@ -29,7 +26,7 @@ func (rp *refreshProcess) Description() string {
 }
 
 func (rp *refreshProcess) Run(ctx context.Context) error {
-	_, err := rp.backend.getRefreshCredToken(ctx, rp.storage, rp.keyer, refreshInterval+10*time.Second)
+	_, err := rp.backend.getRefreshCredToken(ctx, rp.storage, rp.keyer, time.Duration(rp.seconds)*time.Second)
 	return err
 }
 
@@ -41,29 +38,41 @@ type refreshDescriptor struct {
 var _ scheduler.Descriptor = &refreshDescriptor{}
 
 func (rd *refreshDescriptor) Run(ctx context.Context, pc chan<- scheduler.Process) error {
-	ticker := rd.backend.clock.NewTicker(refreshInterval)
-	defer ticker.Stop()
+	// start out checking once per minute
+	refreshInterval := 60
+	ticker := rd.backend.clock.NewTicker(time.Duration(refreshInterval)*time.Second)
 
 	for {
-		err := rd.backend.data.Managers(rd.storage).AuthCode().ForEachAuthCodeKey(ctx, func(keyer persistence.AuthCodeKeyer) {
-			proc := &refreshProcess{
-				backend: rd.backend,
-				storage: rd.storage,
-				keyer:   keyer,
+		c, err := rd.backend.getCache(ctx, rd.storage)
+		if err == nil && c != nil && c.Config.RefreshInterval != 0 {
+			if c.Config.RefreshInterval != refreshInterval {
+				refreshInterval = c.Config.RefreshInterval
+				ticker.Stop()
+				ticker = rd.backend.clock.NewTicker(time.Duration(refreshInterval)*time.Second)
 			}
+			err = rd.backend.data.Managers(rd.storage).AuthCode().ForEachAuthCodeKey(ctx, func(keyer persistence.AuthCodeKeyer) {
+				proc := &refreshProcess{
+					backend: rd.backend,
+					storage: rd.storage,
+					keyer:   keyer,
+					seconds: refreshInterval+10,
+				}
 
-			select {
-			case pc <- proc:
-			case <-ctx.Done():
+				select {
+				case pc <- proc:
+				case <-ctx.Done():
+				}
+			})
+			if err != nil {
+				ticker.Stop()
+				return err
 			}
-		})
-		if err != nil {
-			return err
 		}
 
 		select {
 		case <-ticker.C():
 		case <-ctx.Done():
+			ticker.Stop()
 			return nil
 		}
 	}

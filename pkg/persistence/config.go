@@ -18,6 +18,7 @@ type ConfigEntry struct {
 	ProviderName    string            `json:"provider_name"`
 	ProviderVersion int               `json:"provider_version"`
 	ProviderOptions map[string]string `json:"provider_options"`
+	RefreshInterval int               `json:"refresh_interval"`
 }
 
 type LockedConfigManager struct {

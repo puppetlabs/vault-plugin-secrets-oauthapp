@@ -27,6 +27,7 @@ func (b *backend) configReadOperation(ctx context.Context, req *logical.Request,
 			"provider":         c.Config.ProviderName,
 			"provider_version": c.Config.ProviderVersion,
 			"provider_options": c.Config.ProviderOptions,
+			"refresh_interval": c.Config.RefreshInterval,
 		},
 	}
 	return resp, nil
@@ -61,6 +62,7 @@ func (b *backend) configUpdateOperation(ctx context.Context, req *logical.Reques
 		ProviderName:    providerName.(string),
 		ProviderVersion: p.Version(),
 		ProviderOptions: providerOptions,
+		RefreshInterval: data.Get("refresh_interval").(int),
 	}
 	if err := b.data.Managers(req.Storage).Config().WriteConfig(ctx, c); err != nil {
 		return nil, err
@@ -138,6 +140,11 @@ var configFields = map[string]*framework.FieldSchema{
 	"provider_options": {
 		Type:        framework.TypeKVPairs,
 		Description: "Specifies any provider-specific options.",
+	},
+	"refresh_interval": {
+		Type:        framework.TypeInt,
+		Description: "Specifies the interval in seconds between credential refresh, disabled if 0.",
+		Default:     60,
 	},
 }
 
