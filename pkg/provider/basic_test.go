@@ -84,7 +84,7 @@ func TestBasicPrivate(t *testing.T) {
 				assert.Equal(t, "http://example.com/redirect", data.Get("redirect_uri"))
 				assert.Equal(t, "quux", data.Get("baz"))
 
-				_, _ = w.Write([]byte(`access_token=abcd&refresh_token=efgh&token_type=bearer&expires_in=5`))
+				_, _ = w.Write([]byte(`access_token=abcd&refresh_token=efgh&token_type=bearer&expires_in=60`))
 			case "refresh_token":
 				assert.Equal(t, "efgh", data.Get("refresh_token"))
 
@@ -114,13 +114,11 @@ func TestBasicPrivate(t *testing.T) {
 	)
 	require.NoError(t, err)
 	require.NotNil(t, token)
+	require.True(t, token.Valid())
 	require.Equal(t, "abcd", token.AccessToken)
 	require.Equal(t, "Bearer", token.Type())
 	require.Equal(t, "efgh", token.RefreshToken)
 	require.NotEmpty(t, token.Expiry)
-
-	// This token is already invalid, so let's try to refresh it.
-	require.False(t, token.Valid())
 
 	token, err = ops.RefreshToken(ctx, token)
 	require.NoError(t, err)

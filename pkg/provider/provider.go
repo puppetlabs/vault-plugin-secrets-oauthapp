@@ -94,6 +94,9 @@ type PublicOperations interface {
 
 	// RefreshToken performs a refresh token flow request.
 	//
+	// This method does not check the expiration of the token. It forces a
+	// refresh when invoked.
+	//
 	// Depending on the source of the token, this method may require the client
 	// secret. However, for implicit and device code grants, it only requires
 	// the client ID.

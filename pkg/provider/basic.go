@@ -132,7 +132,9 @@ func (bo *basicOperations) RefreshToken(ctx context.Context, t *Token, opts ...R
 		ClientSecret: bo.clientSecret,
 	}
 
-	tok, err := cfg.TokenSource(ctx, t.Token).Token()
+	tok, err := cfg.TokenSource(ctx, &oauth2.Token{
+		RefreshToken: t.RefreshToken,
+	}).Token()
 	if err != nil {
 		return nil, semerr.Map(err)
 	}
