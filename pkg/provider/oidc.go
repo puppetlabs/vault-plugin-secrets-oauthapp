@@ -184,7 +184,7 @@ func (oo *oidcOperations) RefreshToken(ctx context.Context, t *Token, opts ...Re
 		oo.copyIDToken(ctx, t, nt)
 	}
 
-	if err := oo.updateUserInfo(ctx, t); err != nil {
+	if err := oo.updateUserInfo(ctx, nt); err != nil {
 		return nil, errmark.MarkUser(err)
 	}
 

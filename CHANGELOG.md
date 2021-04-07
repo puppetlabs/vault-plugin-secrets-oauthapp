@@ -12,6 +12,7 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 * Fix a regression that caused the `minimum_seconds` field of a credential read
   request to be ignored.
+* Correctly request updated user information when an OIDC token is refreshed.
 
 ## [1.10.0] - 2021-03-29
 
