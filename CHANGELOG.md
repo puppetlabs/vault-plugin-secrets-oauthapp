@@ -8,6 +8,11 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+* Fix a regression that caused the `minimum_seconds` field of a credential read
+  request to be ignored.
+
 ## [1.10.0] - 2021-03-29
 
 ### Added
