@@ -8,6 +8,8 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.10.1] - 2021-04-07
+
 ### Fixed
 
 * Fix a regression that caused the `minimum_seconds` field of a credential read
@@ -146,7 +148,8 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 * Initial release of the plugin.
 
-[Unreleased]: https://github.com/puppetlabs/vault-plugin-secrets-oauthapp/compare/v1.10.0...HEAD
+[Unreleased]: https://github.com/puppetlabs/vault-plugin-secrets-oauthapp/compare/v1.10.1...HEAD
+[1.10.1]: https://github.com/puppetlabs/vault-plugin-secrets-oauthapp/compare/v1.10.0...v1.10.1
 [1.10.0]: https://github.com/puppetlabs/vault-plugin-secrets-oauthapp/compare/v1.9.0...v1.10.0
 [1.9.0]: https://github.com/puppetlabs/vault-plugin-secrets-oauthapp/compare/v1.8.3...v1.9.0
 [1.8.3]: https://github.com/puppetlabs/vault-plugin-secrets-oauthapp/compare/v1.8.2...v1.8.3
