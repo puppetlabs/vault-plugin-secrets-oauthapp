@@ -6,8 +6,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/pkg/oauth2ext/interop"
-	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/pkg/provider"
+	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v2/pkg/oauth2ext/interop"
+	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v2/pkg/provider"
 	"golang.org/x/oauth2"
 )
 

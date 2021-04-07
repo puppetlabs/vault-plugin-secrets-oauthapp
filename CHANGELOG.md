@@ -8,6 +8,16 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+* [BREAKING] The path to configure a token for client credentials exchange has
+  changed from `self/:name/config` to `config/self/:name`.
+* [BREAKING] Deleting a client credentials exchange token no longer also deletes
+  the configuration associated with it. To also delete the configuration, delete
+  `config/self/:name` instead.
+* The names of credentials are now unrestricted, except that they cannot end
+  with a colon (`:`) character or have a colon immediately before a slash (`/`).
+
 ## [1.10.1] - 2021-04-07
 
 ### Fixed

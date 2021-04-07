@@ -7,11 +7,11 @@ import (
 	"github.com/hashicorp/vault/sdk/logical"
 )
 
-// nameRegex allows characters not special to urls or shells,
-//  plus any additional characters passed in as extras
-// Derived from framework.GenericNameWithAtRegex
-func nameRegex(name, extras string) string {
-	return fmt.Sprintf(`(?P<%s>\w(([\w.@~!_,`+extras+`:^-]+)?\w)?)`, name)
+// nameRegex allows any character other than a : followed by a /, which allows
+// us to specially reserve a small subset of possible names for future derived
+// credentials (STS).
+func nameRegex(name string) string {
+	return fmt.Sprintf(`(?P<%s>(?:[^:]|:[^/])+)`, name)
 }
 
 func pathsSpecial() *logical.Paths {
@@ -28,8 +28,8 @@ func paths(b *backend) []*framework.Path {
 	return []*framework.Path{
 		pathConfig(b),
 		pathConfigAuthCodeURL(b),
+		pathConfigSelf(b),
 		pathCreds(b),
 		pathSelf(b),
-		pathSelfConfig(b),
 	}
 }

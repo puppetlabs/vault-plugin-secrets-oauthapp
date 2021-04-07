@@ -8,9 +8,9 @@ import (
 	"time"
 
 	"github.com/hashicorp/vault/sdk/logical"
-	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/pkg/backend"
-	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/pkg/provider"
-	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/pkg/testutil"
+	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v2/pkg/backend"
+	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v2/pkg/provider"
+	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v2/pkg/testutil"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/oauth2"
 )
@@ -116,7 +116,7 @@ func TestConfiguredClientCredentials(t *testing.T) {
 	// Write credential configuration.
 	req = &logical.Request{
 		Operation: logical.UpdateOperation,
-		Path:      backend.SelfPathPrefix + `test/config`,
+		Path:      backend.ConfigSelfPathPrefix + `test`,
 		Storage:   storage,
 		Data: map[string]interface{}{
 			"scopes": []interface{}{"foo", "bar"},
@@ -196,7 +196,7 @@ func TestExpiredClientCredentials(t *testing.T) {
 	// Write credential configuration.
 	req = &logical.Request{
 		Operation: logical.UpdateOperation,
-		Path:      backend.SelfPathPrefix + `test/config`,
+		Path:      backend.ConfigSelfPathPrefix + `test`,
 		Storage:   storage,
 		Data: map[string]interface{}{
 			"scopes": []interface{}{"foo", "bar"},

@@ -7,9 +7,9 @@ import (
 	"time"
 
 	"github.com/hashicorp/vault/sdk/logical"
-	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/pkg/backend"
-	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/pkg/provider"
-	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/pkg/testutil"
+	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v2/pkg/backend"
+	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v2/pkg/provider"
+	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v2/pkg/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

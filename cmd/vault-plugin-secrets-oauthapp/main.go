@@ -3,10 +3,10 @@ package main
 import (
 	"os"
 
-	"github.com/hashicorp/go-hclog"
+	hclog "github.com/hashicorp/go-hclog"
 	"github.com/hashicorp/vault/api"
 	"github.com/hashicorp/vault/sdk/plugin"
-	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/pkg/backend"
+	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v2/pkg/backend"
 )
 
 func main() {

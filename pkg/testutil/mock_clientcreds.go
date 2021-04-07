@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"sync/atomic"
 
-	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/pkg/provider"
+	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v2/pkg/provider"
 	"golang.org/x/oauth2"
 )
 
@@ -27,6 +27,13 @@ func AmendTokenMockClientCredentials(get MockClientCredentialsFunc, amend func(t
 
 		return token, nil
 	}
+}
+
+func RandomMockClientCredentials(_ *provider.ClientCredentialsOptions) (*provider.Token, error) {
+	t := &oauth2.Token{
+		AccessToken: randomToken(10),
+	}
+	return &provider.Token{Token: t}, nil
 }
 
 func IncrementMockClientCredentials(prefix string) MockClientCredentialsFunc {

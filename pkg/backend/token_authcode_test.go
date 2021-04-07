@@ -8,9 +8,9 @@ import (
 
 	"github.com/hashicorp/vault/sdk/logical"
 	"github.com/puppetlabs/leg/timeutil/pkg/clock/k8sext"
-	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/pkg/backend"
-	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/pkg/provider"
-	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/pkg/testutil"
+	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v2/pkg/backend"
+	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v2/pkg/provider"
+	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v2/pkg/testutil"
 	"github.com/stretchr/testify/require"
 	"k8s.io/apimachinery/pkg/util/clock"
 )

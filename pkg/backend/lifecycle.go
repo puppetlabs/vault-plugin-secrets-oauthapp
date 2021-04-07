@@ -5,7 +5,7 @@ import (
 
 	"github.com/hashicorp/vault/sdk/logical"
 	"github.com/puppetlabs/leg/scheduler"
-	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/pkg/persistence"
+	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v2/pkg/persistence"
 )
 
 func (b *backend) initialize(ctx context.Context, req *logical.InitializationRequest) error {

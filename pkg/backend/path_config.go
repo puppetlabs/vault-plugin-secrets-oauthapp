@@ -8,8 +8,8 @@ import (
 	"github.com/hashicorp/vault/sdk/framework"
 	"github.com/hashicorp/vault/sdk/logical"
 	"github.com/puppetlabs/leg/errmap/pkg/errmark"
-	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/pkg/persistence"
-	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/pkg/provider"
+	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v2/pkg/persistence"
+	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v2/pkg/provider"
 )
 
 func (b *backend) configReadOperation(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
@@ -115,7 +115,8 @@ func (b *backend) configAuthCodeURLUpdateOperation(ctx context.Context, req *log
 
 const (
 	ConfigPath            = "config"
-	ConfigAuthCodeURLPath = ConfigPath + "/auth_code_url"
+	ConfigPathPrefix      = ConfigPath + "/"
+	ConfigAuthCodeURLPath = ConfigPathPrefix + "auth_code_url"
 )
 
 var configFields = map[string]*framework.FieldSchema{

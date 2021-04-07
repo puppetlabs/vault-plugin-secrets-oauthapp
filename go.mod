@@ -1,4 +1,4 @@
-module github.com/puppetlabs/vault-plugin-secrets-oauthapp
+module github.com/puppetlabs/vault-plugin-secrets-oauthapp/v2
 
 go 1.14
 
