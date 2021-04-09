@@ -14,9 +14,9 @@ import (
 	"github.com/hashicorp/vault/sdk/logical"
 	"github.com/puppetlabs/leg/errmap/pkg/errmap"
 	"github.com/puppetlabs/leg/errmap/pkg/errmark"
-	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/pkg/oauth2ext/devicecode"
-	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/pkg/persistence"
-	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/pkg/provider"
+	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v2/pkg/oauth2ext/devicecode"
+	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v2/pkg/persistence"
+	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v2/pkg/provider"
 	"golang.org/x/oauth2"
 )
 

@@ -13,15 +13,15 @@ import (
 	"testing"
 	"time"
 
-	"github.com/coreos/go-oidc"
-	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/pkg/oauth2ext/devicecode"
-	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/pkg/oauth2ext/semerr"
-	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/pkg/provider"
-	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/pkg/testutil"
+	oidc "github.com/coreos/go-oidc"
+	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v2/pkg/oauth2ext/devicecode"
+	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v2/pkg/oauth2ext/semerr"
+	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v2/pkg/provider"
+	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v2/pkg/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/oauth2"
-	"gopkg.in/square/go-jose.v2"
+	jose "gopkg.in/square/go-jose.v2"
 	"gopkg.in/square/go-jose.v2/jwt"
 )
 

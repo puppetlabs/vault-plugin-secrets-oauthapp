@@ -5,13 +5,13 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/hashicorp/go-hclog"
+	hclog "github.com/hashicorp/go-hclog"
 	"github.com/hashicorp/vault/sdk/framework"
 	"github.com/hashicorp/vault/sdk/logical"
 	"github.com/puppetlabs/leg/scheduler"
 	"github.com/puppetlabs/leg/timeutil/pkg/clock"
-	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/pkg/persistence"
-	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/pkg/provider"
+	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v2/pkg/persistence"
+	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v2/pkg/provider"
 )
 
 type backend struct {

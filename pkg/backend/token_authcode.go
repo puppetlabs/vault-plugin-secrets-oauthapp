@@ -9,7 +9,7 @@ import (
 	"github.com/puppetlabs/leg/errmap/pkg/errmap"
 	"github.com/puppetlabs/leg/errmap/pkg/errmark"
 	"github.com/puppetlabs/leg/scheduler"
-	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/pkg/persistence"
+	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v2/pkg/persistence"
 )
 
 const (

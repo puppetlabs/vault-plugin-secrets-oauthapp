@@ -3,9 +3,9 @@ package testutil
 import (
 	"net/http"
 
-	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/pkg/oauth2ext/devicecode"
-	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/pkg/oauth2ext/interop"
-	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/pkg/provider"
+	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v2/pkg/oauth2ext/devicecode"
+	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v2/pkg/oauth2ext/interop"
+	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v2/pkg/provider"
 )
 
 func StaticMockDeviceCodeAuth(auth *devicecode.Auth) MockDeviceCodeAuthFunc {

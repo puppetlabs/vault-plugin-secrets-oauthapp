@@ -146,9 +146,9 @@ You can configure the parameters of the identity provider's token endpoint if
 needed:
 
 ```
-$ vault write oauth2/bitbucket/self/my-machine-auth/config \
+$ vault write oauth2/bitbucket/config/self/my-machine-auth \
     scopes=repositories:read
-Success! Data written to: oauth2/bitbucket/self/my-machine-auth/config
+Success! Data written to: oauth2/bitbucket/config/self/my-machine-auth
 ```
 
 ## Tips
@@ -205,6 +205,29 @@ endpoint will return an error.
 | `scopes` | A list of explicit scopes to request. | List of String | None | No |
 | `state` | The unique state to send to the authorization URL. | String | None | Yes |
 
+### `config/self/:name`
+
+#### `GET` (`read`)
+
+Retrieve the client credentials grant type configuration for the credential with
+the given name, if any is present.
+
+#### `PUT` (`write`)
+
+Configure a client credentials grant for the credential with the given name.
+Writing configuration will cause a new token to be retrieved and validated using
+the `client_credentials` grant type.
+
+| Name | Description | Type | Default | Required |
+|------|-------------|------|---------|----------|
+| `token_url_params` | A map of additional query string parameters to provide to the token URL. If any keys in this map conflict with the parameters stored in the configuration, the configuration's parameters take precedence. | Map of String🠦String | None | No |
+| `scopes` | A list of explicit scopes to request. | List of String | None | No |
+
+#### `DELETE` (`delete`)
+
+Removes the client credentials configuration for the credential with the given
+name. If a token has been issued for this configuration, it will be cleared.
+
 ### `creds/:name`
 
 This path is for tokens to be obtained using the OAuth 2.0 authorization code,
@@ -260,7 +283,9 @@ This operation takes additional fields depending on which grant type is chosen:
 
 #### `DELETE` (`delete`)
 
-Remove the credential information from storage.
+Remove the credential information from storage. This does not delete the
+corresponding configuration. Deleting the configuration will also remove any
+currently issued token, if that behavior is desired.
 
 ### `self/:name`
 
@@ -283,23 +308,6 @@ new credential using the `client_credentials` grant type.
 #### `DELETE` (`delete`)
 
 Remove the credential information from storage.
-
-### `self/:name/config`
-
-#### `GET` (`read`)
-
-Retrieve the configuration for the given credential, if any is present.
-
-#### `PUT` (`write`)
-
-Configure the credential for the given name. Writing configuration will cause a
-new token to be retrieved and validated using the `client_credentials` grant
-type.
-
-| Name | Description | Type | Default | Required |
-|------|-------------|------|---------|----------|
-| `token_url_params` | A map of additional query string parameters to provide to the token URL. If any keys in this map conflict with the parameters stored in the configuration, the configuration's parameters take precedence. | Map of String🠦String | None | No |
-| `scopes` | A list of explicit scopes to request. | List of String | None | No |
 
 ## Providers
 
