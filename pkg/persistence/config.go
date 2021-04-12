@@ -11,6 +11,10 @@ const (
 	configKey = "config"
 )
 
+type ConfigTuning struct {
+	RefreshCheckIntervalSeconds int `json:"refresh_check_interval_seconds"`
+}
+
 type ConfigEntry struct {
 	ClientID        string            `json:"client_id"`
 	ClientSecret    string            `json:"client_secret"`
@@ -18,7 +22,7 @@ type ConfigEntry struct {
 	ProviderName    string            `json:"provider_name"`
 	ProviderVersion int               `json:"provider_version"`
 	ProviderOptions map[string]string `json:"provider_options"`
-	RefreshInterval int               `json:"refresh_interval"`
+	Tuning          ConfigTuning      `json:"tuning"`
 }
 
 type LockedConfigManager struct {

@@ -22,12 +22,12 @@ func (b *backend) configReadOperation(ctx context.Context, req *logical.Request,
 
 	resp := &logical.Response{
 		Data: map[string]interface{}{
-			"client_id":        c.Config.ClientID,
-			"auth_url_params":  c.Config.AuthURLParams,
-			"provider":         c.Config.ProviderName,
-			"provider_version": c.Config.ProviderVersion,
-			"provider_options": c.Config.ProviderOptions,
-			"refresh_interval": c.Config.RefreshInterval,
+			"client_id":                           c.Config.ClientID,
+			"auth_url_params":                     c.Config.AuthURLParams,
+			"provider":                            c.Config.ProviderName,
+			"provider_version":                    c.Config.ProviderVersion,
+			"provider_options":                    c.Config.ProviderOptions,
+			"tune_refresh_check_interval_seconds": c.Config.Tuning.RefreshCheckIntervalSeconds,
 		},
 	}
 	return resp, nil
@@ -62,7 +62,9 @@ func (b *backend) configUpdateOperation(ctx context.Context, req *logical.Reques
 		ProviderName:    providerName.(string),
 		ProviderVersion: p.Version(),
 		ProviderOptions: providerOptions,
-		RefreshInterval: data.Get("refresh_interval").(int),
+		Tuning: persistence.ConfigTuning{
+			RefreshCheckIntervalSeconds: data.Get("tune_refresh_check_interval_seconds").(int),
+		},
 	}
 	if err := b.data.Managers(req.Storage).Config().WriteConfig(ctx, c); err != nil {
 		return nil, err
@@ -141,7 +143,7 @@ var configFields = map[string]*framework.FieldSchema{
 		Type:        framework.TypeKVPairs,
 		Description: "Specifies any provider-specific options.",
 	},
-	"refresh_interval": {
+	"tune_refresh_check_interval_seconds": {
 		Type:        framework.TypeInt,
 		Description: "Specifies the interval in seconds between credential refresh, disabled if 0.",
 		Default:     60,

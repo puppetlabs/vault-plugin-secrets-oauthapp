@@ -44,9 +44,9 @@ func (rd *refreshDescriptor) Run(ctx context.Context, pc chan<- scheduler.Proces
 
 	for {
 		c, err := rd.backend.getCache(ctx, rd.storage)
-		if err == nil && c != nil && c.Config.RefreshInterval != 0 {
-			if c.Config.RefreshInterval != refreshInterval {
-				refreshInterval = c.Config.RefreshInterval
+		if err == nil && c != nil && c.Config.Tuning.RefreshCheckIntervalSeconds != 0 {
+			if c.Config.Tuning.RefreshCheckIntervalSeconds != refreshInterval {
+				refreshInterval = c.Config.Tuning.RefreshCheckIntervalSeconds
 				ticker.Stop()
 				ticker = rd.backend.clock.NewTicker(time.Duration(refreshInterval) * time.Second)
 			}
