@@ -151,12 +151,12 @@ $ vault write oauth2/bitbucket/self/my-machine-auth/config \
 Success! Data written to: oauth2/bitbucket/self/my-machine-auth/config
 ```
 
-### Automatic refreshing
+### Automatic refresh checking
 
-By default tokens are automatically refreshed every 60 seconds.  You can
-change that interval by setting the refresh_interval config option to
-another number of seconds.  If set to zero, tokens will be refreshed
-only on demand.
+By default tokens are automatically checked for refresh every 60
+seconds.  You can change that interval by setting the
+`tune_refresh_check_interval_seconds` config option to another number of
+seconds.  If set to zero, tokens will be refreshed only on demand.
 
 ## Tips
 
@@ -190,7 +190,13 @@ configuration, so you must specify all required fields, even when updating.
 | `auth_url_params` | A map of additional query string parameters to provide to the authorization code URL. | Map of String🠦String | None | No |
 | `provider` | The name of the provider to use. See [the list of providers](#providers). | String | None | Yes |
 | `provider_options` | Options to configure the specified provider. | Map of String🠦String | None | No |
-| `refresh_interval` | Number of seconds between automated refreshing. | Integer | 60 | No |
+
+There is also an additional configuration option that may be set for
+fine tuning.
+
+| Name | Description | Type | Default |
+|------|-------------|------|---------|
+| `tune_refresh_check_interval_seconds` | Number of seconds between checking tokens for refresh. | Integer | 60 |
 
 #### `DELETE` (`delete`)
 
