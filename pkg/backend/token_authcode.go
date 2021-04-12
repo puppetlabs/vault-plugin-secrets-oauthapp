@@ -39,12 +39,15 @@ var _ scheduler.Descriptor = &refreshDescriptor{}
 
 func (rd *refreshDescriptor) Run(ctx context.Context, pc chan<- scheduler.Process) error {
 	// start out checking once per minute
-	refreshInterval := 60
+	refreshInterval := DefaultRefreshCheckIntervalSeconds
 	ticker := rd.backend.clock.NewTicker(time.Duration(refreshInterval) * time.Second)
+	defer func() {
+		ticker.Stop()
+	}()
 
 	for {
 		c, err := rd.backend.getCache(ctx, rd.storage)
-		if err == nil && c != nil && c.Config.Tuning.RefreshCheckIntervalSeconds != 0 {
+		if err == nil && c != nil && c.Config.Tuning.RefreshCheckIntervalSeconds > 0 {
 			if c.Config.Tuning.RefreshCheckIntervalSeconds != refreshInterval {
 				refreshInterval = c.Config.Tuning.RefreshCheckIntervalSeconds
 				ticker.Stop()
@@ -64,7 +67,6 @@ func (rd *refreshDescriptor) Run(ctx context.Context, pc chan<- scheduler.Proces
 				}
 			})
 			if err != nil {
-				ticker.Stop()
 				return err
 			}
 		}
@@ -72,7 +74,6 @@ func (rd *refreshDescriptor) Run(ctx context.Context, pc chan<- scheduler.Proces
 		select {
 		case <-ticker.C():
 		case <-ctx.Done():
-			ticker.Stop()
 			return nil
 		}
 	}

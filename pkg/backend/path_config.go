@@ -12,6 +12,10 @@ import (
 	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/pkg/provider"
 )
 
+const (
+	DefaultRefreshCheckIntervalSeconds = 60
+)
+
 func (b *backend) configReadOperation(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
 	c, err := b.getCache(ctx, req.Storage)
 	if err != nil {
@@ -146,7 +150,7 @@ var configFields = map[string]*framework.FieldSchema{
 	"tune_refresh_check_interval_seconds": {
 		Type:        framework.TypeInt,
 		Description: "Specifies the interval in seconds between credential refresh, disabled if 0.",
-		Default:     60,
+		Default:     DefaultRefreshCheckIntervalSeconds,
 	},
 }
 
