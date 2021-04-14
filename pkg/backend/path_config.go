@@ -59,6 +59,11 @@ func (b *backend) configUpdateOperation(ctx context.Context, req *logical.Reques
 		return nil, err
 	}
 
+	refresh_interval := data.Get("tune_refresh_check_interval_seconds").(int)
+	if refresh_interval < 0 || refresh_interval > 90*24*60*60 {
+		return logical.ErrorResponse("invalid tune_refresh_check_interval_seconds"), nil
+	}
+
 	c := &persistence.ConfigEntry{
 		ClientID:        clientID.(string),
 		ClientSecret:    data.Get("client_secret").(string),
@@ -67,7 +72,7 @@ func (b *backend) configUpdateOperation(ctx context.Context, req *logical.Reques
 		ProviderVersion: p.Version(),
 		ProviderOptions: providerOptions,
 		Tuning: persistence.ConfigTuning{
-			RefreshCheckIntervalSeconds: data.Get("tune_refresh_check_interval_seconds").(int),
+			RefreshCheckIntervalSeconds: refresh_interval,
 		},
 	}
 	if err := b.data.Managers(req.Storage).Config().WriteConfig(ctx, c); err != nil {
