@@ -12,6 +12,10 @@ import (
 	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v2/pkg/provider"
 )
 
+const (
+	DefaultRefreshCheckIntervalSeconds = 60
+)
+
 func (b *backend) configReadOperation(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
 	c, err := b.getCache(ctx, req.Storage)
 	if err != nil {
@@ -22,11 +26,12 @@ func (b *backend) configReadOperation(ctx context.Context, req *logical.Request,
 
 	resp := &logical.Response{
 		Data: map[string]interface{}{
-			"client_id":        c.Config.ClientID,
-			"auth_url_params":  c.Config.AuthURLParams,
-			"provider":         c.Config.ProviderName,
-			"provider_version": c.Config.ProviderVersion,
-			"provider_options": c.Config.ProviderOptions,
+			"client_id":                           c.Config.ClientID,
+			"auth_url_params":                     c.Config.AuthURLParams,
+			"provider":                            c.Config.ProviderName,
+			"provider_version":                    c.Config.ProviderVersion,
+			"provider_options":                    c.Config.ProviderOptions,
+			"tune_refresh_check_interval_seconds": c.Config.Tuning.RefreshCheckIntervalSeconds,
 		},
 	}
 	return resp, nil
@@ -54,6 +59,11 @@ func (b *backend) configUpdateOperation(ctx context.Context, req *logical.Reques
 		return nil, err
 	}
 
+	refresh_interval := data.Get("tune_refresh_check_interval_seconds").(int)
+	if refresh_interval < 0 || refresh_interval > 90*24*60*60 {
+		return logical.ErrorResponse("invalid tune_refresh_check_interval_seconds"), nil
+	}
+
 	c := &persistence.ConfigEntry{
 		ClientID:        clientID.(string),
 		ClientSecret:    data.Get("client_secret").(string),
@@ -61,6 +71,9 @@ func (b *backend) configUpdateOperation(ctx context.Context, req *logical.Reques
 		ProviderName:    providerName.(string),
 		ProviderVersion: p.Version(),
 		ProviderOptions: providerOptions,
+		Tuning: persistence.ConfigTuning{
+			RefreshCheckIntervalSeconds: refresh_interval,
+		},
 	}
 	if err := b.data.Managers(req.Storage).Config().WriteConfig(ctx, c); err != nil {
 		return nil, err
@@ -139,6 +152,11 @@ var configFields = map[string]*framework.FieldSchema{
 	"provider_options": {
 		Type:        framework.TypeKVPairs,
 		Description: "Specifies any provider-specific options.",
+	},
+	"tune_refresh_check_interval_seconds": {
+		Type:        framework.TypeInt,
+		Description: "Specifies the interval in seconds between credential refresh, disabled if 0.",
+		Default:     DefaultRefreshCheckIntervalSeconds,
 	},
 }
 
