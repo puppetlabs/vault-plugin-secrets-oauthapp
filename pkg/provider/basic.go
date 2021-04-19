@@ -122,7 +122,14 @@ func (bo *basicOperations) AuthCodeExchange(ctx context.Context, code string, op
 		return nil, semerr.Map(err)
 	}
 
-	return &Token{Token: tok}, nil
+	finalToken := &Token{Token: tok}
+	finalToken, err = bo.AppendIDToken(finalToken, tok)
+	if err != nil {
+		return nil, err
+	}
+
+	return finalToken, nil
+
 }
 
 func (bo *basicOperations) RefreshToken(ctx context.Context, t *Token, opts ...RefreshTokenOption) (*Token, error) {
@@ -138,8 +145,14 @@ func (bo *basicOperations) RefreshToken(ctx context.Context, t *Token, opts ...R
 	if err != nil {
 		return nil, semerr.Map(err)
 	}
+	
+	finalToken := &Token{Token: tok}
+	finalToken, err = bo.AppendIDToken(finalToken, tok)
+	if err != nil {
+		return nil, err
+	}
 
-	return &Token{Token: tok}, nil
+	return finalToken, nil
 }
 
 func (bo *basicOperations) ClientCredentials(ctx context.Context, opts ...ClientCredentialsOption) (*Token, error) {
@@ -162,6 +175,17 @@ func (bo *basicOperations) ClientCredentials(ctx context.Context, opts ...Client
 
 	return &Token{Token: tok}, nil
 }
+
+func (bo *basicOperations) AppendIDToken(tok *Token, token *oauth2.Token) (*Token, error) {
+	finalToken := tok
+	idToken := token.Extra("id_token")
+	if idToken != nil {
+		finalToken.ExtraData = map[string]interface{}{"id_token": idToken}
+	}
+
+	return finalToken, nil
+}
+
 
 type basic struct {
 	vsn      int
