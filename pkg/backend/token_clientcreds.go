@@ -36,6 +36,7 @@ func (b *backend) updateClientCredsToken(ctx context.Context, storage logical.St
 			ctx,
 			provider.WithURLParams(candidate.Config.TokenURLParams),
 			provider.WithScopes(candidate.Config.Scopes),
+			provider.WithProviderOptions(candidate.Config.ProviderOptions),
 		)
 		if err != nil {
 			return err
