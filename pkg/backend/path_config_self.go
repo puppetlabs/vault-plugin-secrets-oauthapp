@@ -25,6 +25,7 @@ func (b *backend) configSelfReadOperation(ctx context.Context, req *logical.Requ
 		Data: map[string]interface{}{
 			"token_url_params": entry.Config.TokenURLParams,
 			"scopes":           entry.Config.Scopes,
+			"provider_options": entry.Config.ProviderOptions,
 		},
 	}
 	return resp, nil
@@ -41,11 +42,13 @@ func (b *backend) configSelfUpdateOperation(ctx context.Context, req *logical.Re
 	entry := &persistence.ClientCredsEntry{}
 	entry.Config.TokenURLParams = data.Get("token_url_params").(map[string]string)
 	entry.Config.Scopes = data.Get("scopes").([]string)
+	entry.Config.ProviderOptions = data.Get("provider_options").(map[string]string)
 
 	tok, err := c.Provider.Private(c.Config.ClientID, c.Config.ClientSecret).ClientCredentials(
 		ctx,
 		provider.WithURLParams(entry.Config.TokenURLParams),
 		provider.WithScopes(entry.Config.Scopes),
+		provider.WithProviderOptions(entry.Config.ProviderOptions),
 	)
 	if errmark.Matches(err, errmark.RuleType(&oauth2.RetrieveError{})) || errmark.MarkedUser(err) {
 		return logical.ErrorResponse(errmap.Wrap(errmark.MarkShort(err), "client credentials flow failed").Error()), nil
@@ -95,6 +98,10 @@ var configSelfFields = map[string]*framework.FieldSchema{
 	"scopes": {
 		Type:        framework.TypeCommaStringSlice,
 		Description: "The scopes to request for authorization.",
+	},
+	"provider_options": {
+		Type:        framework.TypeKVPairs,
+		Description: "Specifies any provider-specific options.",
 	},
 }
 

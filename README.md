@@ -236,6 +236,7 @@ the `client_credentials` grant type.
 |------|-------------|------|---------|----------|
 | `token_url_params` | A map of additional query string parameters to provide to the token URL. If any keys in this map conflict with the parameters stored in the configuration, the configuration's parameters take precedence. | Map of String🠦String | None | No |
 | `scopes` | A list of explicit scopes to request. | List of String | None | No |
+| `provider_options` | A list of options to override for this flow. For example, to override tenant id for multitenant Azure AD app. | Map of String🠦String | None | None |
 
 #### `DELETE` (`delete`)
 

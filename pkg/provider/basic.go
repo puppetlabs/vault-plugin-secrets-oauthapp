@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/url"
+	"strings"
 
 	gooidc "github.com/coreos/go-oidc"
 	"github.com/puppetlabs/leg/errmap/pkg/errmark"
@@ -31,10 +32,22 @@ func init() {
 	GlobalRegistry.MustRegister("custom", CustomFactory)
 }
 
+type endpointOverride = func(endpoint *Endpoint, queryTimeProviderOptions map[string]string)
+
 type basicOperations struct {
-	endpoint     Endpoint
-	clientID     string
-	clientSecret string
+	endpoint         Endpoint
+	endpointOverride endpointOverride
+	clientID         string
+	clientSecret     string
+}
+
+func (bo *basicOperations) getEndpoint(queryTimeProviderOptions map[string]string) Endpoint {
+	endpoint := bo.endpoint
+	if bo.endpointOverride != nil {
+		bo.endpointOverride(&endpoint, queryTimeProviderOptions)
+	}
+
+	return endpoint
 }
 
 func (bo *basicOperations) AuthCodeURL(state string, opts ...AuthCodeURLOption) (string, bool) {
@@ -45,8 +58,10 @@ func (bo *basicOperations) AuthCodeURL(state string, opts ...AuthCodeURLOption) 
 	o := &AuthCodeURLOptions{}
 	o.ApplyOptions(opts)
 
+	endpoint := bo.getEndpoint(o.ProviderOptions)
+
 	cfg := &oauth2.Config{
-		Endpoint:    bo.endpoint.Endpoint,
+		Endpoint:    endpoint.Endpoint,
 		ClientID:    bo.clientID,
 		Scopes:      o.Scopes,
 		RedirectURL: o.RedirectURL,
@@ -63,13 +78,15 @@ func (bo *basicOperations) DeviceCodeAuth(ctx context.Context, opts ...DeviceCod
 	o := &DeviceCodeAuthOptions{}
 	o.ApplyOptions(opts)
 
+	endpoint := bo.getEndpoint(o.ProviderOptions)
+
 	cfg := &devicecode.Config{
 		Config: &oauth2.Config{
-			Endpoint: bo.endpoint.Endpoint,
+			Endpoint: endpoint.Endpoint,
 			ClientID: bo.clientID,
 			Scopes:   o.Scopes,
 		},
-		DeviceURL: bo.endpoint.DeviceURL,
+		DeviceURL: endpoint.DeviceURL,
 	}
 
 	auth, err := cfg.DeviceCodeAuth(ctx)
@@ -77,12 +94,17 @@ func (bo *basicOperations) DeviceCodeAuth(ctx context.Context, opts ...DeviceCod
 }
 
 func (bo *basicOperations) DeviceCodeExchange(ctx context.Context, deviceCode string, opts ...DeviceCodeExchangeOption) (*Token, error) {
+	o := &DeviceCodeExchangeOptions{}
+	o.ApplyOptions(opts)
+
+	endpoint := bo.getEndpoint(o.ProviderOptions)
+
 	cfg := &devicecode.Config{
 		Config: &oauth2.Config{
-			Endpoint: bo.endpoint.Endpoint,
+			Endpoint: endpoint.Endpoint,
 			ClientID: bo.clientID,
 		},
-		DeviceURL: bo.endpoint.DeviceURL,
+		DeviceURL: endpoint.DeviceURL,
 	}
 
 	tok, err := cfg.DeviceCodeExchange(ctx, deviceCode)
@@ -106,8 +128,10 @@ func (bo *basicOperations) AuthCodeExchange(ctx context.Context, code string, op
 	o := &AuthCodeExchangeOptions{}
 	o.ApplyOptions(opts)
 
+	endpoint := bo.getEndpoint(o.ProviderOptions)
+
 	cfg := &oauth2.Config{
-		Endpoint:     bo.endpoint.Endpoint,
+		Endpoint:     endpoint.Endpoint,
 		ClientID:     bo.clientID,
 		ClientSecret: bo.clientSecret,
 		RedirectURL:  o.RedirectURL,
@@ -122,8 +146,13 @@ func (bo *basicOperations) AuthCodeExchange(ctx context.Context, code string, op
 }
 
 func (bo *basicOperations) RefreshToken(ctx context.Context, t *Token, opts ...RefreshTokenOption) (*Token, error) {
+	o := &RefreshTokenOptions{}
+	o.ApplyOptions(opts)
+
+	endpoint := bo.getEndpoint(o.ProviderOptions)
+
 	cfg := &oauth2.Config{
-		Endpoint:     bo.endpoint.Endpoint,
+		Endpoint:     endpoint.Endpoint,
 		ClientID:     bo.clientID,
 		ClientSecret: bo.clientSecret,
 	}
@@ -142,11 +171,13 @@ func (bo *basicOperations) ClientCredentials(ctx context.Context, opts ...Client
 	o := &ClientCredentialsOptions{}
 	o.ApplyOptions(opts)
 
+	endpoint := bo.getEndpoint(o.ProviderOptions)
+
 	cc := &clientcredentials.Config{
 		ClientID:       bo.clientID,
 		ClientSecret:   bo.clientSecret,
-		TokenURL:       bo.endpoint.TokenURL,
-		AuthStyle:      bo.endpoint.AuthStyle,
+		TokenURL:       endpoint.TokenURL,
+		AuthStyle:      endpoint.AuthStyle,
 		Scopes:         o.Scopes,
 		EndpointParams: o.EndpointParams,
 	}
@@ -160,8 +191,9 @@ func (bo *basicOperations) ClientCredentials(ctx context.Context, opts ...Client
 }
 
 type basic struct {
-	vsn      int
-	endpoint Endpoint
+	vsn              int
+	endpoint         Endpoint
+	endpointOverride endpointOverride
 }
 
 func (b *basic) Version() int {
@@ -174,9 +206,10 @@ func (b *basic) Public(clientID string) PublicOperations {
 
 func (b *basic) Private(clientID, clientSecret string) PrivateOperations {
 	return &basicOperations{
-		endpoint:     b.endpoint,
-		clientID:     clientID,
-		clientSecret: clientSecret,
+		endpoint:         b.endpoint,
+		endpointOverride: b.endpointOverride,
+		clientID:         clientID,
+		clientSecret:     clientSecret,
 	}
 }
 
@@ -216,14 +249,28 @@ func AzureADFactory(ctx context.Context, vsn int, opts map[string]string) (Provi
 		return nil, &OptionError{Option: "tenant", Cause: fmt.Errorf("tenant is required")}
 	}
 
-	// Upstream function does not escape this name, so we will here.
-	tenant = url.PathEscape(tenant)
+	tenantPlaceholder := "{{tenant}}"
 
 	p := &basic{
 		vsn: 1,
 		endpoint: Endpoint{
-			Endpoint:  microsoft.AzureADEndpoint(tenant),
-			DeviceURL: "https://login.microsoftonline.com/" + tenant + "/oauth2/v2.0/devicecode", // https://docs.microsoft.com/en-us/azure/active-directory/develop/v2-oauth2-device-code
+			Endpoint:  microsoft.AzureADEndpoint(tenantPlaceholder),
+			DeviceURL: "https://login.microsoftonline.com/" + tenantPlaceholder + "/oauth2/v2.0/devicecode", // https://docs.microsoft.com/en-us/azure/active-directory/develop/v2-oauth2-device-code
+		},
+		endpointOverride: func(endpoint *Endpoint, queryTimeProviderOptions map[string]string) {
+			// Multitenant app will reuse the same clientId and clientSecret for several tenants
+			// during client credentilas flow
+			tenantReplacement := queryTimeProviderOptions["tenant"]
+			if tenantReplacement == "" {
+				tenantReplacement = tenant
+			}
+
+			// Upstream function does not escape this name, so we will here.
+			tenantReplacement = url.PathEscape(tenantReplacement)
+
+			endpoint.DeviceURL = strings.Replace(endpoint.DeviceURL, tenantPlaceholder, tenantReplacement, 1)
+			endpoint.TokenURL = strings.Replace(endpoint.TokenURL, tenantPlaceholder, tenantReplacement, 1)
+			endpoint.AuthURL = strings.Replace(endpoint.AuthURL, tenantPlaceholder, tenantReplacement, 1)
 		},
 	}
 	return p, nil

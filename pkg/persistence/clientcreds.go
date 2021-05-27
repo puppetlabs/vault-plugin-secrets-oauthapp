@@ -24,8 +24,9 @@ type ClientCredsEntry struct {
 	Token *provider.Token `json:"token"`
 
 	Config struct {
-		Scopes         []string          `json:"scopes"`
-		TokenURLParams map[string]string `json:"token_url_params"`
+		Scopes          []string          `json:"scopes"`
+		TokenURLParams  map[string]string `json:"token_url_params"`
+		ProviderOptions map[string]string `json:"provider_options"`
 	} `json:"config"`
 }
 
