@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net/url"
-	"strings"
 
 	gooidc "github.com/coreos/go-oidc"
 	"github.com/puppetlabs/leg/errmap/pkg/errmark"
@@ -32,33 +31,20 @@ func init() {
 	GlobalRegistry.MustRegister("custom", CustomFactory)
 }
 
-type endpointOverride = func(endpoint *Endpoint, queryTimeProviderOptions map[string]string)
-
 type basicOperations struct {
-	endpoint         Endpoint
-	endpointOverride endpointOverride
-	clientID         string
-	clientSecret     string
-}
-
-func (bo *basicOperations) getEndpoint(queryTimeProviderOptions map[string]string) Endpoint {
-	endpoint := bo.endpoint
-	if bo.endpointOverride != nil {
-		bo.endpointOverride(&endpoint, queryTimeProviderOptions)
-	}
-
-	return endpoint
+	endpointFactory EndpointFactoryFunc
+	clientID        string
+	clientSecret    string
 }
 
 func (bo *basicOperations) AuthCodeURL(state string, opts ...AuthCodeURLOption) (string, bool) {
-	if bo.endpoint.AuthURL == "" {
-		return "", false
-	}
-
 	o := &AuthCodeURLOptions{}
 	o.ApplyOptions(opts)
 
-	endpoint := bo.getEndpoint(o.ProviderOptions)
+	endpoint := bo.endpointFactory(o.ProviderOptions)
+	if endpoint.AuthURL == "" {
+		return "", false
+	}
 
 	cfg := &oauth2.Config{
 		Endpoint:    endpoint.Endpoint,
@@ -71,14 +57,13 @@ func (bo *basicOperations) AuthCodeURL(state string, opts ...AuthCodeURLOption) 
 }
 
 func (bo *basicOperations) DeviceCodeAuth(ctx context.Context, opts ...DeviceCodeAuthOption) (*devicecode.Auth, bool, error) {
-	if bo.endpoint.DeviceURL == "" {
-		return nil, false, nil
-	}
-
 	o := &DeviceCodeAuthOptions{}
 	o.ApplyOptions(opts)
 
-	endpoint := bo.getEndpoint(o.ProviderOptions)
+	endpoint := bo.endpointFactory(o.ProviderOptions)
+	if endpoint.DeviceURL == "" {
+		return nil, false, nil
+	}
 
 	cfg := &devicecode.Config{
 		Config: &oauth2.Config{
@@ -97,7 +82,7 @@ func (bo *basicOperations) DeviceCodeExchange(ctx context.Context, deviceCode st
 	o := &DeviceCodeExchangeOptions{}
 	o.ApplyOptions(opts)
 
-	endpoint := bo.getEndpoint(o.ProviderOptions)
+	endpoint := bo.endpointFactory(o.ProviderOptions)
 
 	cfg := &devicecode.Config{
 		Config: &oauth2.Config{
@@ -128,7 +113,7 @@ func (bo *basicOperations) AuthCodeExchange(ctx context.Context, code string, op
 	o := &AuthCodeExchangeOptions{}
 	o.ApplyOptions(opts)
 
-	endpoint := bo.getEndpoint(o.ProviderOptions)
+	endpoint := bo.endpointFactory(o.ProviderOptions)
 
 	cfg := &oauth2.Config{
 		Endpoint:     endpoint.Endpoint,
@@ -149,7 +134,7 @@ func (bo *basicOperations) RefreshToken(ctx context.Context, t *Token, opts ...R
 	o := &RefreshTokenOptions{}
 	o.ApplyOptions(opts)
 
-	endpoint := bo.getEndpoint(o.ProviderOptions)
+	endpoint := bo.endpointFactory(o.ProviderOptions)
 
 	cfg := &oauth2.Config{
 		Endpoint:     endpoint.Endpoint,
@@ -171,7 +156,7 @@ func (bo *basicOperations) ClientCredentials(ctx context.Context, opts ...Client
 	o := &ClientCredentialsOptions{}
 	o.ApplyOptions(opts)
 
-	endpoint := bo.getEndpoint(o.ProviderOptions)
+	endpoint := bo.endpointFactory(o.ProviderOptions)
 
 	cc := &clientcredentials.Config{
 		ClientID:       bo.clientID,
@@ -191,9 +176,8 @@ func (bo *basicOperations) ClientCredentials(ctx context.Context, opts ...Client
 }
 
 type basic struct {
-	vsn              int
-	endpoint         Endpoint
-	endpointOverride endpointOverride
+	vsn             int
+	endpointFactory EndpointFactoryFunc
 }
 
 func (b *basic) Version() int {
@@ -206,10 +190,9 @@ func (b *basic) Public(clientID string) PublicOperations {
 
 func (b *basic) Private(clientID, clientSecret string) PrivateOperations {
 	return &basicOperations{
-		endpoint:         b.endpoint,
-		endpointOverride: b.endpointOverride,
-		clientID:         clientID,
-		clientSecret:     clientSecret,
+		endpointFactory: b.endpointFactory,
+		clientID:        clientID,
+		clientSecret:    clientSecret,
 	}
 }
 
@@ -228,49 +211,46 @@ func BasicFactory(endpoint Endpoint) FactoryFunc {
 		}
 
 		p := &basic{
-			vsn:      vsn,
-			endpoint: endpoint,
+			vsn:             vsn,
+			endpointFactory: StaticEndpointFactory(endpoint),
 		}
 		return p, nil
 	}
 }
 
 func AzureADFactory(ctx context.Context, vsn int, opts map[string]string) (Provider, error) {
-	vsn = selectVersion(vsn, 1)
+	vsn = selectVersion(vsn, 2)
+
+	tenant := opts["tenant"]
 
 	switch vsn {
+	case 2:
 	case 1:
+		if tenant == "" {
+			return nil, &OptionError{Option: "tenant", Cause: fmt.Errorf("tenant is required")}
+		}
 	default:
 		return nil, ErrNoProviderWithVersion
 	}
 
-	tenant := opts["tenant"]
-	if tenant == "" {
-		return nil, &OptionError{Option: "tenant", Cause: fmt.Errorf("tenant is required")}
-	}
-
-	tenantPlaceholder := "{{tenant}}"
-
 	p := &basic{
-		vsn: 1,
-		endpoint: Endpoint{
-			Endpoint:  microsoft.AzureADEndpoint(tenantPlaceholder),
-			DeviceURL: "https://login.microsoftonline.com/" + tenantPlaceholder + "/oauth2/v2.0/devicecode", // https://docs.microsoft.com/en-us/azure/active-directory/develop/v2-oauth2-device-code
-		},
-		endpointOverride: func(endpoint *Endpoint, queryTimeProviderOptions map[string]string) {
-			// Multitenant app will reuse the same clientId and clientSecret for several tenants
-			// during client credentilas flow
-			tenantReplacement := queryTimeProviderOptions["tenant"]
-			if tenantReplacement == "" {
-				tenantReplacement = tenant
+		vsn: vsn,
+		endpointFactory: func(credOpts map[string]string) Endpoint {
+			chosenTenant := "organizations" // https://docs.microsoft.com/en-us/azure/active-directory/develop/active-directory-v2-protocols#endpoints
+
+			if tenant != "" {
+				chosenTenant = tenant
+			} else if credTenant := credOpts["tenant"]; credTenant != "" {
+				chosenTenant = credTenant
 			}
 
 			// Upstream function does not escape this name, so we will here.
-			tenantReplacement = url.PathEscape(tenantReplacement)
+			chosenTenant = url.PathEscape(chosenTenant)
 
-			endpoint.DeviceURL = strings.Replace(endpoint.DeviceURL, tenantPlaceholder, tenantReplacement, 1)
-			endpoint.TokenURL = strings.Replace(endpoint.TokenURL, tenantPlaceholder, tenantReplacement, 1)
-			endpoint.AuthURL = strings.Replace(endpoint.AuthURL, tenantPlaceholder, tenantReplacement, 1)
+			return Endpoint{
+				Endpoint:  microsoft.AzureADEndpoint(chosenTenant),
+				DeviceURL: "https://login.microsoftonline.com/" + chosenTenant + "/oauth2/v2.0/devicecode", // https://docs.microsoft.com/en-us/azure/active-directory/develop/v2-oauth2-device-code
+			}
 		},
 	}
 	return p, nil
@@ -323,8 +303,8 @@ func CustomFactory(ctx context.Context, vsn int, opts map[string]string) (Provid
 	}
 
 	p := &basic{
-		vsn:      vsn,
-		endpoint: endpoint,
+		vsn:             vsn,
+		endpointFactory: StaticEndpointFactory(endpoint),
 	}
 	return p, nil
 }

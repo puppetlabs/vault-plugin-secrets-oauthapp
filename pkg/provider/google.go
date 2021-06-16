@@ -28,10 +28,10 @@ func GoogleFactory(ctx context.Context, vsn int, opts map[string]string) (Provid
 
 		return &basic{
 			vsn: vsn,
-			endpoint: Endpoint{
+			endpointFactory: StaticEndpointFactory(Endpoint{
 				Endpoint:  google.Endpoint,
 				DeviceURL: "https://oauth2.googleapis.com/device/code", // https://developers.google.com/identity/protocols/oauth2/limited-input-device#step-1:-request-device-and-user-codes
-			},
+			}),
 		}, nil
 	default:
 		return nil, ErrNoProviderWithVersion

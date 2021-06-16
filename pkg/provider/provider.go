@@ -16,6 +16,17 @@ type Endpoint struct {
 	DeviceURL string
 }
 
+// EndpointFactoryFunc returns an Endpoint given some provider configuration.
+type EndpointFactoryFunc func(opts map[string]string) Endpoint
+
+// StaticEndpointFactory returns an EndpointFactoryFunc for a static endpoint
+// configuration that does not take provider options.
+func StaticEndpointFactory(endpoint Endpoint) EndpointFactoryFunc {
+	return func(opts map[string]string) Endpoint {
+		return endpoint
+	}
+}
+
 // Token is an extension of *oauth2.Token that also provides complementary data
 // to store (usually from the token's own raw data).
 type Token struct {

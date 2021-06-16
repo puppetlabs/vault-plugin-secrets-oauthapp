@@ -203,7 +203,7 @@ type oidc struct {
 	extraDataFields []string
 }
 
-func (o *oidc) endpoint() Endpoint {
+func (o *oidc) endpointFactory(opts map[string]string) Endpoint {
 	ep := Endpoint{
 		Endpoint:  o.p.Endpoint(),
 		DeviceURL: o.deviceURL,
@@ -223,9 +223,9 @@ func (o *oidc) Public(clientID string) PublicOperations {
 func (o *oidc) Private(clientID, clientSecret string) PrivateOperations {
 	return &oidcOperations{
 		delegate: &basicOperations{
-			endpoint:     o.endpoint(),
-			clientID:     clientID,
-			clientSecret: clientSecret,
+			endpointFactory: o.endpointFactory,
+			clientID:        clientID,
+			clientSecret:    clientSecret,
 		},
 		p:               o.p,
 		extraDataFields: o.extraDataFields,

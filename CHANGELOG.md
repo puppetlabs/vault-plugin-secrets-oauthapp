@@ -8,17 +8,18 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+* Add support for multi-tenant Azure AD apps. This is done by giving an ability
+  to set the `tenant` provider option on a per-credential basis if not
+  explicitly specified in the provider configuration. If no tenant is provided,
+  the tenant now defaults to allowing any Azure AD account.
+
 ### Changed
 
 * The Google provider now uses an OpenID implementation, which allows it to also
   retrieve data from the `id_token`. Write a new plugin configuration to take
   advantage of this feature.
-
-## [2.1.0] - 2021-05-27
-
-### Changed
-
-* Add support for mutlitenant Azure AD apps that use client credentials flow. This is done by giving an ability to override provider options to change oauth2 URLs
 
 ## [2.0.0] - 2021-04-09
 
@@ -172,8 +173,7 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 * Initial release of the plugin.
 
-[Unreleased]: https://github.com/puppetlabs/vault-plugin-secrets-oauthapp/compare/v2.1.0...HEAD
-[2.1.0]: https://github.com/puppetlabs/vault-plugin-secrets-oauthapp/compare/v2.0.0...v2.1.0
+[Unreleased]: https://github.com/puppetlabs/vault-plugin-secrets-oauthapp/compare/v2.0.0...HEAD
 [2.0.0]: https://github.com/puppetlabs/vault-plugin-secrets-oauthapp/compare/v1.10.1...v2.0.0
 [1.10.1]: https://github.com/puppetlabs/vault-plugin-secrets-oauthapp/compare/v1.10.0...v1.10.1
 [1.10.0]: https://github.com/puppetlabs/vault-plugin-secrets-oauthapp/compare/v1.9.0...v1.10.0
