@@ -113,6 +113,7 @@ func (b *backend) configAuthCodeURLUpdateOperation(ctx context.Context, req *log
 		provider.WithScopes(data.Get("scopes").([]string)),
 		provider.WithURLParams(data.Get("auth_url_params").(map[string]string)),
 		provider.WithURLParams(c.Config.AuthURLParams),
+		provider.WithProviderOptions(data.Get("provider_options").(map[string]string)),
 	)
 	if !ok {
 		return logical.ErrorResponse("authorization code URL not available"), nil
@@ -210,6 +211,10 @@ var configAuthCodeURLFields = map[string]*framework.FieldSchema{
 	"state": {
 		Type:        framework.TypeString,
 		Description: "Specifies the state to set in the authorization code URL.",
+	},
+	"provider_options": {
+		Type:        framework.TypeKVPairs,
+		Description: "Specifies any provider-specific options.",
 	},
 }
 

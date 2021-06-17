@@ -218,6 +218,7 @@ endpoint will return an error.
 | `redirect_url` | The URL to redirect to once the user has authorized this application. | String | None | No |
 | `scopes` | A list of explicit scopes to request. | List of String | None | No |
 | `state` | The unique state to send to the authorization URL. | String | None | Yes |
+| `provider_options` | A list of options to pass on to the provider for configuring the authorization code URL. | Map of String🠦String | None | None |
 
 ### `config/self/:name`
 
@@ -364,11 +365,17 @@ Remove the credential information from storage.
 |------|-------------|---------|----------|
 | `tenant` | The tenant to authenticate to. | `organizations` | No |
 
+#### Authorization code URL options
+
+| Name | Description | Default | Required |
+|------|-------------|---------|----------|
+| `tenant` | The tenant to authenticate to. Ignored if the `tenant` option is specified in the plugin configuration. | Inherited | No |
+
 #### Credential options
 
 | Name | Description | Supported flows | Default | Required |
 |------|-------------|-----------------|---------|----------|
-| `tenant` | The tenant to authenticate to. Ignored if the `tenant` option is specified in the plugin configuration. | All | None | No |
+| `tenant` | The tenant to authenticate to. Ignored if the `tenant` option is specified in the plugin configuration. | All | Inherited | No |
 
 ### OpenID Connect (`oidc`)
 
