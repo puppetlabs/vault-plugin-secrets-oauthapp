@@ -8,6 +8,12 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+* The Google provider now uses an OpenID implementation, which allows it to also
+  retrieve data from the `id_token`. Write a new plugin configuration to take
+  advantage of this feature.
+
 ## [2.0.0] - 2021-04-09
 
 ### Changed

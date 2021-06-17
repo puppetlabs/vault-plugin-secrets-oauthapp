@@ -217,18 +217,18 @@ func (m *mock) factory(ctx context.Context, vsn int, options map[string]string) 
 	for k, ev := range m.expectedOpts {
 		av, found := options[k]
 		if !found {
-			return nil, &provider.OptionError{Option: k, Message: "not found"}
+			return nil, &provider.OptionError{Option: k, Cause: fmt.Errorf("not found")}
 		}
 
 		if av != ev {
-			return nil, &provider.OptionError{Option: k, Message: fmt.Sprintf("expected %q, got %q", ev, av)}
+			return nil, &provider.OptionError{Option: k, Cause: fmt.Errorf("expected %q, got %q", ev, av)}
 		}
 
 		delete(options, k)
 	}
 
 	for k := range options {
-		return nil, &provider.OptionError{Option: k, Message: "unexpected"}
+		return nil, &provider.OptionError{Option: k, Cause: fmt.Errorf("unexpected")}
 	}
 
 	p := &mockProvider{
