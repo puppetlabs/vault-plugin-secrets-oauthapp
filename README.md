@@ -366,8 +366,8 @@ Remove the credential information from storage.
 
 #### Credential options
 
-| Name | Description | Supported grant types | Default | Required |
-|------|-------------|-----------------------|---------|----------|
+| Name | Description | Supported flows | Default | Required |
+|------|-------------|-----------------|---------|----------|
 | `tenant` | The tenant to authenticate to. Ignored if the `tenant` option is specified in the plugin configuration. | All | None | No |
 
 ### OpenID Connect (`oidc`)
@@ -385,9 +385,9 @@ This provider implements the OpenID Connect protocol version 1.0.
 
 #### Credential options
 
-| Name | Description | Supported grant types | Default | Required |
-|------|-------------|-----------------------|---------|----------|
-| `nonce` | The same nonce as specified in the authorization code URL. | Only `authorization_code` and `refresh_token` | None | If present in the authorization code URL |
+| Name | Description | Supported flows | Default | Required |
+|------|-------------|-----------------|---------|----------|
+| `nonce` | The same nonce as specified in the authorization code URL. | Authorization code exchange | None | If present in the authorization code URL |
 
 ### Slack (`slack`)
 
