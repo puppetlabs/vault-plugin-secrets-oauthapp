@@ -83,7 +83,7 @@ func TestConfiguredClientCredentials(t *testing.T) {
 	handler := func(opts *provider.ClientCredentialsOptions) (*provider.Token, error) {
 		return &provider.Token{
 			Token: &oauth2.Token{
-				AccessToken: fmt.Sprintf("%s:%s", strings.Join(opts.Scopes, "."), opts.EndpointParams.Get("baz")),
+				AccessToken: fmt.Sprintf("%s:%s:%s", strings.Join(opts.Scopes, "."), opts.EndpointParams.Get("baz"), opts.ProviderOptions["tenant"]),
 			},
 		}, nil
 	}
@@ -123,6 +123,9 @@ func TestConfiguredClientCredentials(t *testing.T) {
 			"token_url_params": map[string]interface{}{
 				"baz": "quux",
 			},
+			"provider_options": map[string]interface{}{
+				"tenant": "test",
+			},
 		},
 	}
 
@@ -142,7 +145,7 @@ func TestConfiguredClientCredentials(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, resp)
 	require.False(t, resp.IsError(), "response has error: %+v", resp.Error())
-	require.Equal(t, "foo.bar:quux", resp.Data["access_token"])
+	require.Equal(t, "foo.bar:quux:test", resp.Data["access_token"])
 	require.Equal(t, "Bearer", resp.Data["type"])
 	require.Empty(t, resp.Data["expire_time"])
 }

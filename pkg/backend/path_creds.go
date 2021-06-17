@@ -91,6 +91,10 @@ func (b *backend) credsReadOperation(ctx context.Context, req *logical.Request, 
 		rd["extra_data"] = entry.ExtraData
 	}
 
+	if len(entry.ProviderOptions) > 0 {
+		rd["provider_options"] = entry.ProviderOptions
+	}
+
 	resp := &logical.Response{
 		Data: rd,
 	}

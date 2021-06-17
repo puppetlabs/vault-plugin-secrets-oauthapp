@@ -134,3 +134,54 @@ func TestBasicPrivate(t *testing.T) {
 	require.Equal(t, "mnop", token.AccessToken)
 	require.True(t, token.Valid())
 }
+
+func TestAzureADEndpoint(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	tests := []struct {
+		Name                string
+		PluginOptions       map[string]string
+		AuthCodeURLOptions  map[string]string
+		ExpectedAuthCodeURL string
+	}{
+		{
+			Name: "plugin tenant without attempted override",
+			PluginOptions: map[string]string{
+				"tenant": "northwind",
+			},
+			ExpectedAuthCodeURL: "https://login.microsoftonline.com/northwind/oauth2/v2.0/authorize?client_id=foo&response_type=code&state=123456",
+		},
+		{
+			Name: "plugin tenant with attempted override",
+			PluginOptions: map[string]string{
+				"tenant": "northwind",
+			},
+			AuthCodeURLOptions: map[string]string{
+				"tenant": "contoso",
+			},
+			ExpectedAuthCodeURL: "https://login.microsoftonline.com/northwind/oauth2/v2.0/authorize?client_id=foo&response_type=code&state=123456",
+		},
+		{
+			Name: "no plugin tenant",
+			AuthCodeURLOptions: map[string]string{
+				"tenant": "contoso",
+			},
+			ExpectedAuthCodeURL: "https://login.microsoftonline.com/contoso/oauth2/v2.0/authorize?client_id=foo&response_type=code&state=123456",
+		},
+		{
+			Name:                "no tenant",
+			ExpectedAuthCodeURL: "https://login.microsoftonline.com/organizations/oauth2/v2.0/authorize?client_id=foo&response_type=code&state=123456",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.Name, func(t *testing.T) {
+			p, err := provider.GlobalRegistry.New(ctx, "microsoft_azure_ad", test.PluginOptions)
+			require.NoError(t, err)
+
+			u, ok := p.Public("foo").AuthCodeURL("123456", provider.WithProviderOptions(test.AuthCodeURLOptions))
+			require.True(t, ok)
+			require.Equal(t, test.ExpectedAuthCodeURL, u)
+		})
+	}
+}

@@ -166,8 +166,19 @@ func TestRefreshableAuthCodeExchange(t *testing.T) {
 
 	exchange := testutil.RefreshableMockAuthCodeExchange(testutil.IncrementMockAuthCodeExchange("token_"), refresh)
 
+	// Prepend the tenant provider option to the resulting token.
+	handler := func(code string, opts *provider.AuthCodeExchangeOptions) (*provider.Token, error) {
+		t, err := exchange(code, opts)
+		if err != nil {
+			return nil, err
+		}
+
+		t.AccessToken = fmt.Sprintf("%s_%s", opts.ProviderOptions["tenant"], t.AccessToken)
+		return t, nil
+	}
+
 	pr := provider.NewRegistry()
-	pr.MustRegister("mock", testutil.MockFactory(testutil.MockWithAuthCodeExchange(client, exchange)))
+	pr.MustRegister("mock", testutil.MockFactory(testutil.MockWithAuthCodeExchange(client, handler)))
 
 	storage := &logical.InmemStorage{}
 
@@ -198,6 +209,9 @@ func TestRefreshableAuthCodeExchange(t *testing.T) {
 		Storage:   storage,
 		Data: map[string]interface{}{
 			"code": "test",
+			"provider_options": map[string]interface{}{
+				"tenant": "test",
+			},
 		},
 	}
 
@@ -219,9 +233,10 @@ func TestRefreshableAuthCodeExchange(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, resp)
 	require.False(t, resp.IsError(), "response has error: %+v", resp.Error())
-	require.Equal(t, "token_2", resp.Data["access_token"])
+	require.Equal(t, "test_token_2", resp.Data["access_token"])
 	require.Equal(t, "Bearer", resp.Data["type"])
 	require.NotEmpty(t, resp.Data["expire_time"])
+	require.Equal(t, map[string]string{"tenant": "test"}, resp.Data["provider_options"])
 }
 
 func TestRefreshFailureReturnsNotConfigured(t *testing.T) {
