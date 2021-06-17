@@ -35,7 +35,7 @@ type oidcOperations struct {
 	extraDataFields []string
 }
 
-func (oo *oidcOperations) verifyUpdateIDToken(ctx context.Context, t *Token, nonce string) error {
+func (oo *oidcOperations) verifyUpdateIDToken(ctx context.Context, t *Token) error {
 	rawIDToken, ok := t.Extra("id_token").(string)
 	if !ok || rawIDToken == "" {
 		return ErrOIDCMissingIDToken
@@ -49,7 +49,7 @@ func (oo *oidcOperations) verifyUpdateIDToken(ctx context.Context, t *Token, non
 	// If nonce is configured, make sure it matches the nonce in the ID token.
 	// It is not configured when refresh_token is sent in from an external
 	// source.
-	if nonce != "" &&
+	if nonce := t.ProviderOptions["nonce"]; nonce != "" &&
 		(subtle.ConstantTimeEq(int32(len(idToken.Nonce)), int32(len(nonce))) == 0 ||
 			subtle.ConstantTimeCompare([]byte(idToken.Nonce), []byte(nonce)) == 0) {
 		return ErrOIDCNonceMismatch
@@ -124,7 +124,10 @@ func (oo *oidcOperations) DeviceCodeExchange(ctx context.Context, deviceCode str
 		t.ExtraData = make(map[string]interface{})
 	}
 
-	if err := oo.verifyUpdateIDToken(ctx, t, ""); err != nil {
+	// Nonce doesn't even make sense here, so just make sure it isn't set.
+	delete(t.ProviderOptions, "nonce")
+
+	if err := oo.verifyUpdateIDToken(ctx, t); err != nil {
 		return nil, errmark.MarkUser(err)
 	}
 
@@ -136,9 +139,6 @@ func (oo *oidcOperations) DeviceCodeExchange(ctx context.Context, deviceCode str
 }
 
 func (oo *oidcOperations) AuthCodeExchange(ctx context.Context, code string, opts ...AuthCodeExchangeOption) (*Token, error) {
-	o := &AuthCodeExchangeOptions{}
-	o.ApplyOptions(opts)
-
 	t, err := oo.delegate.AuthCodeExchange(ctx, code, opts...)
 	if err != nil {
 		return nil, err
@@ -148,7 +148,7 @@ func (oo *oidcOperations) AuthCodeExchange(ctx context.Context, code string, opt
 		t.ExtraData = make(map[string]interface{})
 	}
 
-	if err := oo.verifyUpdateIDToken(ctx, t, o.ProviderOptions["nonce"]); err != nil {
+	if err := oo.verifyUpdateIDToken(ctx, t); err != nil {
 		return nil, errmark.MarkUser(err)
 	}
 
@@ -156,13 +156,13 @@ func (oo *oidcOperations) AuthCodeExchange(ctx context.Context, code string, opt
 		return nil, errmark.MarkUser(err)
 	}
 
+	// Nonce is only to be used once, so do not persist with the token.
+	delete(t.ProviderOptions, "nonce")
+
 	return t, nil
 }
 
 func (oo *oidcOperations) RefreshToken(ctx context.Context, t *Token, opts ...RefreshTokenOption) (*Token, error) {
-	o := &RefreshTokenOptions{}
-	o.ApplyOptions(opts)
-
 	nt, err := oo.delegate.RefreshToken(ctx, t, opts...)
 	if err != nil {
 		return nil, err
@@ -177,7 +177,7 @@ func (oo *oidcOperations) RefreshToken(ctx context.Context, t *Token, opts ...Re
 	// providing an ID token as part of a refresh is optional. We will only
 	// revalidate the token if a new one is provided.
 	if rawIDToken, ok := nt.Extra("id_token").(string); ok && rawIDToken != "" {
-		if err := oo.verifyUpdateIDToken(ctx, nt, o.ProviderOptions["nonce"]); err != nil {
+		if err := oo.verifyUpdateIDToken(ctx, nt); err != nil {
 			return nil, errmark.MarkUser(err)
 		}
 	} else {
@@ -187,6 +187,9 @@ func (oo *oidcOperations) RefreshToken(ctx context.Context, t *Token, opts ...Re
 	if err := oo.updateUserInfo(ctx, nt); err != nil {
 		return nil, errmark.MarkUser(err)
 	}
+
+	// Nonce is only to be used once, so do not persist with the token.
+	delete(nt.ProviderOptions, "nonce")
 
 	return nt, nil
 }
@@ -223,6 +226,7 @@ func (o *oidc) Public(clientID string) PublicOperations {
 func (o *oidc) Private(clientID, clientSecret string) PrivateOperations {
 	return &oidcOperations{
 		delegate: &basicOperations{
+			vsn:             o.vsn,
 			endpointFactory: o.endpointFactory,
 			clientID:        clientID,
 			clientSecret:    clientSecret,

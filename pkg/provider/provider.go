@@ -33,6 +33,19 @@ type Token struct {
 	*oauth2.Token `json:",inline"`
 
 	ExtraData map[string]interface{} `json:"extra_data,omitempty"`
+
+	// ProviderVersion is the version of the provider that last updated this
+	// token. It can be used to upgrade the provider options before handing off
+	// to methods that expect versions to be synchronized with the plugin
+	// provider version.
+	//
+	// May be unspecified. If not specified, provider options must be treated as
+	// opaque data.
+	ProviderVersion int `json:"provider_version,omitempty"`
+
+	// ProviderOptions are the set of persistent options to use for this token
+	// when configuring a provider.
+	ProviderOptions map[string]string `json:"provider_options,omitempty"`
 }
 
 // AuthCodeURLOptions are options for the AuthCodeURL operation.

@@ -32,6 +32,7 @@ func init() {
 }
 
 type basicOperations struct {
+	vsn             int
 	endpointFactory EndpointFactoryFunc
 	clientID        string
 	clientSecret    string
@@ -106,7 +107,12 @@ func (bo *basicOperations) DeviceCodeExchange(ctx context.Context, deviceCode st
 		return nil, err
 	}
 
-	return &Token{Token: tok}, nil
+	return &Token{
+		Token: tok,
+
+		ProviderVersion: bo.vsn,
+		ProviderOptions: o.ProviderOptions,
+	}, nil
 }
 
 func (bo *basicOperations) AuthCodeExchange(ctx context.Context, code string, opts ...AuthCodeExchangeOption) (*Token, error) {
@@ -127,11 +133,17 @@ func (bo *basicOperations) AuthCodeExchange(ctx context.Context, code string, op
 		return nil, semerr.Map(err)
 	}
 
-	return &Token{Token: tok}, nil
+	return &Token{
+		Token: tok,
+
+		ProviderVersion: bo.vsn,
+		ProviderOptions: o.ProviderOptions,
+	}, nil
 }
 
 func (bo *basicOperations) RefreshToken(ctx context.Context, t *Token, opts ...RefreshTokenOption) (*Token, error) {
 	o := &RefreshTokenOptions{}
+	WithProviderOptions(t.ProviderOptions).ApplyToRefreshTokenOptions(o)
 	o.ApplyOptions(opts)
 
 	endpoint := bo.endpointFactory(o.ProviderOptions)
@@ -149,7 +161,12 @@ func (bo *basicOperations) RefreshToken(ctx context.Context, t *Token, opts ...R
 		return nil, semerr.Map(err)
 	}
 
-	return &Token{Token: tok}, nil
+	return &Token{
+		Token: tok,
+
+		ProviderVersion: bo.vsn,
+		ProviderOptions: o.ProviderOptions,
+	}, nil
 }
 
 func (bo *basicOperations) ClientCredentials(ctx context.Context, opts ...ClientCredentialsOption) (*Token, error) {
@@ -172,7 +189,12 @@ func (bo *basicOperations) ClientCredentials(ctx context.Context, opts ...Client
 		return nil, semerr.Map(err)
 	}
 
-	return &Token{Token: tok}, nil
+	return &Token{
+		Token: tok,
+
+		ProviderVersion: bo.vsn,
+		ProviderOptions: o.ProviderOptions,
+	}, nil
 }
 
 type basic struct {
@@ -190,6 +212,7 @@ func (b *basic) Public(clientID string) PublicOperations {
 
 func (b *basic) Private(clientID, clientSecret string) PrivateOperations {
 	return &basicOperations{
+		vsn:             b.vsn,
 		endpointFactory: b.endpointFactory,
 		clientID:        clientID,
 		clientSecret:    clientSecret,
