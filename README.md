@@ -349,11 +349,11 @@ Remove the credential information from storage.
 |------|-------------|---------|----------|
 | `extra_data_fields` | A comma-separated list of subject fields to expose in the credential endpoint. Valid fields are `id_token`, `id_token_claims`, and `user_info`. | None | No |
 
-#### Credential exchange options
+#### Credential options
 
-| Name | Description | Default | Required |
-|------|-------------|---------|----------|
-| `nonce` | The same nonce as specified in the authorization code URL. | None | If present in the authorization code URL |
+| Name | Description | Supported flows | Default | Required |
+|------|-------------|-----------------|---------|----------|
+| `nonce` | The same nonce as specified in the authorization code URL. | Authorization code exchange | None | If present in the authorization code URL |
 
 ### Microsoft Azure AD (`microsoft_azure_ad`)
 
