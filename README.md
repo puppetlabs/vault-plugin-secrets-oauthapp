@@ -218,6 +218,7 @@ endpoint will return an error.
 | `redirect_url` | The URL to redirect to once the user has authorized this application. | String | None | No |
 | `scopes` | A list of explicit scopes to request. | List of String | None | No |
 | `state` | The unique state to send to the authorization URL. | String | None | Yes |
+| `provider_options` | A list of options to pass on to the provider for configuring the authorization code URL. | Map of String🠦String | None | None |
 
 ### `config/self/:name`
 
@@ -236,6 +237,7 @@ the `client_credentials` grant type.
 |------|-------------|------|---------|----------|
 | `token_url_params` | A map of additional query string parameters to provide to the token URL. If any keys in this map conflict with the parameters stored in the configuration, the configuration's parameters take precedence. | Map of String🠦String | None | No |
 | `scopes` | A list of explicit scopes to request. | List of String | None | No |
+| `provider_options` | A list of options to pass on to the provider for configuring this token exchange. | Map of String🠦String | None | None |
 
 #### `DELETE` (`delete`)
 
@@ -347,11 +349,11 @@ Remove the credential information from storage.
 |------|-------------|---------|----------|
 | `extra_data_fields` | A comma-separated list of subject fields to expose in the credential endpoint. Valid fields are `id_token`, `id_token_claims`, and `user_info`. | None | No |
 
-#### Credential exchange options
+#### Credential options
 
-| Name | Description | Default | Required |
-|------|-------------|---------|----------|
-| `nonce` | The same nonce as specified in the authorization code URL. | None | If present in the authorization code URL |
+| Name | Description | Supported flows | Default | Required |
+|------|-------------|-----------------|---------|----------|
+| `nonce` | The same nonce as specified in the authorization code URL. | Authorization code exchange | None | If present in the authorization code URL |
 
 ### Microsoft Azure AD (`microsoft_azure_ad`)
 
@@ -361,7 +363,19 @@ Remove the credential information from storage.
 
 | Name | Description | Default | Required |
 |------|-------------|---------|----------|
-| `tenant` | The tenant to authenticate to. | None | Yes |
+| `tenant` | The tenant to authenticate to. | `organizations` | No |
+
+#### Authorization code URL options
+
+| Name | Description | Default | Required |
+|------|-------------|---------|----------|
+| `tenant` | The tenant to authenticate to. Ignored if the `tenant` option is specified in the plugin configuration. | Inherited | No |
+
+#### Credential options
+
+| Name | Description | Supported flows | Default | Required |
+|------|-------------|-----------------|---------|----------|
+| `tenant` | The tenant to authenticate to. Ignored if the `tenant` option is specified in the plugin configuration. | All | Inherited | No |
 
 ### OpenID Connect (`oidc`)
 
@@ -376,11 +390,11 @@ This provider implements the OpenID Connect protocol version 1.0.
 | `issuer_url` | The URL to an issuer of OpenID JWTs with an accessible `.well-known/openid-configuration` resource. | None | Yes |
 | `extra_data_fields` | A comma-separated list of subject fields to expose in the credential endpoint. Valid fields are `id_token`, `id_token_claims`, and `user_info`. | None | No |
 
-#### Credential exchange options
+#### Credential options
 
-| Name | Description | Default | Required |
-|------|-------------|---------|----------|
-| `nonce` | The same nonce as specified in the authorization code URL. | None | If present in the authorization code URL |
+| Name | Description | Supported flows | Default | Required |
+|------|-------------|-----------------|---------|----------|
+| `nonce` | The same nonce as specified in the authorization code URL. | Authorization code exchange | None | If present in the authorization code URL |
 
 ### Slack (`slack`)
 

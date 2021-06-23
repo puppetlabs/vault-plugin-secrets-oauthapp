@@ -104,6 +104,9 @@ func (mo *mockOperations) DeviceCodeExchange(ctx context.Context, deviceCode str
 		return nil, err
 	}
 
+	tok.ProviderVersion = mo.owner.vsn
+	tok.ProviderOptions = o.ProviderOptions
+
 	return tok, nil
 }
 
@@ -124,6 +127,9 @@ func (mo *mockOperations) AuthCodeExchange(ctx context.Context, code string, opt
 		mo.owner.putRefreshTokenCode(tok.RefreshToken, code)
 	}
 
+	tok.ProviderVersion = mo.owner.vsn
+	tok.ProviderOptions = o.ProviderOptions
+
 	return tok, nil
 }
 
@@ -138,6 +144,7 @@ func (mo *mockOperations) RefreshToken(ctx context.Context, t *provider.Token, o
 	}
 
 	o := &provider.RefreshTokenOptions{}
+	provider.WithProviderOptions(t.ProviderOptions).ApplyToRefreshTokenOptions(o)
 	o.ApplyOptions(opts)
 
 	// TODO: It feels wrong to map one option type to another like this.
@@ -151,6 +158,9 @@ func (mo *mockOperations) RefreshToken(ctx context.Context, t *provider.Token, o
 	if tok.RefreshToken != "" {
 		mo.owner.putRefreshTokenCode(tok.RefreshToken, code)
 	}
+
+	tok.ProviderVersion = mo.owner.vsn
+	tok.ProviderOptions = o.ProviderOptions
 
 	return tok, nil
 }
@@ -167,6 +177,9 @@ func (mo *mockOperations) ClientCredentials(ctx context.Context, opts ...provide
 	if err != nil {
 		return nil, semerr.Map(err)
 	}
+
+	tok.ProviderVersion = mo.owner.vsn
+	tok.ProviderOptions = o.ProviderOptions
 
 	return tok, nil
 }

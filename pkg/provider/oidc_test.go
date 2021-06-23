@@ -134,6 +134,7 @@ func TestOIDCFlow(t *testing.T) {
 	assert.Equal(t, "Bearer", token.Type())
 	assert.Equal(t, "efgh", token.RefreshToken)
 	assert.NotEmpty(t, token.Expiry)
+	assert.Empty(t, token.ProviderOptions) // "nonce" option should be stripped!
 	require.Contains(t, token.ExtraData, "id_token")
 	require.Contains(t, token.ExtraData, "id_token_claims")
 	require.Contains(t, token.ExtraData, "user_info")

@@ -8,6 +8,13 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+* Add support for multi-tenant Azure AD apps. This is done by giving an ability
+  to set the `tenant` provider option on a per-credential basis if not
+  explicitly specified in the provider configuration. If no tenant is provided,
+  the tenant now defaults to allowing any Azure AD account.
+
 ### Changed
 
 * The Google provider now uses an OpenID implementation, which allows it to also
