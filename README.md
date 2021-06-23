@@ -341,6 +341,18 @@ Remove the credential information from storage.
 
 [Documentation](https://developers.google.com/identity/protocols/oauth2)
 
+#### Configuration options
+
+| Name | Description | Default | Required |
+|------|-------------|---------|----------|
+| `extra_data_fields` | A comma-separated list of subject fields to expose in the credential endpoint. Valid fields are `id_token`, `id_token_claims`, and `user_info`. | None | No |
+
+#### Credential exchange options
+
+| Name | Description | Default | Required |
+|------|-------------|---------|----------|
+| `nonce` | The same nonce as specified in the authorization code URL. | None | If present in the authorization code URL |
+
 ### Microsoft Azure AD (`microsoft_azure_ad`)
 
 [Documentation](https://docs.microsoft.com/en-us/azure/active-directory/develop/v2-oauth2-auth-code-flow)

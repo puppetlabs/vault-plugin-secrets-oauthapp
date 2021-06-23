@@ -232,22 +232,10 @@ func (o *oidc) Private(clientID, clientSecret string) PrivateOperations {
 	}
 }
 
-func OIDCFactory(ctx context.Context, vsn int, opts map[string]string) (Provider, error) {
-	vsn = selectVersion(vsn, 1)
-
-	switch vsn {
-	case 1:
-	default:
-		return nil, ErrNoProviderWithVersion
-	}
-
-	if opts["issuer_url"] == "" {
-		return nil, &OptionError{Option: "issuer_url", Message: "issuer URL is required"}
-	}
-
-	delegate, err := gooidc.NewProvider(ctx, opts["issuer_url"])
+func newOIDC(ctx context.Context, vsn int, issuerURL string, extraDataFields []string) (*oidc, error) {
+	delegate, err := gooidc.NewProvider(ctx, issuerURL)
 	if err != nil {
-		return nil, &OptionError{Option: "issuer_url", Message: fmt.Sprintf("error creating OIDC provider with given issuer URL: %+v", err)}
+		return nil, fmt.Errorf("error creating OIDC provider with given issuer URL: %w", err)
 	}
 
 	var metadata struct {
@@ -255,7 +243,7 @@ func OIDCFactory(ctx context.Context, vsn int, opts map[string]string) (Provider
 		TokenEndpointAuthMethodsSupported []string `json:"token_endpoint_auth_methods_supported"`
 	}
 	if err := delegate.Claims(&metadata); err != nil {
-		return nil, &OptionError{Option: "issuer_url", Message: fmt.Sprintf("error decoding OIDC provider metadata: %+v", err)}
+		return nil, fmt.Errorf("error decoding OIDC provider metadata: %w", err)
 	}
 
 	// For some reason, the upstream provider does not check the
@@ -269,29 +257,58 @@ func OIDCFactory(ctx context.Context, vsn int, opts map[string]string) (Provider
 		}
 	}
 
-	p := &oidc{
-		vsn:       vsn,
-		p:         delegate,
-		deviceURL: metadata.DeviceAuthorizationEndpoint,
-		authStyle: authStyle,
+	return &oidc{
+		vsn:             vsn,
+		p:               delegate,
+		deviceURL:       metadata.DeviceAuthorizationEndpoint,
+		authStyle:       authStyle,
+		extraDataFields: extraDataFields,
+	}, nil
+}
+
+func OIDCFactory(ctx context.Context, vsn int, opts map[string]string) (Provider, error) {
+	vsn = selectVersion(vsn, 1)
+
+	switch vsn {
+	case 1:
+	default:
+		return nil, ErrNoProviderWithVersion
 	}
 
-	if opts["extra_data_fields"] != "" {
-		fields, err := parseutil.ParseCommaStringSlice(opts["extra_data_fields"])
-		if err != nil {
-			return nil, &OptionError{Option: "extra_data_fields", Message: fmt.Sprintf("invalid format (expected a comma-separated list): %+v", err)}
-		}
+	if opts["issuer_url"] == "" {
+		return nil, &OptionError{Option: "issuer_url", Cause: fmt.Errorf("issuer URL is required")}
+	}
 
-		for _, field := range fields {
-			switch field {
-			case oidcExtraDataFieldIDToken, oidcExtraDataFieldIDTokenClaims, oidcExtraDataFieldUserInfo:
-			default:
-				return nil, &OptionError{Option: "extra_data_fields", Message: fmt.Sprintf("unknown extra data field %q", field)}
-			}
-		}
+	fields, err := parseOIDCExtraDataFields(opts["extra_data_fields"])
+	if err != nil {
+		return nil, &OptionError{Option: "extra_data_fields", Cause: err}
+	}
 
-		p.extraDataFields = fields
+	p, err := newOIDC(ctx, vsn, opts["issuer_url"], fields)
+	if err != nil {
+		return nil, &OptionError{Option: "issuer_url", Cause: err}
 	}
 
 	return p, nil
+}
+
+func parseOIDCExtraDataFields(data string) ([]string, error) {
+	if data == "" {
+		return nil, nil
+	}
+
+	fields, err := parseutil.ParseCommaStringSlice(data)
+	if err != nil {
+		return nil, fmt.Errorf("invalid format (expected a comma-separated list): %w", err)
+	}
+
+	for _, field := range fields {
+		switch field {
+		case oidcExtraDataFieldIDToken, oidcExtraDataFieldIDTokenClaims, oidcExtraDataFieldUserInfo:
+		default:
+			return nil, fmt.Errorf("unknown extra data field %q", field)
+		}
+	}
+
+	return fields, nil
 }

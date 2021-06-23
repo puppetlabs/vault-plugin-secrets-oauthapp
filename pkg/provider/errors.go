@@ -12,17 +12,12 @@ var (
 )
 
 type OptionError struct {
-	Option  string
-	Message string
-	Cause   error
+	Option string
+	Cause  error
 }
 
 func (oe *OptionError) Error() string {
-	msg := fmt.Sprintf("option %q: %s", oe.Option, oe.Message)
-	if oe.Cause != nil {
-		msg += ": " + oe.Cause.Error()
-	}
-	return msg
+	return fmt.Sprintf("option %q: %s", oe.Option, oe.Cause)
 }
 
 func (oe *OptionError) Unwrap() error {

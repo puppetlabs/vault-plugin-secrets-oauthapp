@@ -2,6 +2,7 @@ package provider
 
 import (
 	"context"
+	"fmt"
 	"net/url"
 
 	gooidc "github.com/coreos/go-oidc"
@@ -13,7 +14,6 @@ import (
 	"golang.org/x/oauth2/clientcredentials"
 	"golang.org/x/oauth2/github"
 	"golang.org/x/oauth2/gitlab"
-	"golang.org/x/oauth2/google"
 	"golang.org/x/oauth2/microsoft"
 	"golang.org/x/oauth2/slack"
 )
@@ -25,10 +25,6 @@ func init() {
 		DeviceURL: "https://github.com/login/device/code", // https://docs.github.com/en/developers/apps/authorizing-oauth-apps#device-flow
 	}))
 	GlobalRegistry.MustRegister("gitlab", BasicFactory(Endpoint{Endpoint: gitlab.Endpoint}))
-	GlobalRegistry.MustRegister("google", BasicFactory(Endpoint{
-		Endpoint:  google.Endpoint,
-		DeviceURL: "https://oauth2.googleapis.com/device/code", // https://developers.google.com/identity/protocols/oauth2/limited-input-device#step-1:-request-device-and-user-codes
-	}))
 	GlobalRegistry.MustRegister("microsoft_azure_ad", AzureADFactory)
 	GlobalRegistry.MustRegister("slack", BasicFactory(Endpoint{Endpoint: slack.Endpoint}))
 
@@ -217,7 +213,7 @@ func AzureADFactory(ctx context.Context, vsn int, opts map[string]string) (Provi
 
 	tenant := opts["tenant"]
 	if tenant == "" {
-		return nil, &OptionError{Option: "tenant", Message: "tenant is required"}
+		return nil, &OptionError{Option: "tenant", Cause: fmt.Errorf("tenant is required")}
 	}
 
 	// Upstream function does not escape this name, so we will here.
@@ -245,7 +241,7 @@ func CustomFactory(ctx context.Context, vsn int, opts map[string]string) (Provid
 		if discoveryURL != "" {
 			provider, err := gooidc.NewProvider(ctx, discoveryURL)
 			if err != nil {
-				return nil, &OptionError{Option: "discovery_url", Message: "error making new provider", Cause: err}
+				return nil, &OptionError{Option: "discovery_url", Cause: fmt.Errorf("error making new provider: %w", err)}
 			}
 
 			opts["auth_code_url"] = provider.Endpoint().AuthURL
@@ -256,7 +252,7 @@ func CustomFactory(ctx context.Context, vsn int, opts map[string]string) (Provid
 	}
 
 	if opts["token_url"] == "" {
-		return nil, &OptionError{Option: "token_url", Message: "token URL is required"}
+		return nil, &OptionError{Option: "token_url", Cause: fmt.Errorf("token URL is required")}
 	}
 
 	authStyle := oauth2.AuthStyleAutoDetect
@@ -267,7 +263,7 @@ func CustomFactory(ctx context.Context, vsn int, opts map[string]string) (Provid
 		authStyle = oauth2.AuthStyleInParams
 	case "":
 	default:
-		return nil, &OptionError{Option: "auth_style", Message: `unknown authentication style; expected one of "in_header" or "in_params"`}
+		return nil, &OptionError{Option: "auth_style", Cause: fmt.Errorf(`unknown authentication style; expected one of "in_header" or "in_params"`)}
 	}
 
 	endpoint := Endpoint{
