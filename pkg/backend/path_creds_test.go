@@ -3,12 +3,12 @@ package backend_test
 import (
 	"context"
 	"fmt"
-	"runtime"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/hashicorp/vault/sdk/logical"
+	"github.com/puppetlabs/leg/timeutil/pkg/clock"
 	"github.com/puppetlabs/leg/timeutil/pkg/clock/k8sext"
 	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v2/pkg/backend"
 	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v2/pkg/oauth2ext/devicecode"
@@ -16,7 +16,7 @@ import (
 	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v2/pkg/testutil"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/oauth2"
-	"k8s.io/apimachinery/pkg/util/clock"
+	testclock "k8s.io/apimachinery/pkg/util/clock"
 )
 
 func TestBasicAuthCodeExchange(t *testing.T) {
@@ -331,22 +331,18 @@ func TestDeviceCodeAuthAndExchange(t *testing.T) {
 		Interval:                5,
 	})
 
-	var i int32
-	ch := make(chan struct{})
+	// This contains the state of the issuer: either 0 (pending), 1 (request to
+	// issue), or 2 (issued).
+	var issue int32
 	exchange := func(deviceCode string, opts *provider.DeviceCodeExchangeOptions) (*provider.Token, error) {
 		require.Equal(t, "xyz123", deviceCode)
 
-		switch atomic.AddInt32(&i, 1) {
-		case 1:
-			// Pending.
-			return testutil.AuthorizationPendingErrorMockDeviceCodeExchange(deviceCode, opts)
-		case 2:
-			// OK.
-			close(ch)
+		switch {
+		case atomic.CompareAndSwapInt32(&issue, 1, 2) || atomic.LoadInt32(&issue) > 1:
+			atomic.AddInt32(&issue, 1)
 			return &provider.Token{Token: &oauth2.Token{AccessToken: "hello"}}, nil
 		default:
-			require.Fail(t, "unexpected call to device code exchange", "iteration #%d", i)
-			return nil, nil
+			return testutil.AuthorizationPendingErrorMockDeviceCodeExchange(deviceCode, opts)
 		}
 	}
 
@@ -358,11 +354,19 @@ func TestDeviceCodeAuthAndExchange(t *testing.T) {
 
 	storage := &logical.InmemStorage{}
 
-	clk := clock.NewFakeClock(time.Now())
+	clk := testclock.NewFakeClock(time.Now())
 
 	b := backend.New(backend.Options{
 		ProviderRegistry: pr,
-		Clock:            k8sext.NewClock(clk),
+		Clock: clock.NewTimerCallbackClock(
+			k8sext.NewClock(clk),
+			func(d time.Duration) {
+				// Stepping the clock every time a timer is created or reset
+				// guarantees that the normally-delayed timer will immediately
+				// retry over and over.
+				clk.Step(d)
+			},
+		),
 	})
 	require.NoError(t, b.Setup(ctx, &logical.BackendConfig{}))
 	require.NoError(t, b.Initialize(ctx, &logical.InitializationRequest{Storage: storage}))
@@ -416,18 +420,13 @@ func TestDeviceCodeAuthAndExchange(t *testing.T) {
 	require.NotNil(t, resp)
 	require.EqualError(t, resp.Error(), "token pending issuance")
 
-	require.Equal(t, int32(1), i)
-
-	// Skip forward 5 seconds; the token should issue.
-	for !clk.HasWaiters() {
-		runtime.Gosched()
-	}
-	clk.Step(5 * time.Second)
-
-	select {
-	case <-ch:
-	case <-ctx.Done():
-		require.Fail(t, "context expired waiting for device code exchange attempt")
+	require.Equal(t, int32(1), atomic.AddInt32(&issue, 1))
+	for atomic.LoadInt32(&issue) == 1 {
+		select {
+		case <-ctx.Done():
+			require.Fail(t, "context expired waiting for token issuance")
+		default:
+		}
 	}
 
 	resp, err = b.HandleRequest(ctx, req)

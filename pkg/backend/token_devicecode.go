@@ -2,6 +2,7 @@ package backend
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"time"
@@ -11,6 +12,7 @@ import (
 	"github.com/puppetlabs/leg/errmap/pkg/errmark"
 	"github.com/puppetlabs/leg/scheduler"
 	"github.com/puppetlabs/leg/timeutil/pkg/backoff"
+	"github.com/puppetlabs/leg/timeutil/pkg/retry"
 	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v2/pkg/oauth2ext/semerr"
 	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v2/pkg/persistence"
 	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v2/pkg/provider"
@@ -40,10 +42,11 @@ type deviceCodeExchangeDescriptor struct {
 var _ scheduler.Descriptor = &deviceCodeExchangeDescriptor{}
 
 func (dced *deviceCodeExchangeDescriptor) Run(ctx context.Context, pc chan<- scheduler.Process) error {
-	ticker := dced.backend.clock.NewTicker(time.Second)
-	defer ticker.Stop()
-
-	for {
+	b := backoff.Build(
+		backoff.Constant(time.Second),
+		backoff.NonSliding,
+	)
+	err := retry.Wait(ctx, func(ctx context.Context) (bool, error) {
 		err := dced.backend.data.Managers(dced.storage).AuthCode().ForEachDeviceAuthKey(ctx, func(keyer persistence.AuthCodeKeyer) {
 			proc := &deviceCodeExchangeProcess{
 				backend: dced.backend,
@@ -57,15 +60,15 @@ func (dced *deviceCodeExchangeDescriptor) Run(ctx context.Context, pc chan<- sch
 			}
 		})
 		if err != nil {
-			return err
+			return retry.Done(err)
 		}
 
-		select {
-		case <-ticker.C():
-		case <-ctx.Done():
-			return nil
-		}
+		return retry.Repeat(nil)
+	}, retry.WithClock(dced.backend.clock), retry.WithBackoffFactory(b))
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return nil
 	}
+	return err
 }
 
 func (b *backend) exchangeDeviceAuth(ctx context.Context, storage logical.Storage, keyer persistence.AuthCodeKeyer) error {

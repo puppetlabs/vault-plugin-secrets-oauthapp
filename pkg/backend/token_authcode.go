@@ -2,6 +2,7 @@ package backend
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -9,14 +10,16 @@ import (
 	"github.com/puppetlabs/leg/errmap/pkg/errmap"
 	"github.com/puppetlabs/leg/errmap/pkg/errmark"
 	"github.com/puppetlabs/leg/scheduler"
+	"github.com/puppetlabs/leg/timeutil/pkg/backoff"
+	"github.com/puppetlabs/leg/timeutil/pkg/retry"
 	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v2/pkg/persistence"
 )
 
 type refreshProcess struct {
-	backend *backend
-	storage logical.Storage
-	keyer   persistence.AuthCodeKeyer
-	seconds int
+	backend     *backend
+	storage     logical.Storage
+	keyer       persistence.AuthCodeKeyer
+	expiryDelta time.Duration
 }
 
 var _ scheduler.Process = &refreshProcess{}
@@ -26,7 +29,7 @@ func (rp *refreshProcess) Description() string {
 }
 
 func (rp *refreshProcess) Run(ctx context.Context) error {
-	_, err := rp.backend.getRefreshCredToken(ctx, rp.storage, rp.keyer, time.Duration(rp.seconds)*time.Second)
+	_, err := rp.backend.getRefreshCredToken(ctx, rp.storage, rp.keyer, rp.expiryDelta)
 	return err
 }
 
@@ -38,45 +41,44 @@ type refreshDescriptor struct {
 var _ scheduler.Descriptor = &refreshDescriptor{}
 
 func (rd *refreshDescriptor) Run(ctx context.Context, pc chan<- scheduler.Process) error {
-	// start out checking once per minute
-	refreshInterval := DefaultRefreshCheckIntervalSeconds
-	ticker := rd.backend.clock.NewTicker(time.Duration(refreshInterval) * time.Second)
-	defer func() {
-		ticker.Stop()
-	}()
-
-	for {
-		c, err := rd.backend.getCache(ctx, rd.storage)
-		if err == nil && c != nil && c.Config.Tuning.RefreshCheckIntervalSeconds > 0 {
-			if c.Config.Tuning.RefreshCheckIntervalSeconds != refreshInterval {
-				refreshInterval = c.Config.Tuning.RefreshCheckIntervalSeconds
-				ticker.Stop()
-				ticker = rd.backend.clock.NewTicker(time.Duration(refreshInterval) * time.Second)
-			}
-			err = rd.backend.data.Managers(rd.storage).AuthCode().ForEachAuthCodeKey(ctx, func(keyer persistence.AuthCodeKeyer) {
-				proc := &refreshProcess{
-					backend: rd.backend,
-					storage: rd.storage,
-					keyer:   keyer,
-					seconds: refreshInterval + 10,
-				}
-
-				select {
-				case pc <- proc:
-				case <-ctx.Done():
-				}
-			})
-			if err != nil {
-				return err
-			}
-		}
-
-		select {
-		case <-ticker.C():
-		case <-ctx.Done():
-			return nil
-		}
+	c, err := rd.backend.getCache(ctx, rd.storage)
+	switch {
+	case err != nil:
+		return err
+	case c == nil || c.Config.Tuning.RefreshCheckIntervalSeconds <= 0:
+		return nil
 	}
+
+	refreshInterval := time.Duration(c.Config.Tuning.RefreshCheckIntervalSeconds) * time.Second
+
+	b := backoff.Build(
+		backoff.Constant(refreshInterval),
+		backoff.NonSliding,
+	)
+	err = retry.Wait(ctx, func(ctx context.Context) (bool, error) {
+		err := rd.backend.data.Managers(rd.storage).AuthCode().ForEachAuthCodeKey(ctx, func(keyer persistence.AuthCodeKeyer) {
+			proc := &refreshProcess{
+				backend:     rd.backend,
+				storage:     rd.storage,
+				keyer:       keyer,
+				expiryDelta: refreshInterval + 10*time.Second,
+			}
+
+			select {
+			case pc <- proc:
+			case <-ctx.Done():
+			}
+		})
+		if err != nil {
+			return retry.Done(err)
+		}
+
+		return retry.Repeat(nil)
+	}, retry.WithClock(rd.backend.clock), retry.WithBackoffFactory(b))
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return nil
+	}
+	return err
 }
 
 func (b *backend) refreshCredToken(ctx context.Context, storage logical.Storage, keyer persistence.AuthCodeKeyer, expiryDelta time.Duration) (*persistence.AuthCodeEntry, error) {

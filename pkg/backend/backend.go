@@ -23,6 +23,10 @@ type backend struct {
 	// It will be created by the backend lifecycle in the initialize method.
 	scheduler scheduler.StartedLifecycle
 
+	// restartRefresh causes the refresh descriptor to restart (when its
+	// configuration changes).
+	restartRefresh func()
+
 	// mut protects the cache value.
 	mut   sync.Mutex
 	cache *cache

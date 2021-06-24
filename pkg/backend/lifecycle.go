@@ -9,16 +9,20 @@ import (
 )
 
 func (b *backend) initialize(ctx context.Context, req *logical.InitializationRequest) error {
+	refresh, restartRefresh := scheduler.NewRestartableDescriptor(&refreshDescriptor{backend: b, storage: req.Storage})
+
 	b.scheduler = scheduler.NewSegment(16, []scheduler.Descriptor{
 		scheduler.NewRecoveryDescriptor(
 			&deviceCodeExchangeDescriptor{backend: b, storage: req.Storage},
 			scheduler.RecoveryDescriptorWithClock(b.clock),
 		),
 		scheduler.NewRecoveryDescriptor(
-			&refreshDescriptor{backend: b, storage: req.Storage},
+			refresh,
 			scheduler.RecoveryDescriptorWithClock(b.clock),
 		),
 	}).WithErrorBehavior(scheduler.ErrorBehaviorDrop).Start(scheduler.LifecycleStartOptions{})
+	b.restartRefresh = restartRefresh
+
 	return nil
 }
 
@@ -29,6 +33,10 @@ func (b *backend) reset() {
 	if b.cache != nil {
 		b.cache.Close()
 		b.cache = nil
+	}
+
+	if b.restartRefresh != nil {
+		b.restartRefresh()
 	}
 }
 
