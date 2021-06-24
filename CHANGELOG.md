@@ -14,6 +14,9 @@ Versioning](https://semver.org/spec/v2.0.0.html).
   to set the `tenant` provider option on a per-credential basis if not
   explicitly specified in the provider configuration. If no tenant is provided,
   the tenant now defaults to allowing any Azure AD account.
+* The check interval for refreshing tokens is now configurable using the
+  `tune_refresh_check_interval_seconds` option. It can also be explicitly
+  disabled by setting the interval to 0.
 
 ### Changed
 

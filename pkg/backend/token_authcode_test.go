@@ -2,17 +2,17 @@ package backend_test
 
 import (
 	"context"
-	"runtime"
 	"testing"
 	"time"
 
 	"github.com/hashicorp/vault/sdk/logical"
+	"github.com/puppetlabs/leg/timeutil/pkg/clock"
 	"github.com/puppetlabs/leg/timeutil/pkg/clock/k8sext"
 	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v2/pkg/backend"
 	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v2/pkg/provider"
 	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v2/pkg/testutil"
 	"github.com/stretchr/testify/require"
-	"k8s.io/apimachinery/pkg/util/clock"
+	testclock "k8s.io/apimachinery/pkg/util/clock"
 )
 
 func TestPeriodicRefresh(t *testing.T) {
@@ -26,39 +26,33 @@ func TestPeriodicRefresh(t *testing.T) {
 
 	// We may have at most 3 writes with no reads (second, third token issuance
 	// and third token refresh).
-	refreshed := make(chan int, 3)
+	refreshed := make(chan string, 3)
+
+	clk := testclock.NewFakeClock(time.Now())
 
 	exchanges := map[string]testutil.MockAuthCodeExchangeFunc{
 		"first": testutil.RandomMockAuthCodeExchange,
-		"second": testutil.RefreshableMockAuthCodeExchange(
+		"second": testutil.AmendTokenMockAuthCodeExchange(
 			testutil.IncrementMockAuthCodeExchange("second_"),
-			func(i int) (time.Duration, error) {
-				select {
-				case refreshed <- i:
-				default:
-				}
-
-				return 30 * time.Minute, nil
+			func(tok *provider.Token) error {
+				refreshed <- tok.AccessToken
+				return nil
 			},
 		),
-		"third": testutil.RefreshableMockAuthCodeExchange(
+		"third": testutil.AmendTokenMockAuthCodeExchange(
 			testutil.IncrementMockAuthCodeExchange("third_"),
-			func(i int) (time.Duration, error) {
-				select {
-				case refreshed <- i:
-				default:
-				}
-
-				switch i {
-				case 1:
+			func(tok *provider.Token) error {
+				if tok.AccessToken == "third_1" {
 					// We start with an expiry that falls within our default
 					// expiration window (70 seconds) but will also be valid if
 					// we tick the clock forward a minute. That way we don't
 					// have a race condition on scheduler startup.
-					return 65 * time.Second, nil
-				default:
-					return 10 * time.Minute, nil
+					tok.RefreshToken = "refresh"
+					tok.Expiry = clk.Now().Add(65 * time.Second)
 				}
+
+				refreshed <- tok.AccessToken
+				return nil
 			},
 		),
 	}
@@ -68,11 +62,17 @@ func TestPeriodicRefresh(t *testing.T) {
 
 	storage := &logical.InmemStorage{}
 
-	clk := clock.NewFakeClock(time.Now())
-
 	b := backend.New(backend.Options{
 		ProviderRegistry: pr,
-		Clock:            k8sext.NewClock(clk),
+		Clock: clock.NewTimerCallbackClock(
+			k8sext.NewClock(clk),
+			func(d time.Duration) {
+				// Stepping the clock every time a timer is created or reset
+				// guarantees that the normally-delayed timer will immediately
+				// retry over and over.
+				clk.Step(d)
+			},
+		),
 	})
 	require.NoError(t, b.Setup(ctx, &logical.BackendConfig{}))
 	require.NoError(t, b.Initialize(ctx, &logical.InitializationRequest{Storage: storage}))
@@ -112,28 +112,150 @@ func TestPeriodicRefresh(t *testing.T) {
 		require.Nil(t, resp)
 	}
 
-	// We should have the initial step value (1) at this point for the tokens.
-	for i := 0; i < 2; i++ {
+	// Since our refresher is now firing indiscriminately, we just need to
+	// allocate a bucket of potential iteration values. We should get two
+	// initial step values (1) and one refresh value (2).
+	var values []string
+	for i := 0; i < 3; i++ {
 		select {
-		case ti := <-refreshed:
-			// Now we should have incremented that token (only).
-			require.Equal(t, 1, ti)
+		case tok := <-refreshed:
+			values = append(values, tok)
 		case <-ctx.Done():
-			require.Fail(t, "context expired waiting for token issuance")
+			require.Fail(t, "context expired waiting for tokens")
 		}
 	}
 
-	// Now we increment the clock into the range where the third token will be
-	// refreshed regardless of where the scheduler is at in its startup routine.
-	for !clk.HasWaiters() {
-		runtime.Gosched()
+	require.ElementsMatch(t, []string{"second_1", "third_1", "third_2"}, values)
+}
+
+func TestTuneRefreshCheckInterval(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	client := testutil.MockClient{
+		ID:     "abc",
+		Secret: "def",
 	}
-	clk.Step(time.Minute)
+
+	sig := make(chan string, 1)
+	exchange := testutil.AmendTokenMockAuthCodeExchange(
+		testutil.IncrementMockAuthCodeExchange("tok_"),
+		func(tok *provider.Token) error {
+			switch tok.AccessToken {
+			case "tok_1":
+				tok.RefreshToken = "long"
+				tok.Expiry = time.Now().Add(12 * time.Hour)
+			case "tok_2":
+				tok.RefreshToken = "short"
+				tok.Expiry = time.Now().Add(5 * time.Second)
+			case "tok_3":
+				tok.RefreshToken = "medium"
+				tok.Expiry = time.Now().Add(30 * time.Second)
+			}
+
+			select {
+			case sig <- tok.AccessToken:
+			case <-ctx.Done():
+				require.Fail(t, "context expired waiting for test")
+			}
+			return nil
+		},
+	)
+
+	pr := provider.NewRegistry()
+	pr.MustRegister("mock", testutil.MockFactory(testutil.MockWithAuthCodeExchange(client, exchange)))
+
+	storage := &logical.InmemStorage{}
+
+	b := backend.New(backend.Options{ProviderRegistry: pr})
+	require.NoError(t, b.Setup(ctx, &logical.BackendConfig{}))
+	require.NoError(t, b.Initialize(ctx, &logical.InitializationRequest{Storage: storage}))
+	defer b.Clean(ctx)
+
+	configure := func(checkInterval time.Duration) {
+		req := &logical.Request{
+			Operation: logical.UpdateOperation,
+			Path:      backend.ConfigPath,
+			Storage:   storage,
+			Data: map[string]interface{}{
+				"client_id":                           client.ID,
+				"client_secret":                       client.Secret,
+				"provider":                            "mock",
+				"tune_refresh_check_interval_seconds": checkInterval / time.Second,
+			},
+		}
+
+		resp, err := b.HandleRequest(ctx, req)
+		require.NoError(t, err)
+		require.False(t, resp != nil && resp.IsError(), "response has error: %+v", resp.Error())
+		require.Nil(t, resp)
+	}
+
+	// Write initial configuration.
+	configure(time.Minute)
+
+	// Write credential.
+	req := &logical.Request{
+		Operation: logical.UpdateOperation,
+		Path:      backend.CredsPathPrefix + "test",
+		Storage:   storage,
+		Data: map[string]interface{}{
+			"code": "test",
+		},
+	}
+
+	resp, err := b.HandleRequest(ctx, req)
+	require.NoError(t, err)
+	require.False(t, resp != nil && resp.IsError(), "response has error: %+v", resp.Error())
+	require.Nil(t, resp)
 
 	select {
-	case ti := <-refreshed:
-		// Now we should have incremented that token (only).
-		require.Equal(t, 2, ti)
+	case tok := <-sig:
+		require.Equal(t, "tok_1", tok)
+	case <-ctx.Done():
+		require.Fail(t, "context expired waiting for token issuance")
+	}
+
+	// Reconfigure with a very long refresh interval, which should trigger a
+	// restart of the underlying descriptor.
+	configure(24 * time.Hour)
+
+	select {
+	case tok := <-sig:
+		require.Equal(t, "tok_2", tok)
+	case <-ctx.Done():
+		require.Fail(t, "context expired waiting for token refresh")
+	}
+
+	// Disable the refresher altogether. Now reading the token should be the
+	// only way to cause it to refresh.
+	configure(0)
+
+	req = &logical.Request{
+		Operation: logical.ReadOperation,
+		Path:      backend.CredsPathPrefix + "test",
+		Storage:   storage,
+	}
+
+	resp, err = b.HandleRequest(ctx, req)
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	require.NoError(t, resp.Error())
+	require.Equal(t, "tok_3", resp.Data["access_token"])
+
+	select {
+	case tok := <-sig:
+		require.Equal(t, "tok_3", tok)
+	case <-ctx.Done():
+		require.Fail(t, "context expired waiting for token refresh")
+	}
+
+	// Writing a new configuration should restart the descriptor again.
+	configure(time.Minute)
+
+	select {
+	case tok := <-sig:
+		require.Equal(t, "tok_4", tok)
 	case <-ctx.Done():
 		require.Fail(t, "context expired waiting for token refresh")
 	}
