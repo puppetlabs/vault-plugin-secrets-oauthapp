@@ -11,18 +11,35 @@ const (
 	configKey = "config"
 )
 
-type ConfigTuning struct {
+type ConfigVersion int
+
+const (
+	ConfigVersionInitial ConfigVersion = iota
+	ConfigVersion1
+	ConfigVersionLatest = ConfigVersion1
+)
+
+func (cv ConfigVersion) SupportsTuningRefresh() bool {
+	return cv >= ConfigVersion1
+}
+
+type ConfigTuningEntry struct {
 	RefreshCheckIntervalSeconds int `json:"refresh_check_interval_seconds"`
 }
 
+var DefaultConfigTuningEntry = ConfigTuningEntry{
+	RefreshCheckIntervalSeconds: 60,
+}
+
 type ConfigEntry struct {
+	Version         ConfigVersion     `json:"version"`
 	ClientID        string            `json:"client_id"`
 	ClientSecret    string            `json:"client_secret"`
 	AuthURLParams   map[string]string `json:"auth_url_params"`
 	ProviderName    string            `json:"provider_name"`
 	ProviderVersion int               `json:"provider_version"`
 	ProviderOptions map[string]string `json:"provider_options"`
-	Tuning          ConfigTuning      `json:"tuning"`
+	Tuning          ConfigTuningEntry `json:"tuning"`
 }
 
 type LockedConfigManager struct {
@@ -40,6 +57,10 @@ func (lcm *LockedConfigManager) ReadConfig(ctx context.Context) (*ConfigEntry, e
 	entry := &ConfigEntry{}
 	if err := se.DecodeJSON(entry); err != nil {
 		return nil, err
+	}
+
+	if !entry.Version.SupportsTuningRefresh() {
+		entry.Tuning.RefreshCheckIntervalSeconds = DefaultConfigTuningEntry.RefreshCheckIntervalSeconds
 	}
 
 	return entry, nil
