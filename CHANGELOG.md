@@ -8,6 +8,11 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+* Fix a regression that caused the automatic credential refresher to be disabled
+  on configurations written before v2.1.0.
+
 ## [2.1.0] - 2021-06-24
 
 ### Added
