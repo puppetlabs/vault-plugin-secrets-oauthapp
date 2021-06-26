@@ -8,6 +8,8 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [2.1.1] - 2021-06-25
+
 ### Fixed
 
 * Fix a regression that caused the automatic credential refresher to be disabled
@@ -183,7 +185,8 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 * Initial release of the plugin.
 
-[Unreleased]: https://github.com/puppetlabs/vault-plugin-secrets-oauthapp/compare/v2.1.0...HEAD
+[Unreleased]: https://github.com/puppetlabs/vault-plugin-secrets-oauthapp/compare/v2.1.1...HEAD
+[2.1.1]: https://github.com/puppetlabs/vault-plugin-secrets-oauthapp/compare/v2.1.0...v2.1.1
 [2.1.0]: https://github.com/puppetlabs/vault-plugin-secrets-oauthapp/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/puppetlabs/vault-plugin-secrets-oauthapp/compare/v1.10.1...v2.0.0
 [1.10.1]: https://github.com/puppetlabs/vault-plugin-secrets-oauthapp/compare/v1.10.0...v1.10.1
