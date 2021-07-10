@@ -57,6 +57,7 @@ var DefaultConfigTuningEntry = ConfigTuningEntry{
 	ReapCheckIntervalSeconds:          300,
 	ReapDryRun:                        false,
 	ReapNonRefreshableSeconds:         86400,
+	ReapRevokedSeconds:                3600,
 	ReapTransientErrorAttempts:        10,
 	ReapTransientErrorSeconds:         86400,
 }

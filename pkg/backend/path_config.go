@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"time"
 
 	"github.com/hashicorp/vault/sdk/framework"
 	"github.com/hashicorp/vault/sdk/logical"
@@ -67,11 +68,6 @@ func (b *backend) configUpdateOperation(ctx context.Context, req *logical.Reques
 		return nil, err
 	}
 
-	refresh_interval := data.Get("tune_refresh_check_interval_seconds").(int)
-	if refresh_interval < 0 || refresh_interval > 90*24*60*60 {
-		return logical.ErrorResponse("invalid tune_refresh_check_interval_seconds"), nil
-	}
-
 	c := &persistence.ConfigEntry{
 		Version:         persistence.ConfigVersionLatest,
 		ClientID:        clientID.(string),
@@ -81,9 +77,33 @@ func (b *backend) configUpdateOperation(ctx context.Context, req *logical.Reques
 		ProviderVersion: p.Version(),
 		ProviderOptions: providerOptions,
 		Tuning: persistence.ConfigTuningEntry{
-			RefreshCheckIntervalSeconds: refresh_interval,
+			ProviderTimeoutSeconds:            data.Get("tune_provider_timeout_seconds").(int),
+			ProviderTimeoutExpiryLeewayFactor: data.Get("tune_provider_timeout_expiry_leeway_factor").(float64),
+			RefreshCheckIntervalSeconds:       data.Get("tune_refresh_check_interval_seconds").(int),
+			RefreshExpiryDeltaFactor:          data.Get("tune_refresh_expiry_delta_factor").(float64),
+			ReapCheckIntervalSeconds:          data.Get("tune_reap_check_interval_seconds").(int),
+			ReapDryRun:                        data.Get("tune_reap_dry_run").(bool),
+			ReapNonRefreshableSeconds:         data.Get("tune_reap_non_refreshable_seconds").(int),
+			ReapRevokedSeconds:                data.Get("tune_reap_revoked_seconds").(int),
+			ReapTransientErrorAttempts:        data.Get("tune_reap_transient_error_attempts").(int),
+			ReapTransientErrorSeconds:         data.Get("tune_reap_transient_error_seconds").(int),
 		},
 	}
+
+	// Sanity checks for tuning options.
+	switch {
+	case c.Tuning.ProviderTimeoutExpiryLeewayFactor < 1:
+		return logical.ErrorResponse("provider timeout expiry leeway factor must be at least 1.0"), nil
+	case c.Tuning.RefreshCheckIntervalSeconds > int((90 * 24 * time.Hour).Seconds()):
+		return logical.ErrorResponse("refresh check interval can be at most 90 days"), nil
+	case c.Tuning.RefreshExpiryDeltaFactor < 1:
+		return logical.ErrorResponse("refresh expiry delta factor must be at least 1.0"), nil
+	case c.Tuning.ReapCheckIntervalSeconds > int((180 * 24 * time.Hour).Seconds()):
+		return logical.ErrorResponse("reap check interval can be at most 180 days"), nil
+	case c.Tuning.ReapTransientErrorAttempts < 0:
+		return logical.ErrorResponse("reap transient error attempts cannot be negative"), nil
+	}
+
 	if err := b.data.Managers(req.Storage).Config().WriteConfig(ctx, c); err != nil {
 		return nil, err
 	}
@@ -181,7 +201,7 @@ var configFields = map[string]*framework.FieldSchema{
 	"tune_refresh_expiry_delta_factor": {
 		Type:        framework.TypeFloat,
 		Description: "Specifies a multipler for the refresh check interval to use to detect tokens that will expire soon after a background refresh process is invoked. Must be at least 1.",
-		Default:     persistence.DefaultConfigTuningEntry.RefreshCheckIntervalSeconds,
+		Default:     persistence.DefaultConfigTuningEntry.RefreshExpiryDeltaFactor,
 	},
 	"tune_reap_check_interval_seconds": {
 		Type:        framework.TypeDurationSecond,
