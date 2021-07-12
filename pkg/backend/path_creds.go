@@ -14,6 +14,7 @@ import (
 	"github.com/hashicorp/vault/sdk/logical"
 	"github.com/puppetlabs/leg/errmap/pkg/errmap"
 	"github.com/puppetlabs/leg/errmap/pkg/errmark"
+	"github.com/puppetlabs/leg/timeutil/pkg/clockctx"
 	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v2/pkg/oauth2ext/devicecode"
 	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v2/pkg/persistence"
 	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v2/pkg/provider"
@@ -124,7 +125,7 @@ func (b *backend) credsUpdateAuthorizationCodeOperation(ctx context.Context, req
 		return logical.ErrorResponse("missing client secret in configuration"), nil
 	}
 
-	ops := c.Provider.Private(c.Config.ClientID, c.Config.ClientSecret)
+	ops := c.ProviderWithTimeout(defaultExpiryDelta).Private(c.Config.ClientID, c.Config.ClientSecret)
 
 	code, ok := data.GetOk("code")
 	if !ok {
@@ -135,7 +136,7 @@ func (b *backend) credsUpdateAuthorizationCodeOperation(ctx context.Context, req
 	}
 
 	tok, err := ops.AuthCodeExchange(
-		ctx,
+		clockctx.WithClock(ctx, b.clock),
 		code.(string),
 		provider.WithRedirectURL(data.Get("redirect_url").(string)),
 		provider.WithProviderOptions(data.Get("provider_options").(map[string]string)),
@@ -164,7 +165,7 @@ func (b *backend) credsUpdateRefreshTokenOperation(ctx context.Context, req *log
 		return logical.ErrorResponse("not configured"), nil
 	}
 
-	ops := c.Provider.Private(c.Config.ClientID, c.Config.ClientSecret)
+	ops := c.ProviderWithTimeout(defaultExpiryDelta).Private(c.Config.ClientID, c.Config.ClientSecret)
 
 	refreshToken, ok := data.GetOk("refresh_token")
 	if !ok {
@@ -180,7 +181,7 @@ func (b *backend) credsUpdateRefreshTokenOperation(ctx context.Context, req *log
 		},
 	}
 	tok, err = ops.RefreshToken(
-		ctx,
+		clockctx.WithClock(ctx, b.clock),
 		tok,
 		provider.WithProviderOptions(data.Get("provider_options").(map[string]string)),
 	)
@@ -208,7 +209,7 @@ func (b *backend) credsUpdateDeviceCodeOperation(ctx context.Context, req *logic
 		return logical.ErrorResponse("not configured"), nil
 	}
 
-	ops := c.Provider.Public(c.Config.ClientID)
+	ops := c.ProviderWithTimeout(defaultExpiryDelta).Public(c.Config.ClientID)
 
 	// If a device code isn't provided, we'll end up setting this response to
 	// information important to return to the user. Otherwise, it will remain
@@ -224,7 +225,7 @@ func (b *backend) credsUpdateDeviceCodeOperation(ctx context.Context, req *logic
 		now := b.clock.Now()
 
 		auth, ok, err := ops.DeviceCodeAuth(
-			ctx,
+			clockctx.WithClock(ctx, b.clock),
 			provider.WithScopes(data.Get("scopes").([]string)),
 			provider.WithProviderOptions(data.Get("provider_options").(map[string]string)),
 		)
@@ -267,7 +268,7 @@ func (b *backend) credsUpdateDeviceCodeOperation(ctx context.Context, req *logic
 	// If we get this far, we're guaranteed to have a device code. We'll do
 	// one request to make sure that it's not completely broken. Then we'll
 	// submit it to be polled.
-	dae, ace, err = deviceAuthExchange(ctx, ops, dae, ace)
+	dae, ace, err = deviceAuthExchange(clockctx.WithClock(ctx, b.clock), ops, dae, ace)
 	if err != nil {
 		return nil, err
 	} else if ace.UserError != "" {

@@ -12,6 +12,7 @@ import (
 	"github.com/puppetlabs/leg/errmap/pkg/errmark"
 	"github.com/puppetlabs/leg/scheduler"
 	"github.com/puppetlabs/leg/timeutil/pkg/backoff"
+	"github.com/puppetlabs/leg/timeutil/pkg/clockctx"
 	"github.com/puppetlabs/leg/timeutil/pkg/retry"
 	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v2/pkg/persistence"
 )
@@ -111,7 +112,10 @@ func (b *backend) refreshCredToken(ctx context.Context, storage logical.Storage,
 		}
 
 		// Refresh.
-		refreshed, err := c.Provider.Private(c.Config.ClientID, c.Config.ClientSecret).RefreshToken(ctx, candidate.Token)
+		refreshed, err := c.
+			ProviderWithTimeout(expiryDelta).
+			Private(c.Config.ClientID, c.Config.ClientSecret).
+			RefreshToken(clockctx.WithClock(ctx, b.clock), candidate.Token)
 		if err != nil {
 			msg := errmap.Wrap(errmark.MarkShort(err), "refresh failed").Error()
 			if errmark.MarkedUser(err) {

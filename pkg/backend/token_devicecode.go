@@ -12,6 +12,7 @@ import (
 	"github.com/puppetlabs/leg/errmap/pkg/errmark"
 	"github.com/puppetlabs/leg/scheduler"
 	"github.com/puppetlabs/leg/timeutil/pkg/backoff"
+	"github.com/puppetlabs/leg/timeutil/pkg/clockctx"
 	"github.com/puppetlabs/leg/timeutil/pkg/retry"
 	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v2/pkg/oauth2ext/semerr"
 	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v2/pkg/persistence"
@@ -107,8 +108,8 @@ func (b *backend) exchangeDeviceAuth(ctx context.Context, storage logical.Storag
 
 		// Perform the exchange.
 		auth, ct, err = deviceAuthExchange(
-			ctx,
-			c.Provider.Public(c.Config.ClientID),
+			clockctx.WithClock(ctx, b.clock),
+			c.ProviderWithTimeout(defaultExpiryDelta).Public(c.Config.ClientID),
 			auth,
 			ct,
 		)

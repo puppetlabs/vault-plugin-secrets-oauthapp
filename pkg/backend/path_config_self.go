@@ -8,6 +8,7 @@ import (
 	"github.com/hashicorp/vault/sdk/logical"
 	"github.com/puppetlabs/leg/errmap/pkg/errmap"
 	"github.com/puppetlabs/leg/errmap/pkg/errmark"
+	"github.com/puppetlabs/leg/timeutil/pkg/clockctx"
 	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v2/pkg/persistence"
 	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v2/pkg/provider"
 	"golang.org/x/oauth2"
@@ -44,8 +45,8 @@ func (b *backend) configSelfUpdateOperation(ctx context.Context, req *logical.Re
 	entry.Config.Scopes = data.Get("scopes").([]string)
 	entry.Config.ProviderOptions = data.Get("provider_options").(map[string]string)
 
-	tok, err := c.Provider.Private(c.Config.ClientID, c.Config.ClientSecret).ClientCredentials(
-		ctx,
+	tok, err := c.ProviderWithTimeout(defaultExpiryDelta).Private(c.Config.ClientID, c.Config.ClientSecret).ClientCredentials(
+		clockctx.WithClock(ctx, b.clock),
 		provider.WithURLParams(entry.Config.TokenURLParams),
 		provider.WithScopes(entry.Config.Scopes),
 		provider.WithProviderOptions(entry.Config.ProviderOptions),
