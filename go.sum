@@ -651,6 +651,8 @@ github.com/puppetlabs/leg/scheduler v0.3.0 h1:buXLoomIDgclQ3NG5SKe+8jYzViIYX4ZVY
 github.com/puppetlabs/leg/scheduler v0.3.0/go.mod h1:9+nKYWy5GIWh2QsVQ/cKEI39yBn40qd3yydBu0K99Hk=
 github.com/puppetlabs/leg/timeutil v0.4.1 h1:d5+o49sHAqTFjzew1G/dAEc38EXNVC3LUtFH60/yEyM=
 github.com/puppetlabs/leg/timeutil v0.4.1/go.mod h1:NFYu1scx8y6qIzMWVzlUAxQ7Hp+2mqIeRm0QO8X29jk=
+github.com/puppetlabs/leg/timeutil v0.4.2 h1:bxbqoo9NmM8ypftLA2jB/qxfpQnCiAoMEiUGVfNMlAU=
+github.com/puppetlabs/leg/timeutil v0.4.2/go.mod h1:NFYu1scx8y6qIzMWVzlUAxQ7Hp+2mqIeRm0QO8X29jk=
 github.com/quasilyte/go-consistent v0.0.0-20190521200055-c6f3937de18c/go.mod h1:5STLWrekHfjyYwxBRVRXNOSewLJ3PWfDJd1VyTS21fI=
 github.com/quasilyte/go-ruleguard v0.2.0 h1:UOVMyH2EKkxIfzrULvA9n/tO+HtEhqD9mrLSWMr5FwU=
 github.com/quasilyte/go-ruleguard v0.2.0/go.mod h1:2RT/tf0Ce0UDj5y243iWKosQogJd8+1G3Rs2fxmlYnw=

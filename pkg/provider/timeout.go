@@ -10,23 +10,26 @@ import (
 )
 
 type TimeoutAlgorithm interface {
-	ContextWithTimeout(ctx context.Context, tok *Token) (context.Context, context.CancelFunc)
+	Timeout(ctx context.Context, tok *Token) (time.Duration, bool)
 }
 
-type noTimeoutAlgorithm struct{}
+func contextWithTimeout(ctx context.Context, alg TimeoutAlgorithm, tok *Token) (context.Context, context.CancelFunc) {
+	timeout, ok := alg.Timeout(ctx, tok)
+	if !ok {
+		return context.WithCancel(ctx)
+	}
 
-func (*noTimeoutAlgorithm) ContextWithTimeout(ctx context.Context, tok *Token) (context.Context, context.CancelFunc) {
-	return context.WithCancel(ctx)
+	return clockctx.WithTimeout(ctx, timeout)
 }
-
-var NoTimeoutAlgorithm TimeoutAlgorithm = &noTimeoutAlgorithm{}
 
 type ConstantTimeoutAlgorithm struct {
 	timeout time.Duration
 }
 
-func (cta *ConstantTimeoutAlgorithm) ContextWithTimeout(ctx context.Context, tok *Token) (context.Context, context.CancelFunc) {
-	return clockctx.WithTimeout(ctx, cta.timeout)
+var _ TimeoutAlgorithm = &ConstantTimeoutAlgorithm{}
+
+func (cta *ConstantTimeoutAlgorithm) Timeout(ctx context.Context, tok *Token) (time.Duration, bool) {
+	return cta.timeout, true
 }
 
 func NewConstantTimeoutAlgorithm(timeout time.Duration) *ConstantTimeoutAlgorithm {
@@ -36,7 +39,7 @@ func NewConstantTimeoutAlgorithm(timeout time.Duration) *ConstantTimeoutAlgorith
 }
 
 type TimeToExpiryPiecewiseTimeoutMapping struct {
-	Test      func(d time.Duration) bool
+	Test      func(d time.Duration, ok bool) bool
 	Algorithm TimeoutAlgorithm
 }
 
@@ -44,19 +47,18 @@ type TimeToExpiryPiecewiseTimeoutAlgorithm struct {
 	mappings []TimeToExpiryPiecewiseTimeoutMapping
 }
 
-func (ttepta *TimeToExpiryPiecewiseTimeoutAlgorithm) ContextWithTimeout(ctx context.Context, tok *Token) (context.Context, context.CancelFunc) {
+var _ TimeoutAlgorithm = &TimeToExpiryPiecewiseTimeoutAlgorithm{}
+
+func (ttepta *TimeToExpiryPiecewiseTimeoutAlgorithm) Timeout(ctx context.Context, tok *Token) (time.Duration, bool) {
 	remaining, ok := timeToExpiry(ctx, tok)
-	if !ok {
-		return NoTimeoutAlgorithm.ContextWithTimeout(ctx, tok)
-	}
 
 	for _, mapping := range ttepta.mappings {
-		if fn := mapping.Test; fn == nil || fn(remaining) {
-			return mapping.Algorithm.ContextWithTimeout(ctx, tok)
+		if fn := mapping.Test; fn == nil || fn(remaining, ok) {
+			return mapping.Algorithm.Timeout(ctx, tok)
 		}
 	}
 
-	return NoTimeoutAlgorithm.ContextWithTimeout(ctx, tok)
+	return 0, false
 }
 
 func NewTimeToExpiryPiecewiseTimeoutAlgorithm(mappings []TimeToExpiryPiecewiseTimeoutMapping) *TimeToExpiryPiecewiseTimeoutAlgorithm {
@@ -71,10 +73,12 @@ type LogarithmicTimeoutAlgorithm struct {
 	expiryDelta        time.Duration
 }
 
-func (lta *LogarithmicTimeoutAlgorithm) ContextWithTimeout(ctx context.Context, tok *Token) (context.Context, context.CancelFunc) {
+var _ TimeoutAlgorithm = &LogarithmicTimeoutAlgorithm{}
+
+func (lta *LogarithmicTimeoutAlgorithm) Timeout(ctx context.Context, tok *Token) (time.Duration, bool) {
 	remaining, ok := timeToExpiry(ctx, tok)
 	if !ok {
-		return clockctx.WithTimeout(ctx, lta.timeout)
+		return lta.timeout, true
 	}
 
 	// This function will scale by 1 when remaining is exactly at the
@@ -83,17 +87,22 @@ func (lta *LogarithmicTimeoutAlgorithm) ContextWithTimeout(ctx context.Context, 
 	// Note these values are constant vis-a-vis the fields of the struct, so
 	// could be calculated early, but it feels clearer here.
 	start := lta.expiryDelta.Seconds()
-	target := math.Pow(10, 1-lta.expiryLeewayFactor)
-	factor := (start * target) / (1 - target)
+	target := math.Pow(10, 1.0-lta.expiryLeewayFactor)
+	factor := (start * target) / (1.0 - target)
 
 	// Calcluate the appropriate scale value.
-	scale := 1 - math.Log10((factor-remaining.Seconds())/(start+factor))
-	if math.IsNaN(scale) || math.IsInf(scale, 0) || scale < 0 {
-		return NoTimeoutAlgorithm.ContextWithTimeout(ctx, tok)
+	scale := 1 - math.Log10((factor+remaining.Seconds())/(start+factor))
+	if math.IsNaN(scale) {
+		// Past asymptote or leeway isn't valid (e.g., is exactly 1.0), set
+		// scale to leeway factor.
+		scale = lta.expiryLeewayFactor
+	} else if scale < 0 {
+		// Below x-axis, set scale to 0 to prevent returning negative number
+		// (although this will immediate cause a timeout anyway).
+		scale = 0
 	}
 
-	timeout := time.Duration(float64(lta.timeout) * scale)
-	return clockctx.WithTimeout(ctx, timeout)
+	return time.Duration(float64(lta.timeout) * scale), true
 }
 
 func NewLogarithmicTimeoutAlgorithm(expiryLeewayFactor float64, timeout, expiryDelta time.Duration) *LogarithmicTimeoutAlgorithm {
@@ -104,45 +113,16 @@ func NewLogarithmicTimeoutAlgorithm(expiryLeewayFactor float64, timeout, expiryD
 	}
 }
 
-type IfExpiresTimeoutAlgorithm struct {
-	ifExpires TimeoutAlgorithm
-	otherwise TimeoutAlgorithm
-}
-
-func (ieta *IfExpiresTimeoutAlgorithm) ContextWithTimeout(ctx context.Context, tok *Token) (context.Context, context.CancelFunc) {
-	if _, ok := timeToExpiry(ctx, tok); ok {
-		return ieta.ifExpires.ContextWithTimeout(ctx, tok)
-	}
-
-	return ieta.otherwise.ContextWithTimeout(ctx, tok)
-}
-
-func NewIfExpiresTimeoutAlgorithm(ifExpires, otherwise TimeoutAlgorithm) *IfExpiresTimeoutAlgorithm {
-	return &IfExpiresTimeoutAlgorithm{
-		ifExpires: ifExpires,
-		otherwise: otherwise,
-	}
-}
-
 func NewBoundedLogarithmicTimeoutAlgorithm(expiryLeewayFactor float64, timeout, expiryDelta time.Duration) TimeoutAlgorithm {
-	min := NewConstantTimeoutAlgorithm(timeout)
-	max := NewConstantTimeoutAlgorithm(time.Duration(float64(timeout) * expiryLeewayFactor))
-
-	alg := NewTimeToExpiryPiecewiseTimeoutAlgorithm([]TimeToExpiryPiecewiseTimeoutMapping{
+	return NewTimeToExpiryPiecewiseTimeoutAlgorithm([]TimeToExpiryPiecewiseTimeoutMapping{
 		{
-			Test:      func(d time.Duration) bool { return d >= expiryDelta },
-			Algorithm: min,
-		},
-		{
-			Test:      func(d time.Duration) bool { return d <= 0 },
-			Algorithm: max,
+			Test:      func(d time.Duration, ok bool) bool { return !ok || d >= expiryDelta },
+			Algorithm: NewConstantTimeoutAlgorithm(timeout),
 		},
 		{
 			Algorithm: NewLogarithmicTimeoutAlgorithm(expiryLeewayFactor, timeout, expiryDelta),
 		},
 	})
-
-	return NewIfExpiresTimeoutAlgorithm(alg, min)
 }
 
 func timeToExpiry(ctx context.Context, tok *Token) (time.Duration, bool) {
@@ -170,21 +150,21 @@ func (pto *publicTimeoutOperations) AuthCodeURL(state string, opts ...AuthCodeUR
 }
 
 func (pto *publicTimeoutOperations) DeviceCodeAuth(ctx context.Context, opts ...DeviceCodeAuthOption) (*devicecode.Auth, bool, error) {
-	ctx, cancel := pto.alg.ContextWithTimeout(ctx, nil)
+	ctx, cancel := contextWithTimeout(ctx, pto.alg, nil)
 	defer cancel()
 
 	return pto.delegate.DeviceCodeAuth(ctx, opts...)
 }
 
 func (pto *publicTimeoutOperations) DeviceCodeExchange(ctx context.Context, deviceCode string, opts ...DeviceCodeExchangeOption) (*Token, error) {
-	ctx, cancel := pto.alg.ContextWithTimeout(ctx, nil)
+	ctx, cancel := contextWithTimeout(ctx, pto.alg, nil)
 	defer cancel()
 
 	return pto.delegate.DeviceCodeExchange(ctx, deviceCode, opts...)
 }
 
 func (pto *publicTimeoutOperations) RefreshToken(ctx context.Context, t *Token, opts ...RefreshTokenOption) (*Token, error) {
-	ctx, cancel := pto.alg.ContextWithTimeout(ctx, t)
+	ctx, cancel := contextWithTimeout(ctx, pto.alg, t)
 	defer cancel()
 
 	return pto.delegate.RefreshToken(ctx, t, opts...)
@@ -196,14 +176,14 @@ type privateTimeoutOperations struct {
 }
 
 func (pto *privateTimeoutOperations) AuthCodeExchange(ctx context.Context, code string, opts ...AuthCodeExchangeOption) (*Token, error) {
-	ctx, cancel := pto.alg.ContextWithTimeout(ctx, nil)
+	ctx, cancel := contextWithTimeout(ctx, pto.alg, nil)
 	defer cancel()
 
 	return pto.delegate.AuthCodeExchange(ctx, code, opts...)
 }
 
 func (pto *privateTimeoutOperations) ClientCredentials(ctx context.Context, opts ...ClientCredentialsOption) (*Token, error) {
-	ctx, cancel := pto.alg.ContextWithTimeout(ctx, nil)
+	ctx, cancel := contextWithTimeout(ctx, pto.alg, nil)
 	defer cancel()
 
 	return pto.delegate.ClientCredentials(ctx, opts...)

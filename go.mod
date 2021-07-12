@@ -13,7 +13,7 @@ require (
 	github.com/pquerna/cachecontrol v0.0.0-20180517163645-1555304b9b35 // indirect
 	github.com/puppetlabs/leg/errmap v0.1.0
 	github.com/puppetlabs/leg/scheduler v0.3.0
-	github.com/puppetlabs/leg/timeutil v0.4.1
+	github.com/puppetlabs/leg/timeutil v0.4.2
 	github.com/spf13/afero v1.2.2 // indirect
 	github.com/stretchr/testify v1.6.1
 	golang.org/x/oauth2 v0.0.0-20190604053449-0f29369cfe45
