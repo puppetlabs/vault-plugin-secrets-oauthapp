@@ -2,6 +2,7 @@ package backend
 
 import (
 	"context"
+	"time"
 
 	"github.com/hashicorp/vault/sdk/logical"
 	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v2/pkg/persistence"
@@ -12,6 +13,26 @@ type cache struct {
 	Config   *persistence.ConfigEntry
 	Provider provider.Provider
 	cancel   context.CancelFunc
+}
+
+func (c *cache) ProviderWithTimeout(expiryDelta time.Duration) provider.Provider {
+	if c.Config.Tuning.ProviderTimeoutSeconds <= 0 {
+		return c.Provider
+	}
+
+	// Minimum ramp-up time. TODO: Should this be hardcoded?
+	if expiryDelta < time.Minute {
+		expiryDelta = time.Minute
+	}
+
+	return provider.NewTimeoutProvider(
+		c.Provider,
+		provider.NewBoundedLogarithmicTimeoutAlgorithm(
+			c.Config.Tuning.ProviderTimeoutExpiryLeewayFactor,
+			time.Duration(c.Config.Tuning.ProviderTimeoutSeconds)*time.Second,
+			expiryDelta,
+		),
+	)
 }
 
 func (c *cache) Close() {

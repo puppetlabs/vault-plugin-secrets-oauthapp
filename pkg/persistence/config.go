@@ -16,19 +16,50 @@ type ConfigVersion int
 const (
 	ConfigVersionInitial ConfigVersion = iota
 	ConfigVersion1
-	ConfigVersionLatest = ConfigVersion1
+	ConfigVersion2
+	ConfigVersionLatest = ConfigVersion2
 )
 
 func (cv ConfigVersion) SupportsTuningRefresh() bool {
 	return cv >= ConfigVersion1
 }
 
+func (cv ConfigVersion) SupportsTuningRefreshExpiryDelta() bool {
+	return cv >= ConfigVersion2
+}
+
+func (cv ConfigVersion) SupportsTuningProviderTimeout() bool {
+	return cv >= ConfigVersion2
+}
+
+func (cv ConfigVersion) SupportsTuningReaper() bool {
+	return cv >= ConfigVersion2
+}
+
 type ConfigTuningEntry struct {
-	RefreshCheckIntervalSeconds int `json:"refresh_check_interval_seconds"`
+	ProviderTimeoutSeconds            int     `json:"provider_timeout_seconds"`
+	ProviderTimeoutExpiryLeewayFactor float64 `json:"provider_timeout_expiry_leeway_factor"`
+	RefreshCheckIntervalSeconds       int     `json:"refresh_check_interval_seconds"`
+	RefreshExpiryDeltaFactor          float64 `json:"refresh_expiry_delta_factor"`
+	ReapCheckIntervalSeconds          int     `json:"reap_check_interval_seconds"`
+	ReapDryRun                        bool    `json:"reap_dry_run"`
+	ReapNonRefreshableSeconds         int     `json:"reap_non_refreshable_seconds"`
+	ReapRevokedSeconds                int     `json:"reap_revoked_seconds"`
+	ReapTransientErrorAttempts        int     `json:"reap_transient_error_attempts"`
+	ReapTransientErrorSeconds         int     `json:"reap_transient_error_seconds"`
 }
 
 var DefaultConfigTuningEntry = ConfigTuningEntry{
-	RefreshCheckIntervalSeconds: 60,
+	ProviderTimeoutSeconds:            30,
+	ProviderTimeoutExpiryLeewayFactor: 1.5,
+	RefreshCheckIntervalSeconds:       60,
+	RefreshExpiryDeltaFactor:          1.2,
+	ReapCheckIntervalSeconds:          300,
+	ReapDryRun:                        false,
+	ReapNonRefreshableSeconds:         86400,
+	ReapRevokedSeconds:                3600,
+	ReapTransientErrorAttempts:        10,
+	ReapTransientErrorSeconds:         86400,
 }
 
 type ConfigEntry struct {
@@ -61,6 +92,29 @@ func (lcm *LockedConfigManager) ReadConfig(ctx context.Context) (*ConfigEntry, e
 
 	if !entry.Version.SupportsTuningRefresh() {
 		entry.Tuning.RefreshCheckIntervalSeconds = DefaultConfigTuningEntry.RefreshCheckIntervalSeconds
+	}
+
+	if !entry.Version.SupportsTuningRefreshExpiryDelta() {
+		entry.Tuning.RefreshExpiryDeltaFactor = DefaultConfigTuningEntry.RefreshExpiryDeltaFactor
+	}
+
+	if !entry.Version.SupportsTuningProviderTimeout() {
+		entry.Tuning.ProviderTimeoutSeconds = DefaultConfigTuningEntry.ProviderTimeoutSeconds
+		entry.Tuning.ProviderTimeoutExpiryLeewayFactor = DefaultConfigTuningEntry.ProviderTimeoutExpiryLeewayFactor
+	}
+
+	if !entry.Version.SupportsTuningReaper() {
+		// Disable reaper (users must opt in by writing new configuration
+		// version).
+		entry.Tuning.ReapCheckIntervalSeconds = 0
+
+		// We set the other values so users can see what they'll get by default
+		// if they enable it.
+		entry.Tuning.ReapDryRun = DefaultConfigTuningEntry.ReapDryRun
+		entry.Tuning.ReapNonRefreshableSeconds = DefaultConfigTuningEntry.ReapNonRefreshableSeconds
+		entry.Tuning.ReapRevokedSeconds = DefaultConfigTuningEntry.ReapRevokedSeconds
+		entry.Tuning.ReapTransientErrorAttempts = DefaultConfigTuningEntry.ReapTransientErrorAttempts
+		entry.Tuning.ReapTransientErrorSeconds = DefaultConfigTuningEntry.ReapTransientErrorSeconds
 	}
 
 	return entry, nil

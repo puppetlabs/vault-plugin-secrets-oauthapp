@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/hashicorp/vault/sdk/logical"
+	"github.com/puppetlabs/leg/timeutil/pkg/clockctx"
 	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v2/pkg/persistence"
 	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v2/pkg/provider"
 )
@@ -32,12 +33,15 @@ func (b *backend) updateClientCredsToken(ctx context.Context, storage logical.St
 			return ErrNotConfigured
 		}
 
-		updated, err := c.Provider.Private(c.Config.ClientID, c.Config.ClientSecret).ClientCredentials(
-			ctx,
-			provider.WithURLParams(candidate.Config.TokenURLParams),
-			provider.WithScopes(candidate.Config.Scopes),
-			provider.WithProviderOptions(candidate.Config.ProviderOptions),
-		)
+		updated, err := c.
+			ProviderWithTimeout(expiryDelta).
+			Private(c.Config.ClientID, c.Config.ClientSecret).
+			ClientCredentials(
+				clockctx.WithClock(ctx, b.clock),
+				provider.WithURLParams(candidate.Config.TokenURLParams),
+				provider.WithScopes(candidate.Config.Scopes),
+				provider.WithProviderOptions(candidate.Config.ProviderOptions),
+			)
 		if err != nil {
 			return err
 		}

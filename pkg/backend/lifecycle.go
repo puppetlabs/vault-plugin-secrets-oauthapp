@@ -9,19 +9,19 @@ import (
 )
 
 func (b *backend) initialize(ctx context.Context, req *logical.InitializationRequest) error {
+	deviceCodeExchange := &deviceCodeExchangeDescriptor{backend: b, storage: req.Storage}
 	refresh, restartRefresh := scheduler.NewRestartableDescriptor(&refreshDescriptor{backend: b, storage: req.Storage})
+	reap, restartReap := scheduler.NewRestartableDescriptor(&reapDescriptor{backend: b, storage: req.Storage})
 
 	b.scheduler = scheduler.NewSegment(16, []scheduler.Descriptor{
-		scheduler.NewRecoveryDescriptor(
-			&deviceCodeExchangeDescriptor{backend: b, storage: req.Storage},
-			scheduler.RecoveryDescriptorWithClock(b.clock),
-		),
-		scheduler.NewRecoveryDescriptor(
-			refresh,
-			scheduler.RecoveryDescriptorWithClock(b.clock),
-		),
+		scheduler.NewRecoveryDescriptor(deviceCodeExchange, scheduler.RecoveryDescriptorWithClock(b.clock)),
+		scheduler.NewRecoveryDescriptor(refresh, scheduler.RecoveryDescriptorWithClock(b.clock)),
+		scheduler.NewRecoveryDescriptor(reap, scheduler.RecoveryDescriptorWithClock(b.clock)),
 	}).WithErrorBehavior(scheduler.ErrorBehaviorDrop).Start(scheduler.LifecycleStartOptions{})
-	b.restartRefresh = restartRefresh
+	b.restartDescriptors = func() {
+		restartRefresh()
+		restartReap()
+	}
 
 	return nil
 }
@@ -35,8 +35,8 @@ func (b *backend) reset() {
 		b.cache = nil
 	}
 
-	if b.restartRefresh != nil {
-		b.restartRefresh()
+	if b.restartDescriptors != nil {
+		b.restartDescriptors()
 	}
 }
 

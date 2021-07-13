@@ -20,9 +20,18 @@ type MockRoundTripper struct {
 }
 
 func (mrt *MockRoundTripper) RoundTrip(r *http.Request) (*http.Response, error) {
+	ch := make(chan struct{})
 	w := httptest.NewRecorder()
-	mrt.Handler.ServeHTTP(w, r)
-	return w.Result(), nil
+	go func() {
+		defer close(ch)
+		mrt.Handler.ServeHTTP(w, r)
+	}()
+	select {
+	case <-ch:
+		return w.Result(), nil
+	case <-r.Context().Done():
+		return nil, r.Context().Err()
+	}
 }
 
 var MockEndpoint = provider.Endpoint{

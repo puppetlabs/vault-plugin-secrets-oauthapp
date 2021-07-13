@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"time"
 
 	"github.com/hashicorp/vault/sdk/logical"
@@ -11,6 +12,7 @@ import (
 	"github.com/puppetlabs/leg/errmap/pkg/errmark"
 	"github.com/puppetlabs/leg/scheduler"
 	"github.com/puppetlabs/leg/timeutil/pkg/backoff"
+	"github.com/puppetlabs/leg/timeutil/pkg/clockctx"
 	"github.com/puppetlabs/leg/timeutil/pkg/retry"
 	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v2/pkg/persistence"
 )
@@ -51,17 +53,24 @@ func (rd *refreshDescriptor) Run(ctx context.Context, pc chan<- scheduler.Proces
 
 	refreshInterval := time.Duration(c.Config.Tuning.RefreshCheckIntervalSeconds) * time.Second
 
+	expiryDeltaSeconds := float64(c.Config.Tuning.RefreshCheckIntervalSeconds) * c.Config.Tuning.RefreshExpiryDeltaFactor
+	if lim := float64(math.MaxInt64 / time.Second); expiryDeltaSeconds > lim {
+		expiryDeltaSeconds = lim
+	}
+
 	b := backoff.Build(
 		backoff.Constant(refreshInterval),
 		backoff.NonSliding,
 	)
 	err = retry.Wait(ctx, func(ctx context.Context) (bool, error) {
+		rd.backend.logger.Debug("running automatic credential refresh")
+
 		err := rd.backend.data.Managers(rd.storage).AuthCode().ForEachAuthCodeKey(ctx, func(keyer persistence.AuthCodeKeyer) {
 			proc := &refreshProcess{
 				backend:     rd.backend,
 				storage:     rd.storage,
 				keyer:       keyer,
-				expiryDelta: refreshInterval + 10*time.Second,
+				expiryDelta: time.Duration(expiryDeltaSeconds) * time.Second,
 			}
 
 			select {
@@ -103,7 +112,10 @@ func (b *backend) refreshCredToken(ctx context.Context, storage logical.Storage,
 		}
 
 		// Refresh.
-		refreshed, err := c.Provider.Private(c.Config.ClientID, c.Config.ClientSecret).RefreshToken(ctx, candidate.Token)
+		refreshed, err := c.
+			ProviderWithTimeout(expiryDelta).
+			Private(c.Config.ClientID, c.Config.ClientSecret).
+			RefreshToken(clockctx.WithClock(ctx, b.clock), candidate.Token)
 		if err != nil {
 			msg := errmap.Wrap(errmark.MarkShort(err), "refresh failed").Error()
 			if errmark.MarkedUser(err) {

@@ -151,13 +151,6 @@ $ vault write oauth2/bitbucket/config/self/my-machine-auth \
 Success! Data written to: oauth2/bitbucket/config/self/my-machine-auth
 ```
 
-### Automatic refresh checking
-
-By default tokens are automatically checked for refresh every 60
-seconds.  You can change that interval by setting the
-`tune_refresh_check_interval_seconds` config option to another number of
-seconds.  If set to zero, tokens will be refreshed only on demand.
-
 ## Tips
 
 For some operations, you may find that you need to provide a map of data for a
@@ -169,6 +162,79 @@ $ vault write oauth2/oidc/config \
     provider_options=issuer_url=https://login.example.com \
     provider_options=extra_data_fields=id_token_claims
 ```
+
+## Performance tuning
+
+There are several categories of performance tuning options you may want to
+adjust to get the most out of this plugin. All of the options are fields set
+when writing this plugin's configuration to the `config` endpoint.
+
+### Provider timeouts
+
+It can be inconvenient when a provider you're working with doesn't respond to
+requests in a reasonable time. Therefore, we apply a default timeout of 30
+seconds to all outbound requests. We also allow for a bit of leeway when a token
+is getting close to its expiry, preferring to wait longer to avoid clients
+having to retry requests to Vault. This is applied using a logarithmic algorithm
+relative to the usual grace period we'd use for refreshing.
+
+You can set the initial provider timeout using the
+`tune_provider_timeout_seconds` option. If you set it to 0, we won't apply any
+timeout.
+
+The default leeway factor is 1.5, i.e., a maximum timeout of 45 seconds when a
+token is close to expiration. You can set a different factor using the
+`tune_provider_timeout_expiry_leeway_factor` option. To disable timeout scaling,
+set the leeway factor to 1.
+
+### Automatic refreshing
+
+To avoid having to contact providers when tokens are read from storage and need
+to be refreshed, this plugin will automatically check and attempt to refresh
+tokens that are close to expiring on a regular interval. The default check
+interval is 1 minute. The refresh check has a grace period, called the expiry
+delta, that extends beyond the refresh check interval to allow for some overlap.
+The default expiry delta factor is 1.2, or 72 seconds.
+
+You can set the refresh check interval using the
+`tune_refresh_check_interval_seconds` option and the expiry delta factor using
+the `tune_refresh_expiry_delta_factor` option.
+
+If you don't need this behavior, for example because your provider doesn't use
+refresh tokens, you can set `tune_refresh_check_interval_seconds` to 0.
+
+Alternatively, if you have a relatively small number of tokens and your provider
+issues tokens with very long expirations, you may want to use a longer refresh
+interval than the default to avoid having to loop over all credentials in
+storage every minute.
+
+### Automatic reaping
+
+There are a number of situations that result in stored tokens becoming unusable.
+Broadly, we group these into the following categories:
+
+* Expired with no refresh token
+* Expired and refresh failed because the provider rejected the refresh request
+* Expired and enough transient errors have occurred to discard the token (for
+  example, instead of rejecting a token, the provider hangs the connection)
+
+This plugin can automatically delete tokens that are expired and meet one of
+these criteria using a process called reaping. Like the automatic refreshing,
+reaping runs on an interval, by default 5 minutes. You can change the reap
+interval using the `tune_reap_check_interval_seconds` option.
+
+You can disable the reaper entirely by setting the option to 0, or you can
+enable a dry run mode using the `tune_reap_dry_run` option. When in dry run
+mode, you can check your Vault server logs to see which credentials would be
+deleted.
+
+The criteria are mutually exclusive, so for example, a token that has a provider
+refresh rejection will always have that criterion applied to it, even if it also
+has transient errors.
+
+Each of the criteria have their own tuning options documented in the `config`
+endpoint. Note that the defaults should be reasonable for most users. You can
+disable any of the criteria by setting its corresponding option to 0.
 
 ## Endpoints
 
@@ -191,12 +257,21 @@ configuration, so you must specify all required fields, even when updating.
 | `provider` | The name of the provider to use. See [the list of providers](#providers). | String | None | Yes |
 | `provider_options` | Options to configure the specified provider. | Map of String🠦String | None | No |
 
-There is also an additional configuration option that may be set for
-fine tuning.
+In addition to basic configuration, this endpoint allows you to set performance
+and application-specific tuning options for the plugin:
 
-| Name | Description | Type | Default |
-|------|-------------|------|---------|
-| `tune_refresh_check_interval_seconds` | Number of seconds between checking tokens for refresh. | Integer | 60 |
+| Name | Description | Type | Default | Required |
+|------|-------------|------|---------|----------|
+| `tune_provider_timeout_seconds` | Maximum duration to wait for a response from the provider for background credential operations. | Integer | 30 | No |
+| `tune_provider_timeout_expiry_leeway_factor` | A multiplier for the `tune_provider_timeout_seconds` option to allow a slow provider to respond as a credential approaches expiration. Must be at least 1. | Number | 1.5 | No |
+| `tune_refresh_check_interval_seconds` | Number of seconds between checking tokens for refresh. Set to 0 to disable automatic background refreshing. | Integer | 60 | No |
+| `tune_refresh_expiry_delta_factor` | A multiplier for the refresh check interval to use to detect tokens that will expire soon after the impending refresh. Must be at least 1. | Number | 1.2 | No |
+| `tune_reap_check_interval_seconds` | Number of seconds between running the reaper process. Set to 0 to disable automatic reaping of expired credentials. | Integer | 300<sup id="ret-1">[1](#footnote-1)</sup> | No |
+| `tune_reap_dry_run` | If set, the reaper process will only report which credentials it would remove, but not actually delete them from storage. | Boolean | False | No |
+| `tune_reap_non_refreshable_seconds` | Minimum additional time to wait before automatically deleting an expired credential that does not have a refresh token. Set to 0 to disable this reaping criterion. | Integer | 86400 | No |
+| `tune_reap_revoked_seconds` | Minimum additional time to wait before automatically deleting an expired credential that has a revoked refresh token. Set to 0 to disable this reaping criterion. | Integer | 3600 | No |
+| `tune_reap_transient_error_attempts` | Minimum number of refresh attempts to make before automatically deleting an expired credential. Set to 0 to disable this reaping criterion. | Integer | 10 | No |
+| `tune_reap_transient_error_seconds` | Minimum additional time to wait before automatically deleting an expired credential that cannot be refreshed because of a transient problem like network connectivity issues. Set to 0 to disable this reaping criterion. | Integer | 86400 | No |
 
 #### `DELETE` (`delete`)
 
@@ -218,7 +293,7 @@ endpoint will return an error.
 | `redirect_url` | The URL to redirect to once the user has authorized this application. | String | None | No |
 | `scopes` | A list of explicit scopes to request. | List of String | None | No |
 | `state` | The unique state to send to the authorization URL. | String | None | Yes |
-| `provider_options` | A list of options to pass on to the provider for configuring the authorization code URL. | Map of String🠦String | None | None |
+| `provider_options` | A list of options to pass on to the provider for configuring the authorization code URL. | Map of String🠦String | None | No |
 
 ### `config/self/:name`
 
@@ -237,7 +312,7 @@ the `client_credentials` grant type.
 |------|-------------|------|---------|----------|
 | `token_url_params` | A map of additional query string parameters to provide to the token URL. If any keys in this map conflict with the parameters stored in the configuration, the configuration's parameters take precedence. | Map of String🠦String | None | No |
 | `scopes` | A list of explicit scopes to request. | List of String | None | No |
-| `provider_options` | A list of options to pass on to the provider for configuring this token exchange. | Map of String🠦String | None | None |
+| `provider_options` | A list of options to pass on to the provider for configuring this token exchange. | Map of String🠦String | None | No |
 
 #### `DELETE` (`delete`)
 
@@ -257,10 +332,7 @@ using the `refresh_token` grant type if possible.
 
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|----------|
-| `minimum_seconds` | Minimum seconds before access token expires | Integer | * | No |
-
-\* Defaults to underlying library default, which is 10 seconds unless
-  the token expiration time is set to zero.
+| `minimum_seconds` | Minimum additional duration to require the access token to be valid for. | Integer | 10<sup id="ret-2-a">[2](#footnote-2)</sup> | No |
 
 #### `PUT` (`write`)
 
@@ -270,7 +342,7 @@ type.
 
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|----------|
-| `grant_type` | The grant type to use. Must be one of `authorization_code`, `refresh_token`, or `urn:ietf:params:oauth:grant-type:device_code`. | String | `authorization_code`* | No |
+| `grant_type` | The grant type to use. Must be one of `authorization_code`, `refresh_token`, or `urn:ietf:params:oauth:grant-type:device_code`. | String | `authorization_code`<sup id="ret-3">[3](#footnote-3)</sup> | No |
 | `provider_options` | A list of options to pass on to the provider for configuring this token exchange. | Map of String🠦String | None | Refer to provider documentation |
 
 This operation takes additional fields depending on which grant type is chosen:
@@ -295,8 +367,6 @@ This operation takes additional fields depending on which grant type is chosen:
 | `device_code` | A device code that has already been retrieved. If not specified, a new device code will be retrieved. | String | None | No |
 | `scopes` | If a device code is not specified, the scopes to request. | List of String | None | No |
 
-\* For compatibility, if `grant_type` is not provided and `refresh_token` is set, the `grant_type` will default to `refresh_token`.
-
 #### `DELETE` (`delete`)
 
 Remove the credential information from storage. This does not delete the
@@ -316,10 +386,7 @@ new credential using the `client_credentials` grant type.
 
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|----------|
-| `minimum_seconds` | Minimum seconds before access token expires | Integer | * | No |
-
-\* Defaults to underlying library default, which is 10 seconds unless
-  the token expiration time is set to zero.
+| `minimum_seconds` | Minimum additional duration to require the access token to be valid for. | Integer | 10<sup id="ret-2-b">[2](#footnote-2)</sup> | No |
 
 #### `DELETE` (`delete`)
 
@@ -413,3 +480,18 @@ arbitrary OAuth 2 authorization code grant flow.
 | `device_code_url` | The URL to subject a device authorization request to. | None | No |
 | `token_url` | The URL to use for exchanging temporary codes and refreshing access tokens. | None | Yes |
 | `auth_style` | How to authenticate to the token URL. If specified, must be one of `in_header` or `in_params`. | Automatically detect | No |
+
+
+## Footnotes
+
+<span id="footnote-1"><sup>1</sup> For users upgrading from versions prior to
+2.2.0 with valid configurations, the reaper will not be automatically enabled
+unless you replace your configuration. <small>[↩](#ret-1)</small></span>
+
+<span id="footnote-2"><sup>2</sup> The default is 10 seconds as specified in the
+Go [OAuth 2.0 library](https://github.com/golang/oauth2) unless the token does
+not expire. <small>↩ [a](#ret-2-a) [b](#ret-2-b)</small></span>
+
+<span id="footnote-3"><sup>3</sup> For compatibility, if `grant_type` is not
+provided and `refresh_token` is set, the `grant_type` will default to
+`refresh_token`. <small>[↩](#ret-3)</small></span>

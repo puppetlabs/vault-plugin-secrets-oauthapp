@@ -181,7 +181,7 @@ func TestTuneRefreshCheckInterval(t *testing.T) {
 				"client_id":                           client.ID,
 				"client_secret":                       client.Secret,
 				"provider":                            "mock",
-				"tune_refresh_check_interval_seconds": checkInterval / time.Second,
+				"tune_refresh_check_interval_seconds": checkInterval.String(),
 			},
 		}
 

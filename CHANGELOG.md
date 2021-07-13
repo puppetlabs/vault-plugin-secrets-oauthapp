@@ -8,6 +8,10 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+* Add additional performance tuning options for provider timeouts and automatic credential reaping.
+
 ## [2.1.1] - 2021-06-25
 
 ### Fixed

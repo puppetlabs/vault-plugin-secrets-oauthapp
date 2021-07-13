@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"time"
 
 	"github.com/hashicorp/vault/sdk/framework"
 	"github.com/hashicorp/vault/sdk/logical"
@@ -22,12 +23,24 @@ func (b *backend) configReadOperation(ctx context.Context, req *logical.Request,
 
 	resp := &logical.Response{
 		Data: map[string]interface{}{
-			"client_id":                           c.Config.ClientID,
-			"auth_url_params":                     c.Config.AuthURLParams,
-			"provider":                            c.Config.ProviderName,
-			"provider_version":                    c.Config.ProviderVersion,
-			"provider_options":                    c.Config.ProviderOptions,
+			"client_id":        c.Config.ClientID,
+			"auth_url_params":  c.Config.AuthURLParams,
+			"provider":         c.Config.ProviderName,
+			"provider_version": c.Config.ProviderVersion,
+			"provider_options": c.Config.ProviderOptions,
+
+			"tune_provider_timeout_seconds":              c.Config.Tuning.ProviderTimeoutSeconds,
+			"tune_provider_timeout_expiry_leeway_factor": c.Config.Tuning.ProviderTimeoutExpiryLeewayFactor,
+
 			"tune_refresh_check_interval_seconds": c.Config.Tuning.RefreshCheckIntervalSeconds,
+			"tune_refresh_expiry_delta_factor":    c.Config.Tuning.RefreshExpiryDeltaFactor,
+
+			"tune_reap_check_interval_seconds":   c.Config.Tuning.ReapCheckIntervalSeconds,
+			"tune_reap_dry_run":                  c.Config.Tuning.ReapDryRun,
+			"tune_reap_non_refreshable_seconds":  c.Config.Tuning.ReapNonRefreshableSeconds,
+			"tune_reap_revoked_seconds":          c.Config.Tuning.ReapRevokedSeconds,
+			"tune_reap_transient_error_attempts": c.Config.Tuning.ReapTransientErrorAttempts,
+			"tune_reap_transient_error_seconds":  c.Config.Tuning.ReapTransientErrorSeconds,
 		},
 	}
 	return resp, nil
@@ -55,11 +68,6 @@ func (b *backend) configUpdateOperation(ctx context.Context, req *logical.Reques
 		return nil, err
 	}
 
-	refresh_interval := data.Get("tune_refresh_check_interval_seconds").(int)
-	if refresh_interval < 0 || refresh_interval > 90*24*60*60 {
-		return logical.ErrorResponse("invalid tune_refresh_check_interval_seconds"), nil
-	}
-
 	c := &persistence.ConfigEntry{
 		Version:         persistence.ConfigVersionLatest,
 		ClientID:        clientID.(string),
@@ -69,9 +77,33 @@ func (b *backend) configUpdateOperation(ctx context.Context, req *logical.Reques
 		ProviderVersion: p.Version(),
 		ProviderOptions: providerOptions,
 		Tuning: persistence.ConfigTuningEntry{
-			RefreshCheckIntervalSeconds: refresh_interval,
+			ProviderTimeoutSeconds:            data.Get("tune_provider_timeout_seconds").(int),
+			ProviderTimeoutExpiryLeewayFactor: data.Get("tune_provider_timeout_expiry_leeway_factor").(float64),
+			RefreshCheckIntervalSeconds:       data.Get("tune_refresh_check_interval_seconds").(int),
+			RefreshExpiryDeltaFactor:          data.Get("tune_refresh_expiry_delta_factor").(float64),
+			ReapCheckIntervalSeconds:          data.Get("tune_reap_check_interval_seconds").(int),
+			ReapDryRun:                        data.Get("tune_reap_dry_run").(bool),
+			ReapNonRefreshableSeconds:         data.Get("tune_reap_non_refreshable_seconds").(int),
+			ReapRevokedSeconds:                data.Get("tune_reap_revoked_seconds").(int),
+			ReapTransientErrorAttempts:        data.Get("tune_reap_transient_error_attempts").(int),
+			ReapTransientErrorSeconds:         data.Get("tune_reap_transient_error_seconds").(int),
 		},
 	}
+
+	// Sanity checks for tuning options.
+	switch {
+	case c.Tuning.ProviderTimeoutExpiryLeewayFactor < 1:
+		return logical.ErrorResponse("provider timeout expiry leeway factor must be at least 1.0"), nil
+	case c.Tuning.RefreshCheckIntervalSeconds > int((90 * 24 * time.Hour).Seconds()):
+		return logical.ErrorResponse("refresh check interval can be at most 90 days"), nil
+	case c.Tuning.RefreshExpiryDeltaFactor < 1:
+		return logical.ErrorResponse("refresh expiry delta factor must be at least 1.0"), nil
+	case c.Tuning.ReapCheckIntervalSeconds > int((180 * 24 * time.Hour).Seconds()):
+		return logical.ErrorResponse("reap check interval can be at most 180 days"), nil
+	case c.Tuning.ReapTransientErrorAttempts < 0:
+		return logical.ErrorResponse("reap transient error attempts cannot be negative"), nil
+	}
+
 	if err := b.data.Managers(req.Storage).Config().WriteConfig(ctx, c); err != nil {
 		return nil, err
 	}
@@ -151,10 +183,55 @@ var configFields = map[string]*framework.FieldSchema{
 		Type:        framework.TypeKVPairs,
 		Description: "Specifies any provider-specific options.",
 	},
+	"tune_provider_timeout_seconds": {
+		Type:        framework.TypeDurationSecond,
+		Description: "Specifies the maximum time to wait for a provider response in seconds. Infinite if 0.",
+		Default:     persistence.DefaultConfigTuningEntry.ProviderTimeoutSeconds,
+	},
+	"tune_provider_timeout_expiry_leeway_factor": {
+		Type:        framework.TypeFloat,
+		Description: "Specifies a multiplier for the provider timeout when a credential is about to expire. Must be at least 1.",
+		Default:     persistence.DefaultConfigTuningEntry.ProviderTimeoutExpiryLeewayFactor,
+	},
 	"tune_refresh_check_interval_seconds": {
-		Type:        framework.TypeInt,
-		Description: "Specifies the interval in seconds between credential refresh, disabled if 0.",
+		Type:        framework.TypeDurationSecond,
+		Description: "Specifies the interval in seconds between invocations of the credential refresh background process. Disabled if 0.",
 		Default:     persistence.DefaultConfigTuningEntry.RefreshCheckIntervalSeconds,
+	},
+	"tune_refresh_expiry_delta_factor": {
+		Type:        framework.TypeFloat,
+		Description: "Specifies a multipler for the refresh check interval to use to detect tokens that will expire soon after a background refresh process is invoked. Must be at least 1.",
+		Default:     persistence.DefaultConfigTuningEntry.RefreshExpiryDeltaFactor,
+	},
+	"tune_reap_check_interval_seconds": {
+		Type:        framework.TypeDurationSecond,
+		Description: "Specifies the interval in seconds between invocations of the expired credential reaper background process. Disabled if 0.",
+		Default:     persistence.DefaultConfigTuningEntry.ReapCheckIntervalSeconds,
+	},
+	"tune_reap_dry_run": {
+		Type:        framework.TypeBool,
+		Description: "Specifies whether the expired credential reaper should merely report on what it would delete.",
+		Default:     persistence.DefaultConfigTuningEntry.ReapDryRun,
+	},
+	"tune_reap_non_refreshable_seconds": {
+		Type:        framework.TypeDurationSecond,
+		Description: "Specifies the minimum additional time to wait before automatically deleting an expired credential that does not have a refresh token. Set to 0 to disable this reaping criterion.",
+		Default:     persistence.DefaultConfigTuningEntry.ReapNonRefreshableSeconds,
+	},
+	"tune_reap_revoked_seconds": {
+		Type:        framework.TypeDurationSecond,
+		Description: "Specifies the minimum additional time to wait before automatically deleting an expired credential that has a revoked refresh token. Set to 0 to disable this reaping criterion.",
+		Default:     persistence.DefaultConfigTuningEntry.ReapRevokedSeconds,
+	},
+	"tune_reap_transient_error_attempts": {
+		Type:        framework.TypeInt,
+		Description: "Specifies the minimum number of refresh attempts to make before automatically deleting an expired credential. Set to 0 to disable this reaping criterion.",
+		Default:     persistence.DefaultConfigTuningEntry.ReapTransientErrorAttempts,
+	},
+	"tune_reap_transient_error_seconds": {
+		Type:        framework.TypeDurationSecond,
+		Description: "Specifies the minimum additional time to wait before automatically deleting an expired credential that cannot be refreshed because of a transient problem like network connectivity issues. Set to 0 to disable this reaping criterion.",
+		Default:     persistence.DefaultConfigTuningEntry.ReapTransientErrorSeconds,
 	},
 }
 
