@@ -165,10 +165,76 @@ $ vault write oauth2/oidc/config \
 
 ## Performance tuning
 
-By default tokens are automatically checked for refresh every 60
-seconds.  You can change that interval by setting the
-`tune_refresh_check_interval_seconds` config option to another number of
-seconds.  If set to zero, tokens will be refreshed only on demand.
+There are several categories of performance tuning options you may want to
+adjust to get the most out of this plugin. All of the options are fields set
+when writing this plugin's configuration to the `config` endpoint.
+
+### Provider timeouts
+
+It can be inconvenient when a provider you're working with doesn't respond to
+requests in a reasonable time. Therefore, we apply a default timeout of 30
+seconds to all outbound requests. We also allow for a bit of leeway when a token
+is getting close to its expiry, preferring to wait longer to avoid clients
+having to retry requests to Vault. This is applied using a logarithmic algorithm
+relative to the usual grace period we'd use for refreshing.
+
+You can set the initial provider timeout using the
+`tune_provider_timeout_seconds` option. If you set it to 0, we won't apply any
+timeout.
+
+The default leeway factor is 1.5, i.e., a maximum timeout of 45 seconds when a
+token is close to expiration. You can set a different factor using the
+`tune_provider_timeout_expiry_leeway_factor` option. To disable timeout scaling,
+set the leeway factor to 1.
+
+### Automatic refreshing
+
+To avoid having to contact providers when tokens are read from storage and need
+to be refreshed, this plugin will automatically check and attempt to refresh
+tokens that are close to expiring on a regular interval. The default check
+interval is 1 minute. The refresh check has a grace period, called the expiry
+delta, that extends beyond the refresh check interval to allow for some overlap.
+The default expiry delta factor is 1.2, or 72 seconds.
+
+You can set the refresh check interval using the
+`tune_refresh_check_interval_seconds` option and the expiry delta factor using
+the `tune_refresh_expiry_delta_factor` option.
+
+If you don't need this behavior, for example because your provider doesn't use
+refresh tokens, you can set `tune_refresh_check_interval_seconds` to 0.
+
+Alternatively, if you have a relatively small number of tokens and your provider
+issues tokens with very long expirations, you may want to use a longer refresh
+interval than the default to avoid having to loop over all credentials in
+storage every minute.
+
+### Automatic reaping
+
+There are a number of situations that result in stored tokens becoming unusable.
+Broadly, we group these into the following categories:
+
+* Expired with no refresh token
+* Expired and refresh failed because the provider rejected the refresh request
+* Expired and enough transient errors have occurred to discard the token (for
+  example, instead of rejecting a token, the provider hangs the connection)
+
+This plugin can automatically delete tokens that are expired and meet one of
+these criteria using a process called reaping. Like the automatic refreshing,
+reaping runs on an interval, by default 5 minutes. You can change the reap
+interval using the `tune_reap_check_interval_seconds` option.
+
+You can disable the reaper entirely by setting the option to 0, or you can
+enable a dry run mode using the `tune_reap_dry_run` option. When in dry run
+mode, you can check your Vault server logs to see which credentials would be
+deleted.
+
+The criteria are mutually exclusive, so for example, a token that has a provider
+refresh rejection will always have that criterion applied to it, even if it also
+has transient errors.
+
+Each of the criteria have their own tuning options documented in the `config`
+endpoint. Note that the defaults should be reasonable for most users. You can
+disable any of the criteria by setting its corresponding option to 0.
 
 ## Endpoints
 
@@ -422,6 +488,10 @@ arbitrary OAuth 2 authorization code grant flow.
 2.2.0 with valid configurations, the reaper will not be automatically enabled
 unless you replace your configuration. <small>[↩](#ret-1)</small></span>
 
-<span id="footnote-2"><sup>2</sup> The default is 10 seconds as specified in the Go [OAuth 2.0 library](https://github.com/golang/oauth2) unless the token does not expire. <small>↩ [a](#ret-2-a) [b](#ret-2-b)</small></span>
+<span id="footnote-2"><sup>2</sup> The default is 10 seconds as specified in the
+Go [OAuth 2.0 library](https://github.com/golang/oauth2) unless the token does
+not expire. <small>↩ [a](#ret-2-a) [b](#ret-2-b)</small></span>
 
-<span id="footnote-3"><sup>3</sup> For compatibility, if `grant_type` is not provided and `refresh_token` is set, the `grant_type` will default to `refresh_token`. <small>[↩](#ret-3)</small></span>
+<span id="footnote-3"><sup>3</sup> For compatibility, if `grant_type` is not
+provided and `refresh_token` is set, the `grant_type` will default to
+`refresh_token`. <small>[↩](#ret-3)</small></span>
