@@ -79,6 +79,35 @@ func (b *backend) credsReadOperation(ctx context.Context, req *logical.Request, 
 		return logical.ErrorResponse("token expired"), nil
 	}
 
+	scopes := data.Get("scopes").([]string)
+	audiences := data.Get("audience").([]string)
+	if len(scopes) > 0 || len(audiences) > 0 {
+		// Do an RFC8693 token exchange to limit the access token
+		options := map[string]string{
+			"grant_type":         "urn:ietf:params:oauth:grant-type:token-exchange",
+			"subject_token":      entry.AccessToken,
+			"subject_token_type": "urn:ietf:params:oauth:token-type:access_token",
+		}
+		if len(scopes) > 0 {
+			options["scope"] = strings.Join(scopes, " ")
+		}
+		if len(audiences) > 0 {
+			options["audience"] = strings.Join(audiences, " ")
+		}
+
+		c, err := b.getCache(ctx, req.Storage)
+		if err != nil {
+			return nil, err
+		} else if c == nil {
+			return logical.ErrorResponse("not configured"), nil
+		}
+		ops := c.Provider.Private(c.Config.ClientID, c.Config.ClientSecret)
+		entry.Token, err = ops.AuthCodeExchange(ctx, "", provider.WithURLParams(options))
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	rd := map[string]interface{}{
 		"access_token": entry.AccessToken,
 		"type":         entry.Type(),
@@ -329,7 +358,15 @@ var credsFields = map[string]*framework.FieldSchema{
 		Type:        framework.TypeString,
 		Description: "Specifies the name of the credential.",
 	},
+	"scopes": {
+		Type:        framework.TypeCommaStringSlice,
+		Description: "Specifies the scopes to provide for a device code authorization request or the subset of scopes to request for an access token exchange.",
+	},
 	// fields for read operation
+	"audience": {
+		Type:        framework.TypeCommaStringSlice,
+		Description: "An audience to request for access token, default same as refresh token.",
+	},
 	"minimum_seconds": {
 		Type:        framework.TypeInt,
 		Description: "Minimum remaining seconds to allow when reusing access token.",
@@ -357,10 +394,6 @@ var credsFields = map[string]*framework.FieldSchema{
 	"device_code": {
 		Type:        framework.TypeString,
 		Description: "Specifies a device token retrieved from the provider by some means external to this plugin.",
-	},
-	"scopes": {
-		Type:        framework.TypeStringSlice,
-		Description: "Specifies the scopes to provide for a device code authorization request.",
 	},
 	"provider_options": {
 		Type:        framework.TypeKVPairs,

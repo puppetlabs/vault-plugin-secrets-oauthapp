@@ -330,9 +330,18 @@ Retrieve a current access token for the given credential. Reuses previous token
 if it is not yet expired or close to it. Otherwise, requests a new credential
 using the `refresh_token` grant type if possible.
 
+If scopes or audience are requested, the current access token will be
+exchanged for another access token with more limited scopes or audience,
+and the more limited token returned.
+The more limited token is not saved for reuse; the less limited one is
+saved as usual.
+
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|----------|
 | `minimum_seconds` | Minimum additional duration to require the access token to be valid for. | Integer | 10<sup id="ret-2-a">[2](#footnote-2)</sup> | No |
+| `scopes` | A list of explicit scopes to request. | List of String | None | No |
+| `audience` | A list of explicit audiences to request. | List of String | None | No |
+
 
 #### `PUT` (`write`)
 
