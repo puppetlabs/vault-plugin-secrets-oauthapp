@@ -12,7 +12,8 @@ import (
 
 	"github.com/hashicorp/vault/sdk/helper/locksutil"
 	"github.com/hashicorp/vault/sdk/logical"
-	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v2/pkg/provider"
+	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v3/pkg/provider"
+	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v3/pkg/vaultext"
 )
 
 const (
@@ -239,14 +240,14 @@ func (acm *AuthCodeManager) DeleteDeviceAuthEntry(ctx context.Context, keyer Aut
 	})
 }
 
-func (acm *AuthCodeManager) ForEachAuthCodeKey(ctx context.Context, fn func(AuthCodeKeyer)) error {
+func (acm *AuthCodeManager) ForEachAuthCodeKey(ctx context.Context, fn func(AuthCodeKeyer) error) error {
 	view := logical.NewStorageView(acm.storage, authCodeKeyPrefix)
-	return logical.ScanView(ctx, view, func(path string) { fn(AuthCodeKey(path)) })
+	return vaultext.ScanView(ctx, view, func(path string) error { return fn(AuthCodeKey(path)) })
 }
 
-func (acm *AuthCodeManager) ForEachDeviceAuthKey(ctx context.Context, fn func(AuthCodeKeyer)) error {
+func (acm *AuthCodeManager) ForEachDeviceAuthKey(ctx context.Context, fn func(AuthCodeKeyer) error) error {
 	view := logical.NewStorageView(acm.storage, deviceAuthKeyPrefix)
-	return logical.ScanView(ctx, view, func(path string) { fn(AuthCodeKey(path)) })
+	return vaultext.ScanView(ctx, view, func(path string) error { return fn(AuthCodeKey(path)) })
 }
 
 type AuthCodeHolder struct {

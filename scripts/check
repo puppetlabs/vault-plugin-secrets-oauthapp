@@ -19,4 +19,4 @@ echo "check: shellcheck"
 )
 
 echo "check: lint"
-$GO run github.com/golangci/golangci-lint/cmd/golangci-lint run
+$GO run github.com/golangci/golangci-lint/cmd/golangci-lint run --timeout 10m

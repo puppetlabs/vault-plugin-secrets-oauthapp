@@ -10,10 +10,10 @@ import (
 	"github.com/hashicorp/vault/sdk/logical"
 	"github.com/puppetlabs/leg/timeutil/pkg/clock"
 	"github.com/puppetlabs/leg/timeutil/pkg/clock/k8sext"
-	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v2/pkg/backend"
-	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v2/pkg/oauth2ext/devicecode"
-	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v2/pkg/provider"
-	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v2/pkg/testutil"
+	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v3/pkg/backend"
+	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v3/pkg/oauth2ext/devicecode"
+	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v3/pkg/provider"
+	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v3/pkg/testutil"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/oauth2"
 	testclock "k8s.io/apimachinery/pkg/util/clock"
@@ -41,7 +41,7 @@ func TestBasicAuthCodeExchange(t *testing.T) {
 
 	b, err := backend.New(backend.Options{ProviderRegistry: pr})
 	require.NoError(t, err)
-	require.NoError(t, b.Setup(ctx, &logical.BackendConfig{}))
+	require.NoError(t, b.Setup(ctx, &logical.BackendConfig{StorageView: storage}))
 
 	// Write server configuration.
 	req := &logical.Request{
@@ -112,7 +112,7 @@ func TestInvalidAuthCodeExchange(t *testing.T) {
 
 	b, err := backend.New(backend.Options{ProviderRegistry: pr})
 	require.NoError(t, err)
-	require.NoError(t, b.Setup(ctx, &logical.BackendConfig{}))
+	require.NoError(t, b.Setup(ctx, &logical.BackendConfig{StorageView: storage}))
 
 	// Write server configuration.
 	req := &logical.Request{
@@ -188,7 +188,7 @@ func TestRefreshableAuthCodeExchange(t *testing.T) {
 
 	b, err := backend.New(backend.Options{ProviderRegistry: pr})
 	require.NoError(t, err)
-	require.NoError(t, b.Setup(ctx, &logical.BackendConfig{}))
+	require.NoError(t, b.Setup(ctx, &logical.BackendConfig{StorageView: storage}))
 
 	// Write server configuration.
 	req := &logical.Request{
@@ -275,7 +275,7 @@ func TestRefreshFailureReturnsNotConfigured(t *testing.T) {
 
 	b, err := backend.New(backend.Options{ProviderRegistry: pr})
 	require.NoError(t, err)
-	require.NoError(t, b.Setup(ctx, &logical.BackendConfig{}))
+	require.NoError(t, b.Setup(ctx, &logical.BackendConfig{StorageView: storage}))
 
 	// Write server configuration.
 	req := &logical.Request{
@@ -377,7 +377,7 @@ func TestDeviceCodeAuthAndExchange(t *testing.T) {
 		),
 	})
 	require.NoError(t, err)
-	require.NoError(t, b.Setup(ctx, &logical.BackendConfig{}))
+	require.NoError(t, b.Setup(ctx, &logical.BackendConfig{StorageView: storage}))
 	require.NoError(t, b.Initialize(ctx, &logical.InitializationRequest{Storage: storage}))
 	defer b.Cleanup(ctx)
 

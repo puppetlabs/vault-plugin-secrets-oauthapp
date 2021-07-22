@@ -8,6 +8,7 @@ import (
 
 	"github.com/hashicorp/vault/sdk/helper/locksutil"
 	"github.com/hashicorp/vault/sdk/logical"
+	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v3/pkg/vaultext"
 )
 
 const (
@@ -124,9 +125,9 @@ func (asm *AuthServerManager) DeleteAuthServerEntry(ctx context.Context, keyer A
 	})
 }
 
-func (asm *AuthServerManager) ForEachAuthServerKey(ctx context.Context, fn func(AuthServerKeyer)) error {
+func (asm *AuthServerManager) ForEachAuthServerKey(ctx context.Context, fn func(AuthServerKeyer) error) error {
 	view := logical.NewStorageView(asm.storage, authServerKeyPrefix)
-	return logical.ScanView(ctx, view, func(path string) { fn(AuthServerKey(path)) })
+	return vaultext.ScanView(ctx, view, func(path string) error { return fn(AuthServerKey(path)) })
 }
 
 type AuthServerHolder struct {

@@ -6,22 +6,27 @@ import (
 	"github.com/hashicorp/vault/sdk/helper/pluginutil"
 	"github.com/hashicorp/vault/sdk/logical"
 	"github.com/puppetlabs/leg/scheduler"
-	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v2/pkg/persistence"
+	"github.com/puppetlabs/leg/timeutil/pkg/clockctx"
+	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v3/pkg/persistence"
+	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v3/pkg/upgrade/framework"
+	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v3/pkg/upgrade/v2v3"
 )
+
+var upgrades = []framework.UpgraderFactoryFunc{
+	v2v3.Factory,
+}
 
 func (b *backend) Setup(ctx context.Context, conf *logical.BackendConfig) error {
 	if err := b.Backend.Setup(ctx, conf); err != nil {
 		return err
 	}
 
-	// Do not manipulate storage or track migration status.
+	// Do not manipulate storage or track upgrade status in metadata mode.
 	if pluginutil.InMetadataMode() {
 		return nil
 	}
 
-	// XXX: TODO: Add automatic migrations here.
-
-	return nil
+	return framework.Upgrade(clockctx.WithClock(ctx, b.clock), upgrades, b.data, conf.StorageView, !b.ownsStorage())
 }
 
 func (b *backend) initialize(ctx context.Context, req *logical.InitializationRequest) error {

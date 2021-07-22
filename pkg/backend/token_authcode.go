@@ -14,7 +14,7 @@ import (
 	"github.com/puppetlabs/leg/timeutil/pkg/backoff"
 	"github.com/puppetlabs/leg/timeutil/pkg/clockctx"
 	"github.com/puppetlabs/leg/timeutil/pkg/retry"
-	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v2/pkg/persistence"
+	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v3/pkg/persistence"
 )
 
 type refreshProcess struct {
@@ -69,7 +69,7 @@ func (rd *refreshDescriptor) Run(ctx context.Context, pc chan<- scheduler.Proces
 	err := retry.Wait(ctx, func(ctx context.Context) (bool, error) {
 		rd.backend.Logger().Debug("running automatic credential refresh")
 
-		err := rd.backend.data.AuthCode.Manager(rd.storage).ForEachAuthCodeKey(ctx, func(keyer persistence.AuthCodeKeyer) {
+		err := rd.backend.data.AuthCode.Manager(rd.storage).ForEachAuthCodeKey(ctx, func(keyer persistence.AuthCodeKeyer) error {
 			proc := &refreshProcess{
 				backend:     rd.backend,
 				storage:     rd.storage,
@@ -81,6 +81,8 @@ func (rd *refreshDescriptor) Run(ctx context.Context, pc chan<- scheduler.Proces
 			case pc <- proc:
 			case <-ctx.Done():
 			}
+
+			return nil
 		})
 		if err != nil {
 			return retry.Done(err)

@@ -4,7 +4,7 @@ import (
 	"context"
 	"net/url"
 
-	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v2/pkg/oauth2ext/devicecode"
+	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v3/pkg/oauth2ext/devicecode"
 	"golang.org/x/oauth2"
 )
 

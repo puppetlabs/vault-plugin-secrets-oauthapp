@@ -7,7 +7,8 @@ import (
 
 	"github.com/hashicorp/vault/sdk/helper/locksutil"
 	"github.com/hashicorp/vault/sdk/logical"
-	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v2/pkg/provider"
+	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v3/pkg/provider"
+	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v3/pkg/vaultext"
 )
 
 const (
@@ -121,9 +122,9 @@ func (ccm *ClientCredsManager) DeleteClientCredsEntry(ctx context.Context, keyer
 	})
 }
 
-func (ccm *ClientCredsManager) ForEachClientCredsKey(ctx context.Context, fn func(ClientCredsKeyer)) error {
+func (ccm *ClientCredsManager) ForEachClientCredsKey(ctx context.Context, fn func(ClientCredsKeyer) error) error {
 	view := logical.NewStorageView(ccm.storage, clientCredsKeyPrefix)
-	return logical.ScanView(ctx, view, func(path string) { fn(ClientCredsKey(path)) })
+	return vaultext.ScanView(ctx, view, func(path string) error { return fn(ClientCredsKey(path)) })
 }
 
 type ClientCredsHolder struct {

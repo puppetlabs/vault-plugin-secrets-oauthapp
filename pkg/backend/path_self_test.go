@@ -8,9 +8,9 @@ import (
 	"time"
 
 	"github.com/hashicorp/vault/sdk/logical"
-	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v2/pkg/backend"
-	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v2/pkg/provider"
-	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v2/pkg/testutil"
+	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v3/pkg/backend"
+	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v3/pkg/provider"
+	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v3/pkg/testutil"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/oauth2"
 )
@@ -39,7 +39,7 @@ func TestClientCredentials(t *testing.T) {
 
 	b, err := backend.New(backend.Options{ProviderRegistry: pr})
 	require.NoError(t, err)
-	require.NoError(t, b.Setup(ctx, &logical.BackendConfig{}))
+	require.NoError(t, b.Setup(ctx, &logical.BackendConfig{StorageView: storage}))
 
 	// Write server configuration.
 	req := &logical.Request{
@@ -124,7 +124,7 @@ func TestExpiredClientCredentials(t *testing.T) {
 
 	b, err := backend.New(backend.Options{ProviderRegistry: pr})
 	require.NoError(t, err)
-	require.NoError(t, b.Setup(ctx, &logical.BackendConfig{}))
+	require.NoError(t, b.Setup(ctx, &logical.BackendConfig{StorageView: storage}))
 
 	// Write server configuration.
 	req := &logical.Request{

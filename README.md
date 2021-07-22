@@ -194,6 +194,11 @@ $ vault write oauth2/servers/oidc-example \
     provider_options=extra_data_fields=id_token_claims
 ```
 
+## Upgrading
+
+For instructions on how to upgrade from previous versions of the plugin, see the
+[UPGRADING](UPGRADING.md) document.
+
 ## Performance tuning
 
 There are several categories of performance tuning options you may want to

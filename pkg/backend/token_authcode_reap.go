@@ -11,8 +11,8 @@ import (
 	"github.com/puppetlabs/leg/timeutil/pkg/backoff"
 	"github.com/puppetlabs/leg/timeutil/pkg/clockctx"
 	"github.com/puppetlabs/leg/timeutil/pkg/retry"
-	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v2/pkg/persistence"
-	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v2/pkg/reap"
+	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v3/pkg/persistence"
+	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v3/pkg/reap"
 )
 
 type reapProcess struct {
@@ -87,7 +87,7 @@ func (rd *reapDescriptor) Run(ctx context.Context, pc chan<- scheduler.Process) 
 	err := retry.Wait(ctx, func(ctx context.Context) (bool, error) {
 		rd.backend.Logger().Debug("running credential reap")
 
-		err := rd.backend.data.AuthCode.Manager(rd.storage).ForEachAuthCodeKey(ctx, func(keyer persistence.AuthCodeKeyer) {
+		err := rd.backend.data.AuthCode.Manager(rd.storage).ForEachAuthCodeKey(ctx, func(keyer persistence.AuthCodeKeyer) error {
 			proc := &reapProcess{
 				backend: rd.backend,
 				storage: rd.storage,
@@ -100,6 +100,8 @@ func (rd *reapDescriptor) Run(ctx context.Context, pc chan<- scheduler.Process) 
 			case pc <- proc:
 			case <-ctx.Done():
 			}
+
+			return nil
 		})
 		if err != nil {
 			return retry.Done(err)
