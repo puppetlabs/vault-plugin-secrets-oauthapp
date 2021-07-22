@@ -35,6 +35,10 @@ type AuthCodeEntry struct {
 	// configuration.
 	*provider.Token `json:",inline"`
 
+	// AuthServerName is the authorization server we should use to handle this
+	// entry.
+	AuthServerName string `json:"auth_server_name"`
+
 	// LastIssueTime is the most recent time a token was successfully issued.
 	LastIssueTime time.Time `json:"last_issue_time,omitempty"`
 
@@ -173,26 +177,30 @@ func (lacm *LockedAuthCodeManager) DeleteDeviceAuthEntry(ctx context.Context) er
 	return lacm.storage.Delete(ctx, lacm.keyer.DeviceAuthKey())
 }
 
-type AuthCodeManager struct {
-	storage logical.Storage
-	locks   []*locksutil.LockEntry
+type LockedAuthCodeHolder struct {
+	keyer AuthCodeKeyer
 }
 
-func (acm *AuthCodeManager) WithLock(keyer AuthCodeKeyer, fn func(*LockedAuthCodeManager) error) error {
-	lock := locksutil.LockForKey(acm.locks, keyer.AuthCodeKey())
-	lock.Lock()
-	defer lock.Unlock()
+func (lach *LockedAuthCodeHolder) Manager(storage logical.Storage) *LockedAuthCodeManager {
+	return &LockedAuthCodeManager{
+		storage: storage,
+		keyer:   lach.keyer,
+	}
+}
 
-	return fn(&LockedAuthCodeManager{
-		storage: acm.storage,
-		keyer:   keyer,
-	})
+type AuthCodeLocker interface {
+	WithLock(AuthCodeKeyer, func(*LockedAuthCodeHolder) error) error
+}
+
+type AuthCodeManager struct {
+	storage logical.Storage
+	locker  AuthCodeLocker
 }
 
 func (acm *AuthCodeManager) ReadAuthCodeEntry(ctx context.Context, keyer AuthCodeKeyer) (*AuthCodeEntry, error) {
 	var entry *AuthCodeEntry
-	err := acm.WithLock(keyer, func(lacm *LockedAuthCodeManager) (err error) {
-		entry, err = lacm.ReadAuthCodeEntry(ctx)
+	err := acm.locker.WithLock(keyer, func(lach *LockedAuthCodeHolder) (err error) {
+		entry, err = lach.Manager(acm.storage).ReadAuthCodeEntry(ctx)
 		return
 	})
 	return entry, err
@@ -200,34 +208,34 @@ func (acm *AuthCodeManager) ReadAuthCodeEntry(ctx context.Context, keyer AuthCod
 
 func (acm *AuthCodeManager) ReadDeviceAuthEntry(ctx context.Context, keyer AuthCodeKeyer) (*DeviceAuthEntry, error) {
 	var entry *DeviceAuthEntry
-	err := acm.WithLock(keyer, func(lacm *LockedAuthCodeManager) (err error) {
-		entry, err = lacm.ReadDeviceAuthEntry(ctx)
+	err := acm.locker.WithLock(keyer, func(lach *LockedAuthCodeHolder) (err error) {
+		entry, err = lach.Manager(acm.storage).ReadDeviceAuthEntry(ctx)
 		return
 	})
 	return entry, err
 }
 
 func (acm *AuthCodeManager) WriteAuthCodeEntry(ctx context.Context, keyer AuthCodeKeyer, entry *AuthCodeEntry) error {
-	return acm.WithLock(keyer, func(lacm *LockedAuthCodeManager) error {
-		return lacm.WriteAuthCodeEntry(ctx, entry)
+	return acm.locker.WithLock(keyer, func(lach *LockedAuthCodeHolder) error {
+		return lach.Manager(acm.storage).WriteAuthCodeEntry(ctx, entry)
 	})
 }
 
 func (acm *AuthCodeManager) WriteDeviceAuthEntry(ctx context.Context, keyer AuthCodeKeyer, entry *DeviceAuthEntry) error {
-	return acm.WithLock(keyer, func(lacm *LockedAuthCodeManager) error {
-		return lacm.WriteDeviceAuthEntry(ctx, entry)
+	return acm.locker.WithLock(keyer, func(lach *LockedAuthCodeHolder) error {
+		return lach.Manager(acm.storage).WriteDeviceAuthEntry(ctx, entry)
 	})
 }
 
 func (acm *AuthCodeManager) DeleteAuthCodeEntry(ctx context.Context, keyer AuthCodeKeyer) error {
-	return acm.WithLock(keyer, func(lacm *LockedAuthCodeManager) error {
-		return lacm.DeleteAuthCodeEntry(ctx)
+	return acm.locker.WithLock(keyer, func(lach *LockedAuthCodeHolder) error {
+		return lach.Manager(acm.storage).DeleteAuthCodeEntry(ctx)
 	})
 }
 
 func (acm *AuthCodeManager) DeleteDeviceAuthEntry(ctx context.Context, keyer AuthCodeKeyer) error {
-	return acm.WithLock(keyer, func(lacm *LockedAuthCodeManager) error {
-		return lacm.DeleteDeviceAuthEntry(ctx)
+	return acm.locker.WithLock(keyer, func(lach *LockedAuthCodeHolder) error {
+		return lach.Manager(acm.storage).DeleteDeviceAuthEntry(ctx)
 	})
 }
 
@@ -239,4 +247,25 @@ func (acm *AuthCodeManager) ForEachAuthCodeKey(ctx context.Context, fn func(Auth
 func (acm *AuthCodeManager) ForEachDeviceAuthKey(ctx context.Context, fn func(AuthCodeKeyer)) error {
 	view := logical.NewStorageView(acm.storage, deviceAuthKeyPrefix)
 	return logical.ScanView(ctx, view, func(path string) { fn(AuthCodeKey(path)) })
+}
+
+type AuthCodeHolder struct {
+	locks []*locksutil.LockEntry
+}
+
+func (ach *AuthCodeHolder) WithLock(keyer AuthCodeKeyer, fn func(*LockedAuthCodeHolder) error) error {
+	lock := locksutil.LockForKey(ach.locks, keyer.AuthCodeKey())
+	lock.Lock()
+	defer lock.Unlock()
+
+	return fn(&LockedAuthCodeHolder{
+		keyer: keyer,
+	})
+}
+
+func (ach *AuthCodeHolder) Manager(storage logical.Storage) *AuthCodeManager {
+	return &AuthCodeManager{
+		storage: storage,
+		locker:  ach,
+	}
 }

@@ -8,11 +8,44 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+* It is now possible to manage multiple authorization servers at the same time
+  by writing separate provider configurations to the `servers/:name` endpoint.
+* It is no longer necessary to explicitly specify a state when requesting an
+  authorization code URL. The plugin will generate a random state and return it
+  in the response.
+
+### Changed
+
+* [BREAKING] The plugin configuration no longer supports configuring a single
+  provider for the entire engine. Instead, configure a provider using the new
+  `servers/:name` endpoint and reference it in credentials.
+* [BREAKING] The `config/auth_code_url` endpoint has been removed and replaced
+  by the `auth-code-url` endpoint, which accepts a server name as a parameter.
+* [BREAKING] The `config/self/:name` endpoint has been removed, and it is no
+  longer possible to store an access token using the client credentials flow by
+  reading from an unconfigured path at the `self/:name` endpoint. Instead,
+  initialize such an access token by writing to the `self/:name` endpoint with
+  any necessary configuration first.
+* [BREAKING] When writing a credential, you must reference the server to use for
+  the desired flow by specifying the `server` parameter.
+* The device code flow support library now sends an `Accept: application/json`
+  header to improve compatibility with legacy device code endpoints that support
+  both JSON and form-encoded responses.
+
+### Fixed
+
+* The scheduled processes for refreshing credentials, reaping credentials, and
+  managing the device code flow no longer start on a Vault server configured as
+  a performance secondary, performance standby, or disaster recovery secondary.
+
 ## [2.2.0] - 2021-07-13
 
 ### Added
 
-* Add additional performance tuning options for provider timeouts and automatic credential reaping.
+* Add additional performance tuning options for provider timeouts and automatic
+  credential reaping.
 
 ## [2.1.1] - 2021-06-25
 

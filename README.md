@@ -16,66 +16,80 @@ documentation](https://www.vaultproject.io/docs/internals/plugins.html#plugin-re
 to add the plugin to the catalog. We will assume it is registered under the name
 `oauthapp`.
 
-Mount the plugin at the path of your choosing:
+Enable the plugin at the path of your choosing:
 
 ```
-$ vault secrets enable -path=oauth2/bitbucket oauthapp
-Success! Enabled the oauthapp secrets engine at: oauth2/bitbucket/
+$ vault secrets enable -path=oauth2 oauthapp
+Success! Enabled the oauthapp secrets engine at: oauth2/
 ```
 
 Configure it with the necessary information to exchange tokens:
 
 ```
-$ vault write oauth2/bitbucket/config \
-    provider=bitbucket \
+$ vault write oauth2/servers/github-puppetlabs \
+    provider=github \
     client_id=aBcD3FgHiJkLmN0pQ \
     client_secret=AbCd3fGh1jK1MnoPqRs7uVwXYz
-Success! Data written to: oauth2/bitbucket/config
+Success! Data written to: oauth2/servers/github-puppetlabs
 ```
 
 Once the client secret has been written, it will never be exposed again.
+
+You can have as many server configurations as you need for your use case,
+although it is common to only have one. Server configurations need not share the
+same provider.
 
 ### Authorization code exchange flow
 
 From a Vault client, request an authorization code URL:
 
 ```
-$ vault write oauth2/bitbucket/config/auth_code_url state=foo scopes=bar,baz
+$ vault write oauth2/auth-code-url \
+    server=github-puppetlabs \
+    state=foo \
+    scopes=bar,baz
 Key    Value
 ---    -----
-url    https://bitbucket.org/site/oauth2/authorize?client_id=aBcD3FgHiJkLmN0pQ&response_type=code&scope=bar+baz&state=foo
+url    https://github.com/login/oauth/authorize?client_id=aBcD3FgHiJkLmN0pQ&response_type=code&scope=bar+baz&state=foo
 ```
+
+If you don't specify a state value, the plugin will generate one for you and return it in the response as well.
 
 After redirecting the user to that URL and receiving the resulting temporary
 authorization code in your callback handler, you can create a permanent
 credential that automatically refreshes:
 
 ```
-$ vault write oauth2/bitbucket/creds/my-user-auth code=zYxWvU7sRqP
-Success! Data written to: oauth2/bitbucket/creds/my-user-auth
+$ vault write oauth2/creds/my-user-auth \
+    server=github-puppetlabs \
+    code=zYxWvU7sRqP
+Success! Data written to: oauth2/creds/my-user-auth
 ```
 
 Assuming the refresh token remains valid, an access token is available any time at the same endpoint:
 
 ```
-$ vault read oauth2/bitbucket/creds/my-user-auth
+$ vault read oauth2/creds/my-user-auth
 Key             Value
 ---             -----
 access_token    nLlBg9Lmd7n1X96bw/xcW9HvyOHzxj19z3zXKv0XXxr8eLjQSerf4iyPDRCucSHQN+c7fnKhPsSWbWg0
+server          github-puppetlabs
+type            Bearer
 ```
 
 Note that the client secret and refresh token are never exposed to Vault
 clients.
 
 Alternatively, if a refresh token is obtained in some other way you can
-skip the auth_code_url step and pass the token directly to the creds
+skip the auth code URL step and pass the token directly to the creds
 write instead of the response code:
 
 ```
-$ vault write oauth2/bitbucket/creds/my-user-auth \
+$ vault write oauth2/creds/my-user-auth \
+    server=github-puppetlabs \
     grant_type=refresh_token \
     refresh_token=TGUgZ3JpbGxlPw==
-Success! Data written to: oauth2/bitbucket/creds/my-user-auth
+Success! Data written to: oauth2/creds/my-user-auth
 ```
 
 ### Device code flow
@@ -87,16 +101,17 @@ for a valid access token.
 
 Not all providers support device code grants. Check the provider's documentation for more information.
 
-To initiate the device code flow (this time using [GitHub as an
-example](https://docs.github.com/en/developers/apps/authorizing-oauth-apps#device-flow)):
+To initiate the device code flow:
 
 ```
-$ vault write oauth2/github/creds/my-user-auth grant_type=urn:ietf:params:oauth:grant-type:device_code
+$ vault write oauth2/creds/my-user-auth \
+    server=github-puppetlabs \
+    grant_type=urn:ietf:params:oauth:grant-type:device_code
 Key                 Value
 ---                 -----
+expire_time         2021-03-10T23:35:00.295229233Z
 user_code           BDWD-HQPK
 verification_uri    https://github.com/login/device
-expire_time         2021-03-10T23:35:00.295229233Z
 ```
 
 The plugin will manage the device code (similar to a refresh token) and will
@@ -108,10 +123,10 @@ you know the token is pending issuance because the user hasn't yet performed the
 required verification steps:
 
 ```
-$ vault read oauth2/github/creds/my-user-auth
-Error reading oauth2/github/creds/my-user-auth: Error making API request.
+$ vault read oauth2/creds/my-user-auth
+Error reading oauth2/creds/my-user-auth: Error making API request.
 
-URL: GET http://localhost:8200/v1/oauth2/github/creds/my-user-auth
+URL: GET http://localhost:8200/v1/oauth2/creds/my-user-auth
 Code: 400. Errors:
 
 * token pending issuance
@@ -121,44 +136,60 @@ However, within a few seconds of the user verifying their identity, you should
 see the access token:
 
 ```
-$ vault read oauth2/github/creds/my-user-auth
+$ vault read oauth2/creds/my-user-auth
 Key             Value
 ---             -----
 access_token    aGVsbG8gaGVsbG8gaGVsbG8K
 expire_time     2021-03-27T00:15:38.72796606Z
+server          github-puppetlabs
 type            Bearer
 ```
 
 ### Client credentials flow
 
-From a Vault client, simply read an arbitrary token using the `self` endpoints:
+From a Vault client, configure a server that supports the client credentials
+grant type and write a credential under the `self` endpoint that references the
+server:
 
 ```
-$ vault read oauth2/bitbucket/self/my-machine-auth
-Key             Value
----             -----
-access_token    SSBhbSBzbyBzbWFydC4gUy1NLVItVC4=
-expire_time     2021-01-16T15:38:21.105335834Z
-type            Bearer
+$ vault write oauth2/servers/auth0-example \
+    provider=oidc \
+    provider_options=issuer_url=https://dev-example.us.auth0.com/ \
+    client_id=aBcD3FgHiJkLmN0pQ \
+    client_secret=AbCd3fGh1jK1MnoPqRs7uVwXYz
+Success! Data written to: oauth2/servers/auth0-example
+```
+```
+$ vault write oauth2/self/my-machine-auth \
+    server=auth0-example \
+    token_url_params=audience=https://dev-example.us.auth0.com/api/v2/ \
+    scopes=read:users
+Success! Data written to: oauth2/self/my-machine-auth
 ```
 
-You can configure the parameters of the identity provider's token endpoint if
-needed:
+The token will be negotiated on demand going forward using the desired
+configuration:
 
 ```
-$ vault write oauth2/bitbucket/config/self/my-machine-auth \
-    scopes=repositories:read
-Success! Data written to: oauth2/bitbucket/config/self/my-machine-auth
+$ vault read oauth2/self/my-machine-auth
+Key                 Value
+---                 -----
+access_token        SSBhbSBzbyBzbWFydC4gUy1NLVItVC4=
+expire_time         2021-01-16T15:38:21.105335834Z
+scopes              [read:users]
+server              auth0-example
+token_url_params    map[audience:https://dev-example.us.auth0.com/api/v2/]
+type                Bearer
 ```
 
 ## Tips
 
 For some operations, you may find that you need to provide a map of data for a
-field. When using the CLI, you can repeat the name of the field for each
+field. When using the Vault CLI, you can repeat the name of the field for each
 key-value pair of the map and use `=` to separate keys from values. For example:
 
 ```
-$ vault write oauth2/oidc/config \
+$ vault write oauth2/servers/oidc-example \
     provider_options=issuer_url=https://login.example.com \
     provider_options=extra_data_fields=id_token_claims
 ```
@@ -242,23 +273,14 @@ disable any of the criteria by setting its corresponding option to 0.
 
 #### `GET` (`read`)
 
-Retrieve the current configuration settings (except the client secret).
+Retrieve the current configuration settings.
 
 #### `PUT` (`write`)
 
 Write new configuration settings. This endpoint completely replaces the existing
-configuration, so you must specify all required fields, even when updating.
+configuration, so you must specify all desired fields, even when updating.
 
-| Name | Description | Type | Default | Required |
-|------|-------------|------|---------|----------|
-| `client_id` | The OAuth 2.0 client ID. | String | None | Yes |
-| `client_secret` | The OAuth 2.0 client secret. | String | None | No |
-| `auth_url_params` | A map of additional query string parameters to provide to the authorization code URL. | Map of String🠦String | None | No |
-| `provider` | The name of the provider to use. See [the list of providers](#providers). | String | None | Yes |
-| `provider_options` | Options to configure the specified provider. | Map of String🠦String | None | No |
-
-In addition to basic configuration, this endpoint allows you to set performance
-and application-specific tuning options for the plugin:
+Parameters:
 
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|----------|
@@ -275,49 +297,60 @@ and application-specific tuning options for the plugin:
 
 #### `DELETE` (`delete`)
 
-Remove the current configuration. This does not invalidate any existing access
-tokens; however, you will not be able to create new tokens or refresh existing
-tokens.
+Remove the current configuration, resetting tuning options to the plugin
+defaults.
 
-### `config/auth_code_url`
-
-#### `PUT` (`write`)
-
-Retrieve an authorization code URL for the given state. Some providers may not
-provide the plugin with information about this URL, in which case accessing this
-endpoint will return an error.
-
-| Name | Description | Type | Default | Required |
-|------|-------------|------|---------|----------|
-| `auth_url_params` | A map of additional query string parameters to provide to the authorization code URL. If any keys in this map conflict with the parameters stored in the configuration, the configuration's parameters take precedence. | Map of String🠦String | None | No |
-| `redirect_url` | The URL to redirect to once the user has authorized this application. | String | None | No |
-| `scopes` | A list of explicit scopes to request. | List of String | None | No |
-| `state` | The unique state to send to the authorization URL. | String | None | Yes |
-| `provider_options` | A list of options to pass on to the provider for configuring the authorization code URL. | Map of String🠦String | None | No |
-
-### `config/self/:name`
+### `servers/:name`
 
 #### `GET` (`read`)
 
-Retrieve the client credentials grant type configuration for the credential with
-the given name, if any is present.
+Retrieve the configuration for a given server (except the client secret).
 
 #### `PUT` (`write`)
 
-Configure a client credentials grant for the credential with the given name.
-Writing configuration will cause a new token to be retrieved and validated using
-the `client_credentials` grant type.
+Create or update the configuration for a given server.
+
+Parameters:
 
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|----------|
-| `token_url_params` | A map of additional query string parameters to provide to the token URL. If any keys in this map conflict with the parameters stored in the configuration, the configuration's parameters take precedence. | Map of String🠦String | None | No |
-| `scopes` | A list of explicit scopes to request. | List of String | None | No |
-| `provider_options` | A list of options to pass on to the provider for configuring this token exchange. | Map of String🠦String | None | No |
+| `client_id` | The OAuth 2.0 client ID. | String | None | Yes |
+| `client_secret` | The OAuth 2.0 client secret. | String | None | No |
+| `auth_url_params` | A map of additional query string parameters to provide to the authorization code URL. | Map of String🠦String | None | No |
+| `provider` | The name of the provider to use. See [the list of providers](#providers). | String | None | Yes |
+| `provider_options` | Options to configure the specified provider. | Map of String🠦String | None | No |
 
 #### `DELETE` (`delete`)
 
-Removes the client credentials configuration for the credential with the given
-name. If a token has been issued for this configuration, it will be cleared.
+Remove the configuration for a given server. Note that this does not revoke any
+stored credentials that reference the server name, but those credentials will no
+longer be able to be updated automatically.
+
+If you write a new server configuration with the same name, existing credentials
+that reference the server will start to use it.
+
+### `auth-code-url`
+
+#### `PUT` (`write`)
+
+Retrieve an authorization code URL for the given server. Some providers may not
+provide the plugin with information about this URL, in which case accessing this
+endpoint will return an error.
+
+This operation does not change any underlying storage, but because the state
+parameter is sensitive, we use a write operation and include it in the request
+body to prevent proxies from inadvertently logging it.
+
+Parameters:
+
+| Name | Description | Type | Default | Required |
+|------|-------------|------|---------|----------|
+| `server` | The name of a server to use for the authorization code exchange flow. | String | None | Yes |
+| `auth_url_params` | A map of additional query string parameters to provide to the authorization code URL. If any keys in this map conflict with the parameters stored in the configuration, the configuration's parameters take precedence. | Map of String🠦String | None | No |
+| `redirect_url` | The URL to redirect to once the user has authorized this application. | String | None | No |
+| `scopes` | A list of explicit scopes to request. | List of String | None | No |
+| `state` | The unique state to send to the authorization URL. Automatically generated if not provided. | String | None | No |
+| `provider_options` | A list of options to pass on to the provider for configuring the authorization code URL. | Map of String🠦String | None | No |
 
 ### `creds/:name`
 
@@ -330,6 +363,8 @@ Retrieve a current access token for the given credential. Reuses previous token
 if it is not yet expired or close to it. Otherwise, requests a new credential
 using the `refresh_token` grant type if possible.
 
+Parameters:
+
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|----------|
 | `minimum_seconds` | Minimum additional duration to require the access token to be valid for. | Integer | 10<sup id="ret-2-a">[2](#footnote-2)</sup> | No |
@@ -340,12 +375,16 @@ Create or update a credential using a supported three-legged flow. This
 operation will make a request for a new credential using the specified grant
 type.
 
+Parameters:
+
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|----------|
+| `server` | The name of a server to use for the credential flow. | String | None | Yes |
 | `grant_type` | The grant type to use. Must be one of `authorization_code`, `refresh_token`, or `urn:ietf:params:oauth:grant-type:device_code`. | String | `authorization_code`<sup id="ret-3">[3](#footnote-3)</sup> | No |
 | `provider_options` | A list of options to pass on to the provider for configuring this token exchange. | Map of String🠦String | None | Refer to provider documentation |
 
-This operation takes additional fields depending on which grant type is chosen:
+This operation takes additional parameters depending on which grant type is
+chosen:
 
 ##### `authorization_code` (default)
 
@@ -369,9 +408,9 @@ This operation takes additional fields depending on which grant type is chosen:
 
 #### `DELETE` (`delete`)
 
-Remove the credential information from storage. This does not delete the
-corresponding configuration. Deleting the configuration will also remove any
-currently issued token, if that behavior is desired.
+Remove the credential information from storage. This does not revoke the token,
+so keep in mind that applications may hold any requested access token until its
+expiry.
 
 ### `self/:name`
 
@@ -384,9 +423,26 @@ Retrieve a current access token for the underlying OAuth 2.0 application. Reuses
 previous token if it is not yet expired or close to it. Otherwise, requests a
 new credential using the `client_credentials` grant type.
 
+Parameters:
+
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|----------|
 | `minimum_seconds` | Minimum additional duration to require the access token to be valid for. | Integer | 10<sup id="ret-2-b">[2](#footnote-2)</sup> | No |
+
+#### `PUT` (`write`)
+
+Configure a client credentials grant for the credential with the given name.
+Writing configuration will cause a new token to be retrieved and validated using
+the `client_credentials` grant type.
+
+Parameters:
+
+| Name | Description | Type | Default | Required |
+|------|-------------|------|---------|----------|
+| `server` | The name of a server to use for the credential flow. | String | None | Yes |
+| `token_url_params` | A map of additional query string parameters to provide to the token URL. | Map of String🠦String | None | No |
+| `scopes` | A list of explicit scopes to request. | List of String | None | No |
+| `provider_options` | A list of options to pass on to the provider for configuring this token exchange. | Map of String🠦String | None | No |
 
 #### `DELETE` (`delete`)
 
@@ -436,13 +492,13 @@ Remove the credential information from storage.
 
 | Name | Description | Default | Required |
 |------|-------------|---------|----------|
-| `tenant` | The tenant to authenticate to. Ignored if the `tenant` option is specified in the plugin configuration. | Inherited | No |
+| `tenant` | The tenant to authenticate to. Ignored if the `tenant` option is specified in the server configuration. | Inherited | No |
 
 #### Credential options
 
 | Name | Description | Supported flows | Default | Required |
 |------|-------------|-----------------|---------|----------|
-| `tenant` | The tenant to authenticate to. Ignored if the `tenant` option is specified in the plugin configuration. | All | Inherited | No |
+| `tenant` | The tenant to authenticate to. Ignored if the `tenant` option is specified in the server configuration. | All | Inherited | No |
 
 ### OpenID Connect (`oidc`)
 

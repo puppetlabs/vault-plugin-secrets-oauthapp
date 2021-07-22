@@ -59,8 +59,6 @@ func (b *backend) credsReadOperation(ctx context.Context, req *logical.Request, 
 		expiryDelta,
 	)
 	switch {
-	case err == ErrNotConfigured:
-		return logical.ErrorResponse("not configured"), nil
 	case err != nil:
 		return nil, err
 	case entry == nil:
@@ -80,6 +78,7 @@ func (b *backend) credsReadOperation(ctx context.Context, req *logical.Request, 
 	}
 
 	rd := map[string]interface{}{
+		"server":       entry.AuthServerName,
 		"access_token": entry.AccessToken,
 		"type":         entry.Type(),
 	}
@@ -116,16 +115,18 @@ func (b *backend) credsReadOperation(ctx context.Context, req *logical.Request, 
 }
 
 func (b *backend) credsUpdateAuthorizationCodeOperation(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
-	c, err := b.getCache(ctx, req.Storage)
-	if err != nil {
-		return nil, err
-	} else if c == nil {
-		return logical.ErrorResponse("not configured"), nil
-	} else if c.Config.ClientSecret == "" {
-		return logical.ErrorResponse("missing client secret in configuration"), nil
+	serverName, ok := data.GetOk("server")
+	if !ok {
+		return logical.ErrorResponse("missing server"), nil
 	}
 
-	ops := c.ProviderWithTimeout(defaultExpiryDelta).Private(c.Config.ClientID, c.Config.ClientSecret)
+	ops, put, err := b.getProviderOperations(ctx, req.Storage, persistence.AuthServerName(serverName.(string)), defaultExpiryDelta)
+	if errmark.MarkedUser(err) {
+		return logical.ErrorResponse(errmark.MarkShort(err).Error()), nil
+	} else if err != nil {
+		return nil, err
+	}
+	defer put()
 
 	code, ok := data.GetOk("code")
 	if !ok {
@@ -135,7 +136,7 @@ func (b *backend) credsUpdateAuthorizationCodeOperation(ctx context.Context, req
 		return logical.ErrorResponse("cannot use refresh_token with authorization_code grant type"), nil
 	}
 
-	tok, err := ops.AuthCodeExchange(
+	tok, err := ops.Private().AuthCodeExchange(
 		clockctx.WithClock(ctx, b.clock),
 		code.(string),
 		provider.WithRedirectURL(data.Get("redirect_url").(string)),
@@ -147,10 +148,12 @@ func (b *backend) credsUpdateAuthorizationCodeOperation(ctx context.Context, req
 		return nil, err
 	}
 
-	entry := &persistence.AuthCodeEntry{}
+	entry := &persistence.AuthCodeEntry{
+		AuthServerName: serverName.(string),
+	}
 	entry.SetToken(tok)
 
-	if err := b.data.Managers(req.Storage).AuthCode().WriteAuthCodeEntry(ctx, persistence.AuthCodeName(data.Get("name").(string)), entry); err != nil {
+	if err := b.data.AuthCode.Manager(req.Storage).WriteAuthCodeEntry(ctx, persistence.AuthCodeName(data.Get("name").(string)), entry); err != nil {
 		return nil, err
 	}
 
@@ -158,14 +161,18 @@ func (b *backend) credsUpdateAuthorizationCodeOperation(ctx context.Context, req
 }
 
 func (b *backend) credsUpdateRefreshTokenOperation(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
-	c, err := b.getCache(ctx, req.Storage)
-	if err != nil {
-		return nil, err
-	} else if c == nil {
-		return logical.ErrorResponse("not configured"), nil
+	serverName, ok := data.GetOk("server")
+	if !ok {
+		return logical.ErrorResponse("missing server"), nil
 	}
 
-	ops := c.ProviderWithTimeout(defaultExpiryDelta).Private(c.Config.ClientID, c.Config.ClientSecret)
+	ops, put, err := b.getProviderOperations(ctx, req.Storage, persistence.AuthServerName(serverName.(string)), defaultExpiryDelta)
+	if errmark.MarkedUser(err) {
+		return logical.ErrorResponse(errmark.MarkShort(err).Error()), nil
+	} else if err != nil {
+		return nil, err
+	}
+	defer put()
 
 	refreshToken, ok := data.GetOk("refresh_token")
 	if !ok {
@@ -180,7 +187,7 @@ func (b *backend) credsUpdateRefreshTokenOperation(ctx context.Context, req *log
 			RefreshToken: refreshToken.(string),
 		},
 	}
-	tok, err = ops.RefreshToken(
+	tok, err = ops.Private().RefreshToken(
 		clockctx.WithClock(ctx, b.clock),
 		tok,
 		provider.WithProviderOptions(data.Get("provider_options").(map[string]string)),
@@ -191,10 +198,12 @@ func (b *backend) credsUpdateRefreshTokenOperation(ctx context.Context, req *log
 		return nil, err
 	}
 
-	entry := &persistence.AuthCodeEntry{}
+	entry := &persistence.AuthCodeEntry{
+		AuthServerName: serverName.(string),
+	}
 	entry.SetToken(tok)
 
-	if err := b.data.Managers(req.Storage).AuthCode().WriteAuthCodeEntry(ctx, persistence.AuthCodeName(data.Get("name").(string)), entry); err != nil {
+	if err := b.data.AuthCode.Manager(req.Storage).WriteAuthCodeEntry(ctx, persistence.AuthCodeName(data.Get("name").(string)), entry); err != nil {
 		return nil, err
 	}
 
@@ -202,14 +211,18 @@ func (b *backend) credsUpdateRefreshTokenOperation(ctx context.Context, req *log
 }
 
 func (b *backend) credsUpdateDeviceCodeOperation(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
-	c, err := b.getCache(ctx, req.Storage)
-	if err != nil {
-		return nil, err
-	} else if c == nil {
-		return logical.ErrorResponse("not configured"), nil
+	serverName, ok := data.GetOk("server")
+	if !ok {
+		return logical.ErrorResponse("missing server"), nil
 	}
 
-	ops := c.ProviderWithTimeout(defaultExpiryDelta).Public(c.Config.ClientID)
+	ops, put, err := b.getProviderOperations(ctx, req.Storage, persistence.AuthServerName(serverName.(string)), defaultExpiryDelta)
+	if errmark.MarkedUser(err) {
+		return logical.ErrorResponse(errmark.MarkShort(err).Error()), nil
+	} else if err != nil {
+		return nil, err
+	}
+	defer put()
 
 	// If a device code isn't provided, we'll end up setting this response to
 	// information important to return to the user. Otherwise, it will remain
@@ -224,7 +237,7 @@ func (b *backend) credsUpdateDeviceCodeOperation(ctx context.Context, req *logic
 	if !ok {
 		now := b.clock.Now()
 
-		auth, ok, err := ops.DeviceCodeAuth(
+		auth, ok, err := ops.Public().DeviceCodeAuth(
 			clockctx.WithClock(ctx, b.clock),
 			provider.WithScopes(data.Get("scopes").([]string)),
 			provider.WithProviderOptions(data.Get("provider_options").(map[string]string)),
@@ -263,19 +276,23 @@ func (b *backend) credsUpdateDeviceCodeOperation(ctx context.Context, req *logic
 		Interval:        int32(interval.Round(time.Second) / time.Second),
 		ProviderOptions: data.Get("provider_options").(map[string]string),
 	}
-	ace := &persistence.AuthCodeEntry{}
+	ace := &persistence.AuthCodeEntry{
+		AuthServerName: serverName.(string),
+	}
 
 	// If we get this far, we're guaranteed to have a device code. We'll do
 	// one request to make sure that it's not completely broken. Then we'll
 	// submit it to be polled.
-	dae, ace, err = deviceAuthExchange(clockctx.WithClock(ctx, b.clock), ops, dae, ace)
+	dae, ace, err = deviceAuthExchange(clockctx.WithClock(ctx, b.clock), ops.Public(), dae, ace)
 	if err != nil {
 		return nil, err
 	} else if ace.UserError != "" {
 		return logical.ErrorResponse(ace.UserError), nil
 	}
 
-	err = b.data.Managers(req.Storage).AuthCode().WithLock(persistence.AuthCodeName(data.Get("name").(string)), func(acm *persistence.LockedAuthCodeManager) error {
+	err = b.data.AuthCode.WithLock(persistence.AuthCodeName(data.Get("name").(string)), func(ach *persistence.LockedAuthCodeHolder) error {
+		acm := ach.Manager(req.Storage)
+
 		if !ace.TokenIssued() {
 			// We'll write the device auth out first. In the issuer, it checks
 			// that the target entry exists first (because someone could delete
@@ -312,7 +329,7 @@ func (b *backend) credsUpdateOperation(ctx context.Context, req *logical.Request
 }
 
 func (b *backend) credsDeleteOperation(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
-	if err := b.data.Managers(req.Storage).AuthCode().DeleteAuthCodeEntry(ctx, persistence.AuthCodeName(data.Get("name").(string))); err != nil {
+	if err := b.data.AuthCode.Manager(req.Storage).DeleteAuthCodeEntry(ctx, persistence.AuthCodeName(data.Get("name").(string))); err != nil {
 		return nil, err
 	}
 
@@ -337,6 +354,10 @@ var credsFields = map[string]*framework.FieldSchema{
 		Query:       true,
 	},
 	// fields for write operation
+	"server": {
+		Type:        framework.TypeString,
+		Description: "The name of the authorization server to use for this credential.",
+	},
 	"grant_type": {
 		Type:          framework.TypeString,
 		Description:   "The grant type to use for this operation.",

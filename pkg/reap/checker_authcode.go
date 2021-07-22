@@ -85,11 +85,11 @@ func (acc *AuthCodeChecker) Check(ctx context.Context, entry *persistence.AuthCo
 	}
 }
 
-func NewAuthCodeChecker(cfg *persistence.ConfigEntry) *AuthCodeChecker {
+func NewAuthCodeChecker(tuning persistence.ConfigTuningEntry) *AuthCodeChecker {
 	return &AuthCodeChecker{
-		nonRefreshableTTL:      time.Duration(cfg.Tuning.ReapNonRefreshableSeconds) * time.Second,
-		revokedTTL:             time.Duration(cfg.Tuning.ReapRevokedSeconds) * time.Second,
-		transientErrorAttempts: cfg.Tuning.ReapTransientErrorAttempts,
-		transientErrorTTL:      time.Duration(cfg.Tuning.ReapTransientErrorSeconds) * time.Second,
+		nonRefreshableTTL:      time.Duration(tuning.ReapNonRefreshableSeconds) * time.Second,
+		revokedTTL:             time.Duration(tuning.ReapRevokedSeconds) * time.Second,
+		transientErrorAttempts: tuning.ReapTransientErrorAttempts,
+		transientErrorTTL:      time.Duration(tuning.ReapTransientErrorSeconds) * time.Second,
 	}
 }

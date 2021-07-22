@@ -30,7 +30,9 @@ func (rp *reapProcess) Description() string {
 }
 
 func (rp *reapProcess) Run(ctx context.Context) error {
-	return rp.backend.data.Managers(rp.storage).AuthCode().WithLock(rp.keyer, func(cm *persistence.LockedAuthCodeManager) error {
+	return rp.backend.data.AuthCode.WithLock(rp.keyer, func(ch *persistence.LockedAuthCodeHolder) error {
+		cm := ch.Manager(rp.storage)
+
 		entry, err := cm.ReadAuthCodeEntry(ctx)
 		if err != nil || entry == nil {
 			return err
@@ -42,7 +44,7 @@ func (rp *reapProcess) Run(ctx context.Context) error {
 		}
 
 		if rp.dryRun {
-			rp.backend.logger.Info("credential would have been deleted by reaping (dry run)", "key", rp.keyer.AuthCodeKey(), "cause", err)
+			rp.backend.Logger().Info("credential would have been deleted by reaping (dry run)", "key", rp.keyer.AuthCodeKey(), "cause", err)
 			return nil
 		}
 
@@ -50,7 +52,7 @@ func (rp *reapProcess) Run(ctx context.Context) error {
 			return err
 		}
 
-		rp.backend.logger.Debug("credential deleted by reaping", "key", rp.keyer.AuthCodeKey(), "cause", err)
+		rp.backend.Logger().Debug("credential deleted by reaping", "key", rp.keyer.AuthCodeKey(), "cause", err)
 		return nil
 	})
 }
@@ -63,30 +65,34 @@ type reapDescriptor struct {
 var _ scheduler.Descriptor = &reapDescriptor{}
 
 func (rd *reapDescriptor) Run(ctx context.Context, pc chan<- scheduler.Process) error {
-	c, err := rd.backend.getCache(ctx, rd.storage)
-	switch {
-	case err != nil:
+	tuning := persistence.DefaultConfigTuningEntry
+
+	if cfg, err := rd.backend.cache.Config.Get(ctx, rd.storage); err != nil {
 		return err
-	case c == nil || c.Config.Tuning.ReapCheckIntervalSeconds <= 0:
+	} else if cfg != nil {
+		tuning = cfg.Tuning
+	}
+
+	if tuning.ReapCheckIntervalSeconds <= 0 {
 		return nil
 	}
 
-	interval := time.Duration(c.Config.Tuning.ReapCheckIntervalSeconds) * time.Second
-	checker := reap.NewAuthCodeChecker(c.Config)
+	interval := time.Duration(tuning.ReapCheckIntervalSeconds) * time.Second
+	checker := reap.NewAuthCodeChecker(tuning)
 
 	b := backoff.Build(
 		backoff.Constant(interval),
 		backoff.NonSliding,
 	)
-	err = retry.Wait(ctx, func(ctx context.Context) (bool, error) {
-		rd.backend.logger.Debug("running credential reap")
+	err := retry.Wait(ctx, func(ctx context.Context) (bool, error) {
+		rd.backend.Logger().Debug("running credential reap")
 
-		err := rd.backend.data.Managers(rd.storage).AuthCode().ForEachAuthCodeKey(ctx, func(keyer persistence.AuthCodeKeyer) {
+		err := rd.backend.data.AuthCode.Manager(rd.storage).ForEachAuthCodeKey(ctx, func(keyer persistence.AuthCodeKeyer) {
 			proc := &reapProcess{
 				backend: rd.backend,
 				storage: rd.storage,
 				keyer:   keyer,
-				dryRun:  c.Config.Tuning.ReapDryRun,
+				dryRun:  tuning.ReapDryRun,
 				checker: checker,
 			}
 

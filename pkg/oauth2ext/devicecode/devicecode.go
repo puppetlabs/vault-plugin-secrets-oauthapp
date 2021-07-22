@@ -48,6 +48,7 @@ func (c *Config) DeviceCodeAuth(ctx context.Context) (*Auth, error) {
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Accept", "application/json")
 
 	resp, err := oauth2.NewClient(ctx, nil).Do(req)
 	if err != nil {
@@ -102,6 +103,7 @@ func (c *Config) DeviceCodeExchange(ctx context.Context, deviceCode string) (*oa
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Accept", "application/json")
 
 	resp, err := oauth2.NewClient(ctx, nil).Do(req)
 	if err != nil {

@@ -3,20 +3,20 @@ package backend
 import (
 	"context"
 	"strings"
-	"sync"
 
-	hclog "github.com/hashicorp/go-hclog"
 	"github.com/hashicorp/vault/sdk/framework"
 	"github.com/hashicorp/vault/sdk/logical"
 	"github.com/puppetlabs/leg/scheduler"
 	"github.com/puppetlabs/leg/timeutil/pkg/clock"
+	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v2/pkg/cache"
 	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v2/pkg/persistence"
 	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v2/pkg/provider"
 )
 
 type backend struct {
+	*framework.Backend
+
 	providerRegistry *provider.Registry
-	logger           hclog.Logger
 	clock            clock.Clock
 
 	// scheduler is a worker that processes token renewals with hard schedules.
@@ -27,12 +27,8 @@ type backend struct {
 	// configuration changes).
 	restartDescriptors func()
 
-	// mut protects the cache value.
-	mut   sync.Mutex
-	cache *cache
-
-	// data is the API to the internal storage.
-	data *persistence.Holder
+	data  *persistence.Holder
+	cache *cache.Cache
 }
 
 const backendHelp = `
@@ -41,19 +37,13 @@ The OAuth app backend provides OAuth authorization tokens on demand given a secr
 
 type Options struct {
 	ProviderRegistry *provider.Registry
-	Logger           hclog.Logger
 	Clock            clock.Clock
 }
 
-func New(opts Options) *framework.Backend {
+func New(opts Options) (logical.Backend, error) {
 	providerRegistry := opts.ProviderRegistry
 	if providerRegistry == nil {
 		providerRegistry = provider.GlobalRegistry
-	}
-
-	logger := opts.Logger
-	if logger == nil {
-		logger = hclog.NewNullLogger()
 	}
 
 	clk := opts.Clock
@@ -61,15 +51,21 @@ func New(opts Options) *framework.Backend {
 		clk = clock.RealClock
 	}
 
-	b := &backend{
-		providerRegistry: providerRegistry,
-		logger:           logger,
-		clock:            clk,
+	data := persistence.NewHolder()
 
-		data: persistence.NewHolder(),
+	c, err := cache.NewCache(providerRegistry, data)
+	if err != nil {
+		return nil, err
 	}
 
-	return &framework.Backend{
+	b := &backend{
+		providerRegistry: providerRegistry,
+		clock:            clk,
+
+		data:  data,
+		cache: c,
+	}
+	b.Backend = &framework.Backend{
 		Help:           strings.TrimSpace(backendHelp),
 		PathsSpecial:   pathsSpecial(),
 		Paths:          paths(b),
@@ -78,12 +74,19 @@ func New(opts Options) *framework.Backend {
 		Clean:          b.clean,
 		Invalidate:     b.invalidate,
 	}
+
+	return b, nil
 }
 
 func Factory(ctx context.Context, conf *logical.BackendConfig) (logical.Backend, error) {
-	b := New(Options{Logger: conf.Logger})
+	b, err := New(Options{})
+	if err != nil {
+		return nil, err
+	}
+
 	if err := b.Setup(ctx, conf); err != nil {
 		return nil, err
 	}
+
 	return b, nil
 }

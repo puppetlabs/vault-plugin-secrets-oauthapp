@@ -23,6 +23,10 @@ type ClientCredsKeyer interface {
 type ClientCredsEntry struct {
 	Token *provider.Token `json:"token"`
 
+	// AuthServerName is the authorization server we should use to handle this
+	// entry.
+	AuthServerName string `json:"auth_server_name"`
+
 	Config struct {
 		Scopes          []string          `json:"scopes"`
 		TokenURLParams  map[string]string `json:"token_url_params"`
@@ -76,44 +80,69 @@ func (lccm *LockedClientCredsManager) DeleteClientCredsEntry(ctx context.Context
 	return lccm.storage.Delete(ctx, lccm.keyer.ClientCredsKey())
 }
 
-type ClientCredsManager struct {
-	storage logical.Storage
-	locks   []*locksutil.LockEntry
+type LockedClientCredsHolder struct {
+	keyer ClientCredsKeyer
 }
 
-func (ccm *ClientCredsManager) WithLock(keyer ClientCredsKeyer, fn func(*LockedClientCredsManager) error) error {
-	lock := locksutil.LockForKey(ccm.locks, keyer.ClientCredsKey())
-	lock.Lock()
-	defer lock.Unlock()
+func (lcch *LockedClientCredsHolder) Manager(storage logical.Storage) *LockedClientCredsManager {
+	return &LockedClientCredsManager{
+		storage: storage,
+		keyer:   lcch.keyer,
+	}
+}
 
-	return fn(&LockedClientCredsManager{
-		storage: ccm.storage,
-		keyer:   keyer,
-	})
+type ClientCredsLocker interface {
+	WithLock(ClientCredsKeyer, func(*LockedClientCredsHolder) error) error
+}
+
+type ClientCredsManager struct {
+	storage logical.Storage
+	locker  ClientCredsLocker
 }
 
 func (ccm *ClientCredsManager) ReadClientCredsEntry(ctx context.Context, keyer ClientCredsKeyer) (*ClientCredsEntry, error) {
 	var entry *ClientCredsEntry
-	err := ccm.WithLock(keyer, func(lccm *LockedClientCredsManager) (err error) {
-		entry, err = lccm.ReadClientCredsEntry(ctx)
+	err := ccm.locker.WithLock(keyer, func(lcch *LockedClientCredsHolder) (err error) {
+		entry, err = lcch.Manager(ccm.storage).ReadClientCredsEntry(ctx)
 		return
 	})
 	return entry, err
 }
 
 func (ccm *ClientCredsManager) WriteClientCredsEntry(ctx context.Context, keyer ClientCredsKeyer, entry *ClientCredsEntry) error {
-	return ccm.WithLock(keyer, func(lccm *LockedClientCredsManager) error {
-		return lccm.WriteClientCredsEntry(ctx, entry)
+	return ccm.locker.WithLock(keyer, func(lcch *LockedClientCredsHolder) error {
+		return lcch.Manager(ccm.storage).WriteClientCredsEntry(ctx, entry)
 	})
 }
 
 func (ccm *ClientCredsManager) DeleteClientCredsEntry(ctx context.Context, keyer ClientCredsKeyer) error {
-	return ccm.WithLock(keyer, func(lccm *LockedClientCredsManager) error {
-		return lccm.DeleteClientCredsEntry(ctx)
+	return ccm.locker.WithLock(keyer, func(lcch *LockedClientCredsHolder) error {
+		return lcch.Manager(ccm.storage).DeleteClientCredsEntry(ctx)
 	})
 }
 
 func (ccm *ClientCredsManager) ForEachClientCredsKey(ctx context.Context, fn func(ClientCredsKeyer)) error {
 	view := logical.NewStorageView(ccm.storage, clientCredsKeyPrefix)
 	return logical.ScanView(ctx, view, func(path string) { fn(ClientCredsKey(path)) })
+}
+
+type ClientCredsHolder struct {
+	locks []*locksutil.LockEntry
+}
+
+func (cch *ClientCredsHolder) WithLock(keyer ClientCredsKeyer, fn func(*LockedClientCredsHolder) error) error {
+	lock := locksutil.LockForKey(cch.locks, keyer.ClientCredsKey())
+	lock.Lock()
+	defer lock.Unlock()
+
+	return fn(&LockedClientCredsHolder{
+		keyer: keyer,
+	})
+}
+
+func (cch *ClientCredsHolder) Manager(storage logical.Storage) *ClientCredsManager {
+	return &ClientCredsManager{
+		storage: storage,
+		locker:  cch,
+	}
 }

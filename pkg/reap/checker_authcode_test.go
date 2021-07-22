@@ -363,9 +363,7 @@ func TestAuthCodeChecker(t *testing.T) {
 		t.Run(test.Name, func(t *testing.T) {
 			clk := k8sext.NewClock(testclock.NewFakeClock(clk.Now().Add(test.Step)))
 
-			checker := reap.NewAuthCodeChecker(&persistence.ConfigEntry{
-				Tuning: test.ConfigTuningEntry,
-			})
+			checker := reap.NewAuthCodeChecker(test.ConfigTuningEntry)
 			err := checker.Check(clockctx.WithClock(context.Background(), clk), test.AuthCodeEntry)
 			if test.ExpectedError == "" {
 				require.NoError(t, err)

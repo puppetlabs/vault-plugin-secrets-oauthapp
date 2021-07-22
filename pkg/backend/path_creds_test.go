@@ -39,13 +39,14 @@ func TestBasicAuthCodeExchange(t *testing.T) {
 
 	storage := &logical.InmemStorage{}
 
-	b := backend.New(backend.Options{ProviderRegistry: pr})
+	b, err := backend.New(backend.Options{ProviderRegistry: pr})
+	require.NoError(t, err)
 	require.NoError(t, b.Setup(ctx, &logical.BackendConfig{}))
 
-	// Write configuration.
+	// Write server configuration.
 	req := &logical.Request{
 		Operation: logical.UpdateOperation,
-		Path:      backend.ConfigPath,
+		Path:      backend.ServersPathPrefix + `mock`,
 		Storage:   storage,
 		Data: map[string]interface{}{
 			"client_id":     client.ID,
@@ -65,7 +66,8 @@ func TestBasicAuthCodeExchange(t *testing.T) {
 		Path:      backend.CredsPathPrefix + `test`,
 		Storage:   storage,
 		Data: map[string]interface{}{
-			"code": "test",
+			"server": "mock",
+			"code":   "test",
 		},
 	}
 
@@ -108,13 +110,14 @@ func TestInvalidAuthCodeExchange(t *testing.T) {
 
 	storage := &logical.InmemStorage{}
 
-	b := backend.New(backend.Options{ProviderRegistry: pr})
+	b, err := backend.New(backend.Options{ProviderRegistry: pr})
+	require.NoError(t, err)
 	require.NoError(t, b.Setup(ctx, &logical.BackendConfig{}))
 
-	// Write configuration.
+	// Write server configuration.
 	req := &logical.Request{
 		Operation: logical.UpdateOperation,
-		Path:      backend.ConfigPath,
+		Path:      backend.ServersPathPrefix + `mock`,
 		Storage:   storage,
 		Data: map[string]interface{}{
 			"client_id":     client.ID,
@@ -134,7 +137,8 @@ func TestInvalidAuthCodeExchange(t *testing.T) {
 		Path:      backend.CredsPathPrefix + `test`,
 		Storage:   storage,
 		Data: map[string]interface{}{
-			"code": "invalid",
+			"server": "mock",
+			"code":   "invalid",
 		},
 	}
 
@@ -182,13 +186,14 @@ func TestRefreshableAuthCodeExchange(t *testing.T) {
 
 	storage := &logical.InmemStorage{}
 
-	b := backend.New(backend.Options{ProviderRegistry: pr})
+	b, err := backend.New(backend.Options{ProviderRegistry: pr})
+	require.NoError(t, err)
 	require.NoError(t, b.Setup(ctx, &logical.BackendConfig{}))
 
-	// Write configuration.
+	// Write server configuration.
 	req := &logical.Request{
 		Operation: logical.UpdateOperation,
-		Path:      backend.ConfigPath,
+		Path:      backend.ServersPathPrefix + `mock`,
 		Storage:   storage,
 		Data: map[string]interface{}{
 			"client_id":     client.ID,
@@ -208,7 +213,8 @@ func TestRefreshableAuthCodeExchange(t *testing.T) {
 		Path:      backend.CredsPathPrefix + `test`,
 		Storage:   storage,
 		Data: map[string]interface{}{
-			"code": "test",
+			"server": "mock",
+			"code":   "test",
 			"provider_options": map[string]interface{}{
 				"tenant": "test",
 			},
@@ -267,13 +273,14 @@ func TestRefreshFailureReturnsNotConfigured(t *testing.T) {
 
 	storage := &logical.InmemStorage{}
 
-	b := backend.New(backend.Options{ProviderRegistry: pr})
+	b, err := backend.New(backend.Options{ProviderRegistry: pr})
+	require.NoError(t, err)
 	require.NoError(t, b.Setup(ctx, &logical.BackendConfig{}))
 
-	// Write configuration.
+	// Write server configuration.
 	req := &logical.Request{
 		Operation: logical.UpdateOperation,
-		Path:      backend.ConfigPath,
+		Path:      backend.ServersPathPrefix + `mock`,
 		Storage:   storage,
 		Data: map[string]interface{}{
 			"client_id":     client.ID,
@@ -293,7 +300,8 @@ func TestRefreshFailureReturnsNotConfigured(t *testing.T) {
 		Path:      backend.CredsPathPrefix + `test`,
 		Storage:   storage,
 		Data: map[string]interface{}{
-			"code": "test",
+			"server": "mock",
+			"code":   "test",
 		},
 	}
 
@@ -356,7 +364,7 @@ func TestDeviceCodeAuthAndExchange(t *testing.T) {
 
 	clk := testclock.NewFakeClock(time.Now())
 
-	b := backend.New(backend.Options{
+	b, err := backend.New(backend.Options{
 		ProviderRegistry: pr,
 		Clock: clock.NewTimerCallbackClock(
 			k8sext.NewClock(clk),
@@ -368,14 +376,15 @@ func TestDeviceCodeAuthAndExchange(t *testing.T) {
 			},
 		),
 	})
+	require.NoError(t, err)
 	require.NoError(t, b.Setup(ctx, &logical.BackendConfig{}))
 	require.NoError(t, b.Initialize(ctx, &logical.InitializationRequest{Storage: storage}))
-	defer b.Clean(ctx)
+	defer b.Cleanup(ctx)
 
-	// Write configuration.
+	// Write server configuration.
 	req := &logical.Request{
 		Operation: logical.UpdateOperation,
-		Path:      backend.ConfigPath,
+		Path:      backend.ServersPathPrefix + `mock`,
 		Storage:   storage,
 		Data: map[string]interface{}{
 			"client_id": client.ID,
@@ -394,6 +403,7 @@ func TestDeviceCodeAuthAndExchange(t *testing.T) {
 		Path:      backend.CredsPathPrefix + `test`,
 		Storage:   storage,
 		Data: map[string]interface{}{
+			"server":     "mock",
 			"grant_type": devicecode.GrantType,
 			"scopes":     []interface{}{"first", "second"},
 		},
