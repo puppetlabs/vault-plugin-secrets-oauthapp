@@ -8,6 +8,8 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [3.0.0-beta.1] - 2021-07-22
+
 ### Added
 
 * It is now possible to manage multiple authorization servers at the same time
@@ -224,7 +226,8 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 * Initial release of the plugin.
 
-[Unreleased]: https://github.com/puppetlabs/vault-plugin-secrets-oauthapp/compare/v2.2.0...HEAD
+[Unreleased]: https://github.com/puppetlabs/vault-plugin-secrets-oauthapp/compare/v3.0.0-beta.1...HEAD
+[3.0.0-beta.1]: https://github.com/puppetlabs/vault-plugin-secrets-oauthapp/compare/v2.2.0...v3.0.0-beta.1
 [2.2.0]: https://github.com/puppetlabs/vault-plugin-secrets-oauthapp/compare/v2.1.1...v2.2.0
 [2.1.1]: https://github.com/puppetlabs/vault-plugin-secrets-oauthapp/compare/v2.1.0...v2.1.1
 [2.1.0]: https://github.com/puppetlabs/vault-plugin-secrets-oauthapp/compare/v2.0.0...v2.1.0
