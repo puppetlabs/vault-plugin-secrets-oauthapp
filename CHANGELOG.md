@@ -8,6 +8,13 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [3.0.0-beta.3] - 2021-07-22
+
+### Build
+
+* Remove darwin/386 from distribution as it is no longer supported by Go or
+  Vault.
+
 ## [3.0.0-beta.2] - 2021-07-22
 
 ### Build
@@ -233,7 +240,8 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 * Initial release of the plugin.
 
-[Unreleased]: https://github.com/puppetlabs/vault-plugin-secrets-oauthapp/compare/v3.0.0-beta.2...HEAD
+[Unreleased]: https://github.com/puppetlabs/vault-plugin-secrets-oauthapp/compare/v3.0.0-beta.3...HEAD
+[3.0.0-beta.3]: https://github.com/puppetlabs/vault-plugin-secrets-oauthapp/compare/v3.0.0-beta.2...v3.0.0-beta.3
 [3.0.0-beta.2]: https://github.com/puppetlabs/vault-plugin-secrets-oauthapp/compare/v3.0.0-beta.1...v3.0.0-beta.2
 [3.0.0-beta.1]: https://github.com/puppetlabs/vault-plugin-secrets-oauthapp/compare/v2.2.0...v3.0.0-beta.1
 [2.2.0]: https://github.com/puppetlabs/vault-plugin-secrets-oauthapp/compare/v2.1.1...v2.2.0
