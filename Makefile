@@ -17,7 +17,7 @@ export ZIP_M ?= zip -m
 
 export GOFLAGS ?=
 
-PLUGIN_DIST_TARGETS ?= $(addprefix dist-bin-,darwin-amd64 darwin-386 windows-amd64 windows-386 linux-amd64 linux-386 linux-arm64 linux-arm freebsd-amd64 freebsd-386 freebsd-arm netbsd-amd64 netbsd-386 openbsd-amd64 openbsd-386 solaris-amd64)
+PLUGIN_DIST_TARGETS ?= $(addprefix dist-bin-,darwin-amd64 windows-amd64 windows-386 linux-amd64 linux-386 linux-arm64 linux-arm freebsd-amd64 freebsd-386 freebsd-arm netbsd-amd64 netbsd-386 openbsd-amd64 openbsd-386 solaris-amd64)
 
 #
 #
@@ -67,7 +67,7 @@ clean:
 $(PLUGIN_DIST_TARGETS): export CGO_ENABLED := 0
 $(PLUGIN_DIST_TARGETS): export GOFLAGS += -a
 $(PLUGIN_DIST_TARGETS): export GOOS = $(word 1,$(subst -, ,$*))
-$(PLUGIN_DIST_TARGETS): export GOARCH = $(subst $(CLI_EXT_$(GOOS)),,$(word 2,$(subst -, ,$*)))
+$(PLUGIN_DIST_TARGETS): export GOARCH = $(word 2,$(subst -, ,$*))
 $(PLUGIN_DIST_TARGETS): export LDFLAGS += -extldflags "-static"
 $(PLUGIN_DIST_TARGETS): dist-bin-%: $(ARTIFACTS_DIR)
 	scripts/dist $(PLUGIN_DIST_NAME) $(PLUGIN_DIST_VERSION)
