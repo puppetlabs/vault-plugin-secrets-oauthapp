@@ -14,9 +14,9 @@ import (
 	"github.com/puppetlabs/leg/timeutil/pkg/backoff"
 	"github.com/puppetlabs/leg/timeutil/pkg/clockctx"
 	"github.com/puppetlabs/leg/timeutil/pkg/retry"
-	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v2/pkg/oauth2ext/semerr"
-	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v2/pkg/persistence"
-	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v2/pkg/provider"
+	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v3/pkg/oauth2ext/semerr"
+	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v3/pkg/persistence"
+	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v3/pkg/provider"
 )
 
 type deviceCodeExchangeProcess struct {
@@ -48,7 +48,7 @@ func (dced *deviceCodeExchangeDescriptor) Run(ctx context.Context, pc chan<- sch
 		backoff.NonSliding,
 	)
 	err := retry.Wait(ctx, func(ctx context.Context) (bool, error) {
-		err := dced.backend.data.Managers(dced.storage).AuthCode().ForEachDeviceAuthKey(ctx, func(keyer persistence.AuthCodeKeyer) {
+		err := dced.backend.data.AuthCode.Manager(dced.storage).ForEachDeviceAuthKey(ctx, func(keyer persistence.AuthCodeKeyer) error {
 			proc := &deviceCodeExchangeProcess{
 				backend: dced.backend,
 				storage: dced.storage,
@@ -59,6 +59,8 @@ func (dced *deviceCodeExchangeDescriptor) Run(ctx context.Context, pc chan<- sch
 			case pc <- proc:
 			case <-ctx.Done():
 			}
+
+			return nil
 		})
 		if err != nil {
 			return retry.Done(err)
@@ -73,7 +75,9 @@ func (dced *deviceCodeExchangeDescriptor) Run(ctx context.Context, pc chan<- sch
 }
 
 func (b *backend) exchangeDeviceAuth(ctx context.Context, storage logical.Storage, keyer persistence.AuthCodeKeyer) error {
-	return b.data.Managers(storage).AuthCode().WithLock(keyer, func(cm *persistence.LockedAuthCodeManager) error {
+	return b.data.AuthCode.WithLock(keyer, func(ch *persistence.LockedAuthCodeHolder) error {
+		cm := ch.Manager(storage)
+
 		// Get the underlying auth.
 		auth, err := cm.ReadDeviceAuthEntry(ctx)
 		if err != nil || auth == nil {
@@ -99,20 +103,14 @@ func (b *backend) exchangeDeviceAuth(ctx context.Context, storage logical.Storag
 		}
 
 		// We have a matching credential waiting to be issued.
-		c, err := b.getCache(ctx, storage)
+		ops, put, err := b.getProviderOperations(ctx, storage, persistence.AuthServerName(ct.AuthServerName), defaultExpiryDelta)
 		if err != nil {
 			return err
-		} else if c == nil {
-			return ErrNotConfigured
 		}
+		defer put()
 
 		// Perform the exchange.
-		auth, ct, err = deviceAuthExchange(
-			clockctx.WithClock(ctx, b.clock),
-			c.ProviderWithTimeout(defaultExpiryDelta).Public(c.Config.ClientID),
-			auth,
-			ct,
-		)
+		auth, ct, err = deviceAuthExchange(clockctx.WithClock(ctx, b.clock), ops.Public(), auth, ct)
 		if err != nil {
 			return err
 		}
@@ -135,7 +133,7 @@ func (b *backend) exchangeDeviceAuth(ctx context.Context, storage logical.Storag
 		if ct.TokenIssued() || ct.UserError != "" {
 			// We're done here.
 			if err := cm.DeleteDeviceAuthEntry(ctx); err != nil {
-				b.logger.Warn("failed to clean up stale device authentication request", "error", err)
+				b.Logger().Warn("failed to clean up stale device authentication request", "error", err)
 			}
 		}
 
@@ -144,7 +142,7 @@ func (b *backend) exchangeDeviceAuth(ctx context.Context, storage logical.Storag
 }
 
 func (b *backend) getExchangeDeviceAuth(ctx context.Context, storage logical.Storage, keyer persistence.AuthCodeKeyer) error {
-	entry, err := b.data.Managers(storage).AuthCode().ReadDeviceAuthEntry(ctx, keyer)
+	entry, err := b.data.AuthCode.Manager(storage).ReadDeviceAuthEntry(ctx, keyer)
 	switch {
 	case err != nil:
 		return err

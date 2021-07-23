@@ -8,9 +8,9 @@ import (
 	"github.com/hashicorp/vault/sdk/logical"
 	"github.com/puppetlabs/leg/timeutil/pkg/clock"
 	"github.com/puppetlabs/leg/timeutil/pkg/clock/k8sext"
-	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v2/pkg/backend"
-	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v2/pkg/provider"
-	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v2/pkg/testutil"
+	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v3/pkg/backend"
+	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v3/pkg/provider"
+	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v3/pkg/testutil"
 	"github.com/stretchr/testify/require"
 	testclock "k8s.io/apimachinery/pkg/util/clock"
 )
@@ -62,7 +62,7 @@ func TestPeriodicRefresh(t *testing.T) {
 
 	storage := &logical.InmemStorage{}
 
-	b := backend.New(backend.Options{
+	b, err := backend.New(backend.Options{
 		ProviderRegistry: pr,
 		Clock: clock.NewTimerCallbackClock(
 			k8sext.NewClock(clk),
@@ -74,14 +74,15 @@ func TestPeriodicRefresh(t *testing.T) {
 			},
 		),
 	})
-	require.NoError(t, b.Setup(ctx, &logical.BackendConfig{}))
+	require.NoError(t, err)
+	require.NoError(t, b.Setup(ctx, &logical.BackendConfig{StorageView: storage}))
 	require.NoError(t, b.Initialize(ctx, &logical.InitializationRequest{Storage: storage}))
-	defer b.Clean(ctx)
+	defer b.Cleanup(ctx)
 
-	// Write configuration.
+	// Write server configuration.
 	req := &logical.Request{
 		Operation: logical.UpdateOperation,
-		Path:      backend.ConfigPath,
+		Path:      backend.ServersPathPrefix + `mock`,
 		Storage:   storage,
 		Data: map[string]interface{}{
 			"client_id":     client.ID,
@@ -102,7 +103,8 @@ func TestPeriodicRefresh(t *testing.T) {
 			Path:      backend.CredsPathPrefix + code,
 			Storage:   storage,
 			Data: map[string]interface{}{
-				"code": code,
+				"server": "mock",
+				"code":   code,
 			},
 		}
 
@@ -167,10 +169,28 @@ func TestTuneRefreshCheckInterval(t *testing.T) {
 
 	storage := &logical.InmemStorage{}
 
-	b := backend.New(backend.Options{ProviderRegistry: pr})
-	require.NoError(t, b.Setup(ctx, &logical.BackendConfig{}))
+	b, err := backend.New(backend.Options{ProviderRegistry: pr})
+	require.NoError(t, err)
+	require.NoError(t, b.Setup(ctx, &logical.BackendConfig{StorageView: storage}))
 	require.NoError(t, b.Initialize(ctx, &logical.InitializationRequest{Storage: storage}))
-	defer b.Clean(ctx)
+	defer b.Cleanup(ctx)
+
+	// Write server configuration.
+	req := &logical.Request{
+		Operation: logical.UpdateOperation,
+		Path:      backend.ServersPathPrefix + `mock`,
+		Storage:   storage,
+		Data: map[string]interface{}{
+			"client_id":     client.ID,
+			"client_secret": client.Secret,
+			"provider":      "mock",
+		},
+	}
+
+	resp, err := b.HandleRequest(ctx, req)
+	require.NoError(t, err)
+	require.False(t, resp != nil && resp.IsError(), "response has error: %+v", resp.Error())
+	require.Nil(t, resp)
 
 	configure := func(checkInterval time.Duration) {
 		req := &logical.Request{
@@ -178,9 +198,6 @@ func TestTuneRefreshCheckInterval(t *testing.T) {
 			Path:      backend.ConfigPath,
 			Storage:   storage,
 			Data: map[string]interface{}{
-				"client_id":                           client.ID,
-				"client_secret":                       client.Secret,
-				"provider":                            "mock",
 				"tune_refresh_check_interval_seconds": checkInterval.String(),
 			},
 		}
@@ -195,16 +212,17 @@ func TestTuneRefreshCheckInterval(t *testing.T) {
 	configure(time.Minute)
 
 	// Write credential.
-	req := &logical.Request{
+	req = &logical.Request{
 		Operation: logical.UpdateOperation,
 		Path:      backend.CredsPathPrefix + "test",
 		Storage:   storage,
 		Data: map[string]interface{}{
-			"code": "test",
+			"server": "mock",
+			"code":   "test",
 		},
 	}
 
-	resp, err := b.HandleRequest(ctx, req)
+	resp, err = b.HandleRequest(ctx, req)
 	require.NoError(t, err)
 	require.False(t, resp != nil && resp.IsError(), "response has error: %+v", resp.Error())
 	require.Nil(t, resp)
@@ -224,7 +242,7 @@ func TestTuneRefreshCheckInterval(t *testing.T) {
 	case tok := <-sig:
 		require.Equal(t, "tok_2", tok)
 	case <-ctx.Done():
-		require.Fail(t, "context expired waiting for token refresh")
+		require.Fail(t, "context expired waiting for token refresh for token #2")
 	}
 
 	// Disable the refresher altogether. Now reading the token should be the
@@ -247,7 +265,7 @@ func TestTuneRefreshCheckInterval(t *testing.T) {
 	case tok := <-sig:
 		require.Equal(t, "tok_3", tok)
 	case <-ctx.Done():
-		require.Fail(t, "context expired waiting for token refresh")
+		require.Fail(t, "context expired waiting for token refresh for token #3")
 	}
 
 	// Writing a new configuration should restart the descriptor again.
@@ -257,7 +275,7 @@ func TestTuneRefreshCheckInterval(t *testing.T) {
 	case tok := <-sig:
 		require.Equal(t, "tok_4", tok)
 	case <-ctx.Done():
-		require.Fail(t, "context expired waiting for token refresh")
+		require.Fail(t, "context expired waiting for token refresh for token #4")
 	}
 }
 
@@ -286,16 +304,17 @@ func TestMinimumSeconds(t *testing.T) {
 
 	storage := &logical.InmemStorage{}
 
-	b := backend.New(backend.Options{
+	b, err := backend.New(backend.Options{
 		ProviderRegistry: pr,
 	})
-	require.NoError(t, b.Setup(ctx, &logical.BackendConfig{}))
-	defer b.Clean(ctx)
+	require.NoError(t, err)
+	require.NoError(t, b.Setup(ctx, &logical.BackendConfig{StorageView: storage}))
+	defer b.Cleanup(ctx)
 
-	// Write configuration.
+	// Write server configuration.
 	req := &logical.Request{
 		Operation: logical.UpdateOperation,
-		Path:      backend.ConfigPath,
+		Path:      backend.ServersPathPrefix + `mock`,
 		Storage:   storage,
 		Data: map[string]interface{}{
 			"client_id":     client.ID,
@@ -316,7 +335,8 @@ func TestMinimumSeconds(t *testing.T) {
 			Path:      backend.CredsPathPrefix + code,
 			Storage:   storage,
 			Data: map[string]interface{}{
-				"code": code,
+				"server": "mock",
+				"code":   code,
 			},
 		}
 

@@ -5,13 +5,13 @@ import (
 	"testing"
 
 	"github.com/hashicorp/vault/sdk/logical"
-	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v2/pkg/persistence"
+	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v3/pkg/persistence"
 	"github.com/stretchr/testify/require"
 )
 
 func TestConfigVersionInitial(t *testing.T) {
 	ctx := context.Background()
-	cm := persistence.NewHolder().Managers(&logical.InmemStorage{}).Config()
+	cm := persistence.NewHolder().Config.Manager(&logical.InmemStorage{})
 
 	require.NoError(t, cm.WriteConfig(ctx, &persistence.ConfigEntry{
 		Version: persistence.ConfigVersionInitial,
@@ -26,7 +26,7 @@ func TestConfigVersionInitial(t *testing.T) {
 
 func TestConfigVersion1(t *testing.T) {
 	ctx := context.Background()
-	cm := persistence.NewHolder().Managers(&logical.InmemStorage{}).Config()
+	cm := persistence.NewHolder().Config.Manager(&logical.InmemStorage{})
 
 	require.NoError(t, cm.WriteConfig(ctx, &persistence.ConfigEntry{
 		Version: persistence.ConfigVersion1,
@@ -54,7 +54,7 @@ func TestConfigVersion1(t *testing.T) {
 
 func TestConfigVersion2(t *testing.T) {
 	ctx := context.Background()
-	cm := persistence.NewHolder().Managers(&logical.InmemStorage{}).Config()
+	cm := persistence.NewHolder().Config.Manager(&logical.InmemStorage{})
 
 	require.NoError(t, cm.WriteConfig(ctx, &persistence.ConfigEntry{
 		Version: persistence.ConfigVersion2,

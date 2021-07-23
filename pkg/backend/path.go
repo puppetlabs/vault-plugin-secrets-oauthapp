@@ -17,19 +17,19 @@ func nameRegex(name string) string {
 func pathsSpecial() *logical.Paths {
 	return &logical.Paths{
 		SealWrapStorage: []string{
-			ConfigPath,
 			CredsPathPrefix,
 			SelfPathPrefix,
+			ServersPathPrefix,
 		},
 	}
 }
 
 func paths(b *backend) []*framework.Path {
 	return []*framework.Path{
+		pathAuthCodeURL(b),
 		pathConfig(b),
-		pathConfigAuthCodeURL(b),
-		pathConfigSelf(b),
 		pathCreds(b),
 		pathSelf(b),
+		pathServers(b),
 	}
 }

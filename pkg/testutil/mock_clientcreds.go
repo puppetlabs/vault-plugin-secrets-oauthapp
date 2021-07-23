@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"sync/atomic"
 
-	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v2/pkg/provider"
+	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v3/pkg/provider"
 	"golang.org/x/oauth2"
 )
 

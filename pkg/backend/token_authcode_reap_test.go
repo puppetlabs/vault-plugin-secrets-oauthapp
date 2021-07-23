@@ -10,10 +10,10 @@ import (
 	"github.com/puppetlabs/leg/timeutil/pkg/clock"
 	"github.com/puppetlabs/leg/timeutil/pkg/clock/k8sext"
 	"github.com/puppetlabs/leg/timeutil/pkg/retry"
-	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v2/pkg/backend"
-	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v2/pkg/persistence"
-	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v2/pkg/provider"
-	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v2/pkg/testutil"
+	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v3/pkg/backend"
+	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v3/pkg/persistence"
+	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v3/pkg/provider"
+	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v3/pkg/testutil"
 	"github.com/stretchr/testify/require"
 	testclock "k8s.io/apimachinery/pkg/util/clock"
 )
@@ -38,7 +38,7 @@ func TestPeriodicReap(t *testing.T) {
 
 	storage := &logical.InmemStorage{}
 
-	b := backend.New(backend.Options{
+	b, err := backend.New(backend.Options{
 		ProviderRegistry: pr,
 		Clock: clock.NewTimerCallbackClock(
 			k8sext.NewClock(clk),
@@ -50,9 +50,10 @@ func TestPeriodicReap(t *testing.T) {
 			},
 		),
 	})
-	require.NoError(t, b.Setup(ctx, &logical.BackendConfig{}))
+	require.NoError(t, err)
+	require.NoError(t, b.Setup(ctx, &logical.BackendConfig{StorageView: storage}))
 	require.NoError(t, b.Initialize(ctx, &logical.InitializationRequest{Storage: storage}))
-	defer b.Clean(ctx)
+	defer b.Cleanup(ctx)
 
 	// Write configuration.
 	req := &logical.Request{
@@ -60,9 +61,6 @@ func TestPeriodicReap(t *testing.T) {
 		Path:      backend.ConfigPath,
 		Storage:   storage,
 		Data: map[string]interface{}{
-			"client_id":                         client.ID,
-			"client_secret":                     client.Secret,
-			"provider":                          "mock",
 			"tune_reap_non_refreshable_seconds": "5m",
 		},
 	}
@@ -72,13 +70,31 @@ func TestPeriodicReap(t *testing.T) {
 	require.False(t, resp != nil && resp.IsError(), "response has error: %+v", resp.Error())
 	require.Nil(t, resp)
 
+	// Write server configuration.
+	req = &logical.Request{
+		Operation: logical.UpdateOperation,
+		Path:      backend.ServersPathPrefix + `mock`,
+		Storage:   storage,
+		Data: map[string]interface{}{
+			"client_id":     client.ID,
+			"client_secret": client.Secret,
+			"provider":      "mock",
+		},
+	}
+
+	resp, err = b.HandleRequest(ctx, req)
+	require.NoError(t, err)
+	require.False(t, resp != nil && resp.IsError(), "response has error: %+v", resp.Error())
+	require.Nil(t, resp)
+
 	// Write our credentials.
 	req = &logical.Request{
 		Operation: logical.UpdateOperation,
-		Path:      backend.CredsPathPrefix + "test",
+		Path:      backend.CredsPathPrefix + `test`,
 		Storage:   storage,
 		Data: map[string]interface{}{
-			"code": "test",
+			"server": "mock",
+			"code":   "test",
 		},
 	}
 
@@ -104,7 +120,7 @@ func TestPeriodicReap(t *testing.T) {
 	require.NoError(t, retry.Wait(ctx, func(ctx context.Context) (bool, error) {
 		req = &logical.Request{
 			Operation: logical.ReadOperation,
-			Path:      backend.CredsPathPrefix + "test",
+			Path:      backend.CredsPathPrefix + `test`,
 			Storage:   storage,
 		}
 

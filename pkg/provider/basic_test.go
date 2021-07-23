@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v2/pkg/provider"
-	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v2/pkg/testutil"
+	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v3/pkg/provider"
+	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v3/pkg/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/oauth2"

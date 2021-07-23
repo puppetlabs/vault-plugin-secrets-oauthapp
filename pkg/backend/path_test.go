@@ -6,9 +6,9 @@ import (
 	"time"
 
 	"github.com/hashicorp/vault/sdk/logical"
-	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v2/pkg/backend"
-	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v2/pkg/provider"
-	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v2/pkg/testutil"
+	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v3/pkg/backend"
+	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v3/pkg/provider"
+	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v3/pkg/testutil"
 	"github.com/stretchr/testify/require"
 )
 
@@ -29,13 +29,14 @@ func TestAcceptableCredentialNames(t *testing.T) {
 
 	storage := &logical.InmemStorage{}
 
-	b := backend.New(backend.Options{ProviderRegistry: pr})
-	require.NoError(t, b.Setup(ctx, &logical.BackendConfig{}))
+	b, err := backend.New(backend.Options{ProviderRegistry: pr})
+	require.NoError(t, err)
+	require.NoError(t, b.Setup(ctx, &logical.BackendConfig{StorageView: storage}))
 
-	// Write configuration.
+	// Write server configuration.
 	req := &logical.Request{
 		Operation: logical.UpdateOperation,
-		Path:      backend.ConfigPath,
+		Path:      backend.ServersPathPrefix + `mock`,
 		Storage:   storage,
 		Data: map[string]interface{}{
 			"client_id":     client.ID,
@@ -98,7 +99,8 @@ func TestAcceptableCredentialNames(t *testing.T) {
 				Path:      backend.CredsPathPrefix + test.Name,
 				Storage:   storage,
 				Data: map[string]interface{}{
-					"code": "test",
+					"server": "mock",
+					"code":   "test",
 				},
 			}
 
@@ -112,9 +114,12 @@ func TestAcceptableCredentialNames(t *testing.T) {
 
 			// Test for client credentials exchange.
 			req = &logical.Request{
-				Operation: logical.ReadOperation,
+				Operation: logical.UpdateOperation,
 				Path:      backend.SelfPathPrefix + test.Name,
 				Storage:   storage,
+				Data: map[string]interface{}{
+					"server": "mock",
+				},
 			}
 
 			resp, err = b.HandleRequest(ctx, req)
@@ -122,8 +127,7 @@ func TestAcceptableCredentialNames(t *testing.T) {
 				require.Equal(t, logical.ErrUnsupportedPath, err)
 			} else {
 				require.False(t, resp != nil && resp.IsError(), "response has error: %+v", resp.Error())
-				require.NotNil(t, resp)
-				require.NotEmpty(t, resp.Data["access_token"])
+				require.Nil(t, resp)
 			}
 		})
 	}

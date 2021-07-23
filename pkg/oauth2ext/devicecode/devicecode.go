@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v2/pkg/oauth2ext/interop"
+	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v3/pkg/oauth2ext/interop"
 	"golang.org/x/oauth2"
 )
 
@@ -48,6 +48,7 @@ func (c *Config) DeviceCodeAuth(ctx context.Context) (*Auth, error) {
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Accept", "application/json")
 
 	resp, err := oauth2.NewClient(ctx, nil).Do(req)
 	if err != nil {
@@ -102,6 +103,7 @@ func (c *Config) DeviceCodeExchange(ctx context.Context, deviceCode string) (*oa
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Accept", "application/json")
 
 	resp, err := oauth2.NewClient(ctx, nil).Do(req)
 	if err != nil {

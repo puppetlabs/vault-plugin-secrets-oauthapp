@@ -13,7 +13,7 @@ func TestBackendNew(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	b, err := Factory(ctx, &logical.BackendConfig{})
+	b, err := Factory(ctx, &logical.BackendConfig{StorageView: &logical.InmemStorage{}})
 	require.NoError(t, err)
 	require.NotNil(t, b)
 }

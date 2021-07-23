@@ -2,80 +2,44 @@ package backend
 
 import (
 	"context"
-	"errors"
 	"strings"
 	"time"
 
 	"github.com/hashicorp/vault/sdk/framework"
 	"github.com/hashicorp/vault/sdk/logical"
-	"github.com/puppetlabs/leg/errmap/pkg/errmark"
-	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v2/pkg/persistence"
-	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v2/pkg/provider"
+	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v3/pkg/persistence"
 )
 
 func (b *backend) configReadOperation(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
-	c, err := b.getCache(ctx, req.Storage)
+	cfg, err := b.cache.Config.Get(ctx, req.Storage)
 	if err != nil {
 		return nil, err
-	} else if c == nil {
+	} else if cfg == nil {
 		return nil, nil
 	}
 
 	resp := &logical.Response{
 		Data: map[string]interface{}{
-			"client_id":        c.Config.ClientID,
-			"auth_url_params":  c.Config.AuthURLParams,
-			"provider":         c.Config.ProviderName,
-			"provider_version": c.Config.ProviderVersion,
-			"provider_options": c.Config.ProviderOptions,
+			"tune_provider_timeout_seconds":              cfg.Tuning.ProviderTimeoutSeconds,
+			"tune_provider_timeout_expiry_leeway_factor": cfg.Tuning.ProviderTimeoutExpiryLeewayFactor,
 
-			"tune_provider_timeout_seconds":              c.Config.Tuning.ProviderTimeoutSeconds,
-			"tune_provider_timeout_expiry_leeway_factor": c.Config.Tuning.ProviderTimeoutExpiryLeewayFactor,
+			"tune_refresh_check_interval_seconds": cfg.Tuning.RefreshCheckIntervalSeconds,
+			"tune_refresh_expiry_delta_factor":    cfg.Tuning.RefreshExpiryDeltaFactor,
 
-			"tune_refresh_check_interval_seconds": c.Config.Tuning.RefreshCheckIntervalSeconds,
-			"tune_refresh_expiry_delta_factor":    c.Config.Tuning.RefreshExpiryDeltaFactor,
-
-			"tune_reap_check_interval_seconds":   c.Config.Tuning.ReapCheckIntervalSeconds,
-			"tune_reap_dry_run":                  c.Config.Tuning.ReapDryRun,
-			"tune_reap_non_refreshable_seconds":  c.Config.Tuning.ReapNonRefreshableSeconds,
-			"tune_reap_revoked_seconds":          c.Config.Tuning.ReapRevokedSeconds,
-			"tune_reap_transient_error_attempts": c.Config.Tuning.ReapTransientErrorAttempts,
-			"tune_reap_transient_error_seconds":  c.Config.Tuning.ReapTransientErrorSeconds,
+			"tune_reap_check_interval_seconds":   cfg.Tuning.ReapCheckIntervalSeconds,
+			"tune_reap_dry_run":                  cfg.Tuning.ReapDryRun,
+			"tune_reap_non_refreshable_seconds":  cfg.Tuning.ReapNonRefreshableSeconds,
+			"tune_reap_revoked_seconds":          cfg.Tuning.ReapRevokedSeconds,
+			"tune_reap_transient_error_attempts": cfg.Tuning.ReapTransientErrorAttempts,
+			"tune_reap_transient_error_seconds":  cfg.Tuning.ReapTransientErrorSeconds,
 		},
 	}
 	return resp, nil
 }
 
 func (b *backend) configUpdateOperation(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
-	clientID, ok := data.GetOk("client_id")
-	if !ok {
-		return logical.ErrorResponse("missing client ID"), nil
-	}
-
-	providerName, ok := data.GetOk("provider")
-	if !ok {
-		return logical.ErrorResponse("missing provider"), nil
-	}
-
-	providerOptions := data.Get("provider_options").(map[string]string)
-
-	p, err := b.providerRegistry.New(ctx, providerName.(string), providerOptions)
-	if errors.Is(err, provider.ErrNoSuchProvider) {
-		return logical.ErrorResponse("provider %q does not exist", providerName), nil
-	} else if errmark.MarkedUser(err) {
-		return logical.ErrorResponse(errmark.MarkShort(err).Error()), nil
-	} else if err != nil {
-		return nil, err
-	}
-
 	c := &persistence.ConfigEntry{
-		Version:         persistence.ConfigVersionLatest,
-		ClientID:        clientID.(string),
-		ClientSecret:    data.Get("client_secret").(string),
-		AuthURLParams:   data.Get("auth_url_params").(map[string]string),
-		ProviderName:    providerName.(string),
-		ProviderVersion: p.Version(),
-		ProviderOptions: providerOptions,
+		Version: persistence.ConfigVersionLatest,
 		Tuning: persistence.ConfigTuningEntry{
 			ProviderTimeoutSeconds:            data.Get("tune_provider_timeout_seconds").(int),
 			ProviderTimeoutExpiryLeewayFactor: data.Get("tune_provider_timeout_expiry_leeway_factor").(float64),
@@ -104,85 +68,33 @@ func (b *backend) configUpdateOperation(ctx context.Context, req *logical.Reques
 		return logical.ErrorResponse("reap transient error attempts cannot be negative"), nil
 	}
 
-	if err := b.data.Managers(req.Storage).Config().WriteConfig(ctx, c); err != nil {
+	if err := b.data.Config.Manager(req.Storage).WriteConfig(ctx, c); err != nil {
 		return nil, err
 	}
 
+	b.cache.Config.Invalidate()
 	b.reset()
 
 	return nil, nil
 }
 
 func (b *backend) configDeleteOperation(ctx context.Context, req *logical.Request, _ *framework.FieldData) (*logical.Response, error) {
-	if err := b.data.Managers(req.Storage).Config().DeleteConfig(ctx); err != nil {
+	if err := b.data.Config.Manager(req.Storage).DeleteConfig(ctx); err != nil {
 		return nil, err
 	}
 
+	b.cache.Config.Invalidate()
 	b.reset()
 
 	return nil, nil
 }
 
-func (b *backend) configAuthCodeURLUpdateOperation(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
-	c, err := b.getCache(ctx, req.Storage)
-	if err != nil {
-		return nil, err
-	} else if c == nil {
-		return logical.ErrorResponse("not configured"), nil
-	}
-
-	state, ok := data.GetOk("state")
-	if !ok {
-		return logical.ErrorResponse("missing state"), nil
-	}
-
-	url, ok := c.Provider.Public(c.Config.ClientID).AuthCodeURL(
-		state.(string),
-		provider.WithRedirectURL(data.Get("redirect_url").(string)),
-		provider.WithScopes(data.Get("scopes").([]string)),
-		provider.WithURLParams(data.Get("auth_url_params").(map[string]string)),
-		provider.WithURLParams(c.Config.AuthURLParams),
-		provider.WithProviderOptions(data.Get("provider_options").(map[string]string)),
-	)
-	if !ok {
-		return logical.ErrorResponse("authorization code URL not available"), nil
-	}
-
-	resp := &logical.Response{
-		Data: map[string]interface{}{
-			"url": url,
-		},
-	}
-	return resp, nil
-}
-
 const (
-	ConfigPath            = "config"
-	ConfigPathPrefix      = ConfigPath + "/"
-	ConfigAuthCodeURLPath = ConfigPathPrefix + "auth_code_url"
+	ConfigPath       = "config"
+	ConfigPathPrefix = ConfigPath + "/"
 )
 
 var configFields = map[string]*framework.FieldSchema{
-	"client_id": {
-		Type:        framework.TypeString,
-		Description: "Specifies the OAuth 2 client ID.",
-	},
-	"client_secret": {
-		Type:        framework.TypeString,
-		Description: "Specifies the OAuth 2 client secret.",
-	},
-	"auth_url_params": {
-		Type:        framework.TypeKVPairs,
-		Description: "Specifies the additional query parameters to add to the authorization code URL.",
-	},
-	"provider": {
-		Type:        framework.TypeString,
-		Description: "Specifies the OAuth 2 provider.",
-	},
-	"provider_options": {
-		Type:        framework.TypeKVPairs,
-		Description: "Specifies any provider-specific options.",
-	},
 	"tune_provider_timeout_seconds": {
 		Type:        framework.TypeDurationSecond,
 		Description: "Specifies the maximum time to wait for a provider response in seconds. Infinite if 0.",
@@ -266,54 +178,5 @@ func pathConfig(b *backend) *framework.Path {
 		},
 		HelpSynopsis:    strings.TrimSpace(configHelpSynopsis),
 		HelpDescription: strings.TrimSpace(configHelpDescription),
-	}
-}
-
-var configAuthCodeURLFields = map[string]*framework.FieldSchema{
-	"auth_url_params": {
-		Type:        framework.TypeKVPairs,
-		Description: "Specifies the additional query parameters to add to the authorization code URL.",
-	},
-	"redirect_url": {
-		Type:        framework.TypeString,
-		Description: "The URL to redirect to after the authorization flow completes.",
-	},
-	"scopes": {
-		Type:        framework.TypeCommaStringSlice,
-		Description: "The scopes to request for authorization.",
-	},
-	"state": {
-		Type:        framework.TypeString,
-		Description: "Specifies the state to set in the authorization code URL.",
-	},
-	"provider_options": {
-		Type:        framework.TypeKVPairs,
-		Description: "Specifies any provider-specific options.",
-	},
-}
-
-const configAuthCodeURLHelpSynopsis = `
-Generates authorization code URLs for the current configuration.
-`
-
-const configAuthCodeURLHelpDescription = `
-This endpoint merges the configuration data with requested parameters
-like a redirect URL and scopes to create an authorization code URL.
-The code returned in the response should be written to a credential
-endpoint to start managing authentication tokens.
-`
-
-func pathConfigAuthCodeURL(b *backend) *framework.Path {
-	return &framework.Path{
-		Pattern: ConfigAuthCodeURLPath + `$`,
-		Fields:  configAuthCodeURLFields,
-		Operations: map[logical.Operation]framework.OperationHandler{
-			logical.UpdateOperation: &framework.PathOperation{
-				Callback: b.configAuthCodeURLUpdateOperation,
-				Summary:  "Generate an initial authorization code URL.",
-			},
-		},
-		HelpSynopsis:    strings.TrimSpace(configAuthCodeURLHelpSynopsis),
-		HelpDescription: strings.TrimSpace(configAuthCodeURLHelpDescription),
 	}
 }

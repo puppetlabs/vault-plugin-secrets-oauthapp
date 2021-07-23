@@ -7,8 +7,8 @@ import (
 
 	gooidc "github.com/coreos/go-oidc"
 	"github.com/puppetlabs/leg/errmap/pkg/errmark"
-	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v2/pkg/oauth2ext/devicecode"
-	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v2/pkg/oauth2ext/semerr"
+	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v3/pkg/oauth2ext/devicecode"
+	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v3/pkg/oauth2ext/semerr"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/bitbucket"
 	"golang.org/x/oauth2/clientcredentials"
@@ -116,6 +116,10 @@ func (bo *basicOperations) DeviceCodeExchange(ctx context.Context, deviceCode st
 }
 
 func (bo *basicOperations) AuthCodeExchange(ctx context.Context, code string, opts ...AuthCodeExchangeOption) (*Token, error) {
+	if bo.clientSecret == "" {
+		return nil, errmark.MarkUser(ErrMissingClientSecret)
+	}
+
 	o := &AuthCodeExchangeOptions{}
 	o.ApplyOptions(opts)
 
@@ -170,6 +174,10 @@ func (bo *basicOperations) RefreshToken(ctx context.Context, t *Token, opts ...R
 }
 
 func (bo *basicOperations) ClientCredentials(ctx context.Context, opts ...ClientCredentialsOption) (*Token, error) {
+	if bo.clientSecret == "" {
+		return nil, errmark.MarkUser(ErrMissingClientSecret)
+	}
+
 	o := &ClientCredentialsOptions{}
 	o.ApplyOptions(opts)
 

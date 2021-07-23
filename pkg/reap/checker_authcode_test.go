@@ -7,9 +7,9 @@ import (
 
 	"github.com/puppetlabs/leg/timeutil/pkg/clock/k8sext"
 	"github.com/puppetlabs/leg/timeutil/pkg/clockctx"
-	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v2/pkg/persistence"
-	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v2/pkg/provider"
-	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v2/pkg/reap"
+	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v3/pkg/persistence"
+	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v3/pkg/provider"
+	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v3/pkg/reap"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/oauth2"
 	testclock "k8s.io/apimachinery/pkg/util/clock"
@@ -363,9 +363,7 @@ func TestAuthCodeChecker(t *testing.T) {
 		t.Run(test.Name, func(t *testing.T) {
 			clk := k8sext.NewClock(testclock.NewFakeClock(clk.Now().Add(test.Step)))
 
-			checker := reap.NewAuthCodeChecker(&persistence.ConfigEntry{
-				Tuning: test.ConfigTuningEntry,
-			})
+			checker := reap.NewAuthCodeChecker(test.ConfigTuningEntry)
 			err := checker.Check(clockctx.WithClock(context.Background(), clk), test.AuthCodeEntry)
 			if test.ExpectedError == "" {
 				require.NoError(t, err)

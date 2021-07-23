@@ -11,13 +11,18 @@ const (
 	configKey = "config"
 )
 
+func IsConfigKey(key string) bool {
+	return key == configKey
+}
+
 type ConfigVersion int
 
 const (
 	ConfigVersionInitial ConfigVersion = iota
 	ConfigVersion1
 	ConfigVersion2
-	ConfigVersionLatest = ConfigVersion2
+	ConfigVersion3
+	ConfigVersionLatest = ConfigVersion3
 )
 
 func (cv ConfigVersion) SupportsTuningRefresh() bool {
@@ -63,14 +68,8 @@ var DefaultConfigTuningEntry = ConfigTuningEntry{
 }
 
 type ConfigEntry struct {
-	Version         ConfigVersion     `json:"version"`
-	ClientID        string            `json:"client_id"`
-	ClientSecret    string            `json:"client_secret"`
-	AuthURLParams   map[string]string `json:"auth_url_params"`
-	ProviderName    string            `json:"provider_name"`
-	ProviderVersion int               `json:"provider_version"`
-	ProviderOptions map[string]string `json:"provider_options"`
-	Tuning          ConfigTuningEntry `json:"tuning"`
+	Version ConfigVersion     `json:"version"`
+	Tuning  ConfigTuningEntry `json:"tuning"`
 }
 
 type LockedConfigManager struct {
@@ -133,42 +132,59 @@ func (lcm *LockedConfigManager) DeleteConfig(ctx context.Context) error {
 	return lcm.storage.Delete(ctx, configKey)
 }
 
-type ConfigManager struct {
-	storage logical.Storage
-	locks   []*locksutil.LockEntry
+type LockedConfigHolder struct{}
+
+func (lch *LockedConfigHolder) Manager(storage logical.Storage) *LockedConfigManager {
+	return &LockedConfigManager{
+		storage: storage,
+	}
 }
 
-func (cm *ConfigManager) WithLock(fn func(*LockedConfigManager) error) error {
-	lock := locksutil.LockForKey(cm.locks, configKey)
-	lock.Lock()
-	defer lock.Unlock()
+type ConfigLocker interface {
+	WithLock(func(*LockedConfigHolder) error) error
+}
 
-	return fn(&LockedConfigManager{
-		storage: cm.storage,
-	})
+type ConfigManager struct {
+	storage logical.Storage
+	locker  ConfigLocker
 }
 
 func (cm *ConfigManager) ReadConfig(ctx context.Context) (*ConfigEntry, error) {
 	var entry *ConfigEntry
-	err := cm.WithLock(func(lcm *LockedConfigManager) (err error) {
-		entry, err = lcm.ReadConfig(ctx)
+	err := cm.locker.WithLock(func(lch *LockedConfigHolder) (err error) {
+		entry, err = lch.Manager(cm.storage).ReadConfig(ctx)
 		return
 	})
 	return entry, err
 }
 
 func (cm *ConfigManager) WriteConfig(ctx context.Context, entry *ConfigEntry) error {
-	return cm.WithLock(func(lcm *LockedConfigManager) error {
-		return lcm.WriteConfig(ctx, entry)
+	return cm.locker.WithLock(func(lch *LockedConfigHolder) error {
+		return lch.Manager(cm.storage).WriteConfig(ctx, entry)
 	})
 }
 
 func (cm *ConfigManager) DeleteConfig(ctx context.Context) error {
-	return cm.WithLock(func(lcm *LockedConfigManager) error {
-		return lcm.DeleteConfig(ctx)
+	return cm.locker.WithLock(func(lch *LockedConfigHolder) error {
+		return lch.Manager(cm.storage).DeleteConfig(ctx)
 	})
 }
 
-func IsConfigKey(key string) bool {
-	return key == configKey
+type ConfigHolder struct {
+	locks []*locksutil.LockEntry
+}
+
+func (ch *ConfigHolder) WithLock(fn func(*LockedConfigHolder) error) error {
+	lock := locksutil.LockForKey(ch.locks, configKey)
+	lock.Lock()
+	defer lock.Unlock()
+
+	return fn(&LockedConfigHolder{})
+}
+
+func (ch *ConfigHolder) Manager(storage logical.Storage) *ConfigManager {
+	return &ConfigManager{
+		storage: storage,
+		locker:  ch,
+	}
 }

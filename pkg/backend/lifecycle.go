@@ -3,12 +3,40 @@ package backend
 import (
 	"context"
 
+	"github.com/hashicorp/vault/sdk/helper/pluginutil"
 	"github.com/hashicorp/vault/sdk/logical"
 	"github.com/puppetlabs/leg/scheduler"
-	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v2/pkg/persistence"
+	"github.com/puppetlabs/leg/timeutil/pkg/clockctx"
+	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v3/pkg/persistence"
+	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v3/pkg/upgrade/framework"
+	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v3/pkg/upgrade/v2v3"
 )
 
+var upgrades = []framework.UpgraderFactoryFunc{
+	v2v3.Factory,
+}
+
+func (b *backend) Setup(ctx context.Context, conf *logical.BackendConfig) error {
+	if err := b.Backend.Setup(ctx, conf); err != nil {
+		return err
+	}
+
+	// Do not manipulate storage or track upgrade status in metadata mode.
+	if pluginutil.InMetadataMode() {
+		return nil
+	}
+
+	return framework.Upgrade(clockctx.WithClock(ctx, b.clock), upgrades, b.data, conf.StorageView, !b.ownsStorage())
+}
+
 func (b *backend) initialize(ctx context.Context, req *logical.InitializationRequest) error {
+	// Only start up the scheduler if we own the underlying storage, which isn't
+	// the case for a variety of standby/secondary server configurations in
+	// Vault Enterprise.
+	if !b.ownsStorage() {
+		return nil
+	}
+
 	deviceCodeExchange := &deviceCodeExchangeDescriptor{backend: b, storage: req.Storage}
 	refresh, restartRefresh := scheduler.NewRestartableDescriptor(&refreshDescriptor{backend: b, storage: req.Storage})
 	reap, restartReap := scheduler.NewRestartableDescriptor(&reapDescriptor{backend: b, storage: req.Storage})
@@ -27,20 +55,14 @@ func (b *backend) initialize(ctx context.Context, req *logical.InitializationReq
 }
 
 func (b *backend) reset() {
-	b.mut.Lock()
-	defer b.mut.Unlock()
-
-	if b.cache != nil {
-		b.cache.Close()
-		b.cache = nil
-	}
-
 	if b.restartDescriptors != nil {
 		b.restartDescriptors()
 	}
 }
 
 func (b *backend) invalidate(ctx context.Context, key string) {
+	b.cache.InvalidateFromStorage(key)
+
 	if persistence.IsConfigKey(key) {
 		b.reset()
 	}
@@ -48,12 +70,12 @@ func (b *backend) invalidate(ctx context.Context, key string) {
 
 func (b *backend) clean(ctx context.Context) {
 	// Shut down cache and provider.
-	b.reset()
+	b.cache.Purge()
 
 	// Shut down scheduler.
 	if b.scheduler != nil {
 		if err := scheduler.CloseWaitContext(ctx, b.scheduler); err != nil {
-			b.logger.Error("failed to shut down scheduler", "error", err)
+			b.Logger().Error("failed to shut down scheduler", "error", err)
 		}
 	}
 }

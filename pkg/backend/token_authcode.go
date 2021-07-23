@@ -14,7 +14,7 @@ import (
 	"github.com/puppetlabs/leg/timeutil/pkg/backoff"
 	"github.com/puppetlabs/leg/timeutil/pkg/clockctx"
 	"github.com/puppetlabs/leg/timeutil/pkg/retry"
-	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v2/pkg/persistence"
+	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v3/pkg/persistence"
 )
 
 type refreshProcess struct {
@@ -43,17 +43,21 @@ type refreshDescriptor struct {
 var _ scheduler.Descriptor = &refreshDescriptor{}
 
 func (rd *refreshDescriptor) Run(ctx context.Context, pc chan<- scheduler.Process) error {
-	c, err := rd.backend.getCache(ctx, rd.storage)
-	switch {
-	case err != nil:
+	tuning := persistence.DefaultConfigTuningEntry
+
+	if cfg, err := rd.backend.cache.Config.Get(ctx, rd.storage); err != nil {
 		return err
-	case c == nil || c.Config.Tuning.RefreshCheckIntervalSeconds <= 0:
+	} else if cfg != nil {
+		tuning = cfg.Tuning
+	}
+
+	if tuning.RefreshCheckIntervalSeconds <= 0 {
 		return nil
 	}
 
-	refreshInterval := time.Duration(c.Config.Tuning.RefreshCheckIntervalSeconds) * time.Second
+	refreshInterval := time.Duration(tuning.RefreshCheckIntervalSeconds) * time.Second
 
-	expiryDeltaSeconds := float64(c.Config.Tuning.RefreshCheckIntervalSeconds) * c.Config.Tuning.RefreshExpiryDeltaFactor
+	expiryDeltaSeconds := float64(tuning.RefreshCheckIntervalSeconds) * tuning.RefreshExpiryDeltaFactor
 	if lim := float64(math.MaxInt64 / time.Second); expiryDeltaSeconds > lim {
 		expiryDeltaSeconds = lim
 	}
@@ -62,10 +66,10 @@ func (rd *refreshDescriptor) Run(ctx context.Context, pc chan<- scheduler.Proces
 		backoff.Constant(refreshInterval),
 		backoff.NonSliding,
 	)
-	err = retry.Wait(ctx, func(ctx context.Context) (bool, error) {
-		rd.backend.logger.Debug("running automatic credential refresh")
+	err := retry.Wait(ctx, func(ctx context.Context) (bool, error) {
+		rd.backend.Logger().Debug("running automatic credential refresh")
 
-		err := rd.backend.data.Managers(rd.storage).AuthCode().ForEachAuthCodeKey(ctx, func(keyer persistence.AuthCodeKeyer) {
+		err := rd.backend.data.AuthCode.Manager(rd.storage).ForEachAuthCodeKey(ctx, func(keyer persistence.AuthCodeKeyer) error {
 			proc := &refreshProcess{
 				backend:     rd.backend,
 				storage:     rd.storage,
@@ -77,6 +81,8 @@ func (rd *refreshDescriptor) Run(ctx context.Context, pc chan<- scheduler.Proces
 			case pc <- proc:
 			case <-ctx.Done():
 			}
+
+			return nil
 		})
 		if err != nil {
 			return retry.Done(err)
@@ -92,10 +98,12 @@ func (rd *refreshDescriptor) Run(ctx context.Context, pc chan<- scheduler.Proces
 
 func (b *backend) refreshCredToken(ctx context.Context, storage logical.Storage, keyer persistence.AuthCodeKeyer, expiryDelta time.Duration) (*persistence.AuthCodeEntry, error) {
 	var entry *persistence.AuthCodeEntry
-	err := b.data.Managers(storage).AuthCode().WithLock(keyer, func(cm *persistence.LockedAuthCodeManager) error {
+	err := b.data.AuthCode.WithLock(keyer, func(ach *persistence.LockedAuthCodeHolder) error {
+		acm := ach.Manager(storage)
+
 		// In case someone else refreshed this token from under us, we'll re-request
 		// it here with the lock acquired.
-		candidate, err := cm.ReadAuthCodeEntry(ctx)
+		candidate, err := acm.ReadAuthCodeEntry(ctx)
 		switch {
 		case err != nil || candidate == nil:
 			return err
@@ -104,18 +112,14 @@ func (b *backend) refreshCredToken(ctx context.Context, storage logical.Storage,
 			return nil
 		}
 
-		c, err := b.getCache(ctx, storage)
+		ops, put, err := b.getProviderOperations(ctx, storage, persistence.AuthServerName(candidate.AuthServerName), expiryDelta)
 		if err != nil {
 			return err
-		} else if c == nil {
-			return ErrNotConfigured
 		}
+		defer put()
 
 		// Refresh.
-		refreshed, err := c.
-			ProviderWithTimeout(expiryDelta).
-			Private(c.Config.ClientID, c.Config.ClientSecret).
-			RefreshToken(clockctx.WithClock(ctx, b.clock), candidate.Token)
+		refreshed, err := ops.Private().RefreshToken(clockctx.WithClock(ctx, b.clock), candidate.Token)
 		if err != nil {
 			msg := errmap.Wrap(errmark.MarkShort(err), "refresh failed").Error()
 			if errmark.MarkedUser(err) {
@@ -127,7 +131,7 @@ func (b *backend) refreshCredToken(ctx context.Context, storage logical.Storage,
 			candidate.SetToken(refreshed)
 		}
 
-		if err := cm.WriteAuthCodeEntry(ctx, candidate); err != nil {
+		if err := acm.WriteAuthCodeEntry(ctx, candidate); err != nil {
 			return err
 		}
 
@@ -138,7 +142,7 @@ func (b *backend) refreshCredToken(ctx context.Context, storage logical.Storage,
 }
 
 func (b *backend) getRefreshCredToken(ctx context.Context, storage logical.Storage, keyer persistence.AuthCodeKeyer, expiryDelta time.Duration) (*persistence.AuthCodeEntry, error) {
-	entry, err := b.data.Managers(storage).AuthCode().ReadAuthCodeEntry(ctx, keyer)
+	entry, err := b.data.AuthCode.Manager(storage).ReadAuthCodeEntry(ctx, keyer)
 	switch {
 	case err != nil:
 		return nil, err
