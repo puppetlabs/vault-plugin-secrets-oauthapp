@@ -26,7 +26,7 @@ func (b *backend) updateClientCredsToken(ctx context.Context, storage logical.St
 			return nil
 		}
 
-		ops, put, err := b.getProviderOperations(ctx, storage, persistence.AuthServerName(candidate.AuthServerName), expiryDelta)
+		ops, put, err := b.getProviderOperations(ctx, storage, candidate.AuthServerName, expiryDelta)
 		if err != nil {
 			return err
 		}

@@ -103,7 +103,7 @@ func (b *backend) exchangeDeviceAuth(ctx context.Context, storage logical.Storag
 		}
 
 		// We have a matching credential waiting to be issued.
-		ops, put, err := b.getProviderOperations(ctx, storage, persistence.AuthServerName(ct.AuthServerName), defaultExpiryDelta)
+		ops, put, err := b.getProviderOperations(ctx, storage, ct.AuthServerName, defaultExpiryDelta)
 		if err != nil {
 			return err
 		}

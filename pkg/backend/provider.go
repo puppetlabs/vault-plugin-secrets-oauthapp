@@ -2,10 +2,12 @@ package backend
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/hashicorp/vault/sdk/logical"
 	"github.com/puppetlabs/leg/errmap/pkg/errmark"
+	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v3/pkg/cache"
 	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v3/pkg/persistence"
 	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v3/pkg/provider"
 )
@@ -51,13 +53,23 @@ func (po *providerOperations) Private() provider.PrivateOperations {
 	}
 }
 
-func (b *backend) getProviderOperations(ctx context.Context, storage logical.Storage, keyer persistence.AuthServerKeyer, expiryDelta time.Duration) (*providerOperations, func(), error) {
+func (b *backend) getProviderOperations(ctx context.Context, storage logical.Storage, serverName string, expiryDelta time.Duration) (*providerOperations, func(), error) {
 	cfg, err := b.cache.Config.Get(ctx, storage)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	server, err := b.cache.AuthServer.Get(ctx, storage, keyer)
+	var server *cache.AuthServerCacheEntry
+	if serverName == "" {
+		keyer := persistence.AuthServerName("legacy")
+		server, err = b.cache.AuthServer.Get(ctx, storage, keyer)
+		if err == nil && server == nil {
+			return nil, nil, fmt.Errorf("missing server, and no legacy server configured")
+		}
+	} else {
+		keyer := persistence.AuthServerName(serverName)
+		server, err = b.cache.AuthServer.Get(ctx, storage, keyer)
+	}
 	if err != nil {
 		return nil, nil, err
 	} else if server == nil {

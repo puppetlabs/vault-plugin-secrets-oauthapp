@@ -112,7 +112,7 @@ func (b *backend) refreshCredToken(ctx context.Context, storage logical.Storage,
 			return nil
 		}
 
-		ops, put, err := b.getProviderOperations(ctx, storage, persistence.AuthServerName(candidate.AuthServerName), expiryDelta)
+		ops, put, err := b.getProviderOperations(ctx, storage, candidate.AuthServerName, expiryDelta)
 		if err != nil {
 			return err
 		}

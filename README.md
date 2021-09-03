@@ -350,7 +350,7 @@ Parameters:
 
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|----------|
-| `server` | The name of a server to use for the authorization code exchange flow. | String | None | Yes |
+| `server` | The name of a server to use for the authorization code exchange flow. | String | None<sup id="ret-2-a">[2](#footnote-2)</sup> | Yes |
 | `auth_url_params` | A map of additional query string parameters to provide to the authorization code URL. If any keys in this map conflict with the parameters stored in the configuration, the configuration's parameters take precedence. | Map of String🠦String | None | No |
 | `redirect_url` | The URL to redirect to once the user has authorized this application. | String | None | No |
 | `scopes` | A list of explicit scopes to request. | List of String | None | No |
@@ -372,7 +372,7 @@ Parameters:
 
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|----------|
-| `minimum_seconds` | Minimum additional duration to require the access token to be valid for. | Integer | 10<sup id="ret-2-a">[2](#footnote-2)</sup> | No |
+| `minimum_seconds` | Minimum additional duration to require the access token to be valid for. | Integer | 10<sup id="ret-3-a">[3](#footnote-3)</sup> | No |
 
 #### `PUT` (`write`)
 
@@ -384,8 +384,8 @@ Parameters:
 
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|----------|
-| `server` | The name of a server to use for the credential flow. | String | None | Yes |
-| `grant_type` | The grant type to use. Must be one of `authorization_code`, `refresh_token`, or `urn:ietf:params:oauth:grant-type:device_code`. | String | `authorization_code`<sup id="ret-3">[3](#footnote-3)</sup> | No |
+| `server` | The name of a server to use for the credential flow. | String | None<sup id="ret-2-b">[2](#footnote-2)</sup> | Yes |
+| `grant_type` | The grant type to use. Must be one of `authorization_code`, `refresh_token`, or `urn:ietf:params:oauth:grant-type:device_code`. | String | `authorization_code`<sup id="ret-4">[4](#footnote-4)</sup> | No |
 | `provider_options` | A list of options to pass on to the provider for configuring this token exchange. | Map of String🠦String | None | Refer to provider documentation |
 
 This operation takes additional parameters depending on which grant type is
@@ -432,7 +432,7 @@ Parameters:
 
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|----------|
-| `minimum_seconds` | Minimum additional duration to require the access token to be valid for. | Integer | 10<sup id="ret-2-b">[2](#footnote-2)</sup> | No |
+| `minimum_seconds` | Minimum additional duration to require the access token to be valid for. | Integer | 10<sup id="ret-3-b">[3](#footnote-3)</sup> | No |
 
 #### `PUT` (`write`)
 
@@ -444,7 +444,7 @@ Parameters:
 
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|----------|
-| `server` | The name of a server to use for the credential flow. | String | None | Yes |
+| `server` | The name of a server to use for the credential flow. | String | None<sup id="ret-2-c">[2](#footnote-2)</sup> | Yes |
 | `token_url_params` | A map of additional query string parameters to provide to the token URL. | Map of String🠦String | None | No |
 | `scopes` | A list of explicit scopes to request. | List of String | None | No |
 | `provider_options` | A list of options to pass on to the provider for configuring this token exchange. | Map of String🠦String | None | No |
@@ -549,10 +549,14 @@ arbitrary OAuth 2 authorization code grant flow.
 2.2.0 with valid configurations, the reaper will not be automatically enabled
 unless you replace your configuration. <small>[↩](#ret-1)</small></span>
 
-<span id="footnote-2"><sup>2</sup> The default is 10 seconds as specified in the
-Go [OAuth 2.0 library](https://github.com/golang/oauth2) unless the token does
-not expire. <small>↩ [a](#ret-2-a) [b](#ret-2-b)</small></span>
+<span id="footnote-2"><sup>2</sup> For compatibility, if `server` is not
+provided and a server named `legacy` is configured, then `server` will
+default to `legacy`. <small>↩ [a](#ret-2-a) [b](#ret-2-b) [c](#ret-2-c)</small></span>
 
-<span id="footnote-3"><sup>3</sup> For compatibility, if `grant_type` is not
+<span id="footnote-3"><sup>3</sup> The default is 10 seconds as specified in the
+Go [OAuth 2.0 library](https://github.com/golang/oauth2) unless the token does
+not expire. <small>↩ [a](#ret-3-a) [b](#ret-3-b)</small></span>
+
+<span id="footnote-4"><sup>4</sup> For compatibility, if `grant_type` is not
 provided and `refresh_token` is set, the `grant_type` will default to
-`refresh_token`. <small>[↩](#ret-3)</small></span>
+`refresh_token`. <small>[↩](#ret-4)</small></span>
