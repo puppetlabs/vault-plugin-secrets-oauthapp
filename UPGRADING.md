@@ -18,6 +18,8 @@ new server configuration format. In particular, it will:
    configuration as the v2 `config` endpoint.
 1. Iterate over all stored credentials and associate the new "legacy" server
    with them.
+1. Set the "legacy" server as the default server for future credential
+   operations.
 1. Remove the provider configuration from the `config` endpoint.
 
 Depending on the number of credentials stored, this operation may take a few
@@ -29,19 +31,22 @@ Therefore, you should back up your physical storage before this upgrade.
 
 ### Required consumer changes
 
-Broadly speaking, clients should not require any changes when reading data under
-the `creds/:name` endpoint. When writing a new credential to `creds/:name`, it
-is now _required_ to specify the server name to use in the `server` parameter.
-
 The `config/self/:name` endpoint has been removed, and it is no longer possible
 to dynamically perform a client credentials flow for a previously nonexistent
-credential. The options from `config/self/:name`, along with a now-required
-`server` parameter, have been moved to `self/:name`. In v3 of this plugin, you
-must write to `self/:name` before attempting to read from it.
+credential. The options from `config/self/:name` have been moved to
+`self/:name`. In v3 of this plugin, you must write to `self/:name` before
+attempting to read from it.
 
 The `config/auth_code_url` endpoint has been removed. Consumers of this plugin
-should use the `auth-code-url` endpoint instead. It is now _required_ to specify
-the server name to use in the `server` parameter for this endpoint.
+should use the `auth-code-url` endpoint instead.
+
+### Optional consumer changes
+
+Broadly speaking, clients should not require any changes when reading or writing
+data under the `creds/:name` endpoint. However, if your use case requires you to
+support multiple authorization servers, and you previously used two or more
+separate instances of the plugin to support it, you may now want to consider
+consolidating under one plugin instance.
 
 ## v2.*x*→v2.2
 

@@ -39,6 +39,16 @@ You can have as many server configurations as you need for your use case,
 although it is common to only have one. Server configurations need not share the
 same provider.
 
+It is also possible to configure a default server:
+
+```
+$ vault write oauth2/config default_server=github-puppetlabs
+Success! Data written to: oauth2/config
+```
+
+When a default server is set in the plugin configuration, it isn't necessary to
+specify the `server` field when writing credentials.
+
 ### Authorization code exchange flow
 
 From a Vault client, request an authorization code URL:
@@ -289,11 +299,12 @@ Parameters:
 
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|----------|
+| `default_server` | The name of the authorization server to use as a default if not specified when configuring a credential. | String | None<sup id="ret-1">[1](#footnote-1)</sup> | No |
 | `tune_provider_timeout_seconds` | Maximum duration to wait for a response from the provider for background credential operations. | Integer | 30 | No |
 | `tune_provider_timeout_expiry_leeway_factor` | A multiplier for the `tune_provider_timeout_seconds` option to allow a slow provider to respond as a credential approaches expiration. Must be at least 1. | Number | 1.5 | No |
 | `tune_refresh_check_interval_seconds` | Number of seconds between checking tokens for refresh. Set to 0 to disable automatic background refreshing. | Integer | 60 | No |
 | `tune_refresh_expiry_delta_factor` | A multiplier for the refresh check interval to use to detect tokens that will expire soon after the impending refresh. Must be at least 1. | Number | 1.2 | No |
-| `tune_reap_check_interval_seconds` | Number of seconds between running the reaper process. Set to 0 to disable automatic reaping of expired credentials. | Integer | 300<sup id="ret-1">[1](#footnote-1)</sup> | No |
+| `tune_reap_check_interval_seconds` | Number of seconds between running the reaper process. Set to 0 to disable automatic reaping of expired credentials. | Integer | 300<sup id="ret-2">[2](#footnote-2)</sup> | No |
 | `tune_reap_dry_run` | If set, the reaper process will only report which credentials it would remove, but not actually delete them from storage. | Boolean | False | No |
 | `tune_reap_non_refreshable_seconds` | Minimum additional time to wait before automatically deleting an expired credential that does not have a refresh token. Set to 0 to disable this reaping criterion. | Integer | 86400 | No |
 | `tune_reap_revoked_seconds` | Minimum additional time to wait before automatically deleting an expired credential that has a revoked refresh token. Set to 0 to disable this reaping criterion. | Integer | 3600 | No |
@@ -323,7 +334,7 @@ Parameters:
 | `client_secret` | The OAuth 2.0 client secret. | String | None | No |
 | `auth_url_params` | A map of additional query string parameters to provide to the authorization code URL. | Map of String🠦String | None | No |
 | `provider` | The name of the provider to use. See [the list of providers](#providers). | String | None | Yes |
-| `provider_options` | Options to configure the specified provider. | Map of String🠦String | None | No |
+| `provider_options` | Options to configure the specified provider. | Map of String🠦String | None | [Refer to provider documentation](#providers) |
 
 #### `DELETE` (`delete`)
 
@@ -350,12 +361,12 @@ Parameters:
 
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|----------|
-| `server` | The name of a server to use for the authorization code exchange flow. | String | None | Yes |
+| `server` | The name of a server to use for the authorization code exchange flow. Inherits from the plugin configuration's `default_server` field if present, and may override it. | String | Inherited | Yes |
 | `auth_url_params` | A map of additional query string parameters to provide to the authorization code URL. If any keys in this map conflict with the parameters stored in the configuration, the configuration's parameters take precedence. | Map of String🠦String | None | No |
 | `redirect_url` | The URL to redirect to once the user has authorized this application. | String | None | No |
 | `scopes` | A list of explicit scopes to request. | List of String | None | No |
 | `state` | The unique state to send to the authorization URL. Automatically generated if not provided. | String | None | No |
-| `provider_options` | A list of options to pass on to the provider for configuring the authorization code URL. | Map of String🠦String | None | No |
+| `provider_options` | A list of options to pass on to the provider for configuring the authorization code URL. | Map of String🠦String | None | [Refer to provider documentation](#providers) |
 
 ### `creds/:name`
 
@@ -372,7 +383,7 @@ Parameters:
 
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|----------|
-| `minimum_seconds` | Minimum additional duration to require the access token to be valid for. | Integer | 10<sup id="ret-2-a">[2](#footnote-2)</sup> | No |
+| `minimum_seconds` | Minimum additional duration to require the access token to be valid for. | Integer | 10<sup id="ret-3-a">[3](#footnote-3)</sup> | No |
 
 #### `PUT` (`write`)
 
@@ -384,9 +395,9 @@ Parameters:
 
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|----------|
-| `server` | The name of a server to use for the credential flow. | String | None | Yes |
-| `grant_type` | The grant type to use. Must be one of `authorization_code`, `refresh_token`, or `urn:ietf:params:oauth:grant-type:device_code`. | String | `authorization_code`<sup id="ret-3">[3](#footnote-3)</sup> | No |
-| `provider_options` | A list of options to pass on to the provider for configuring this token exchange. | Map of String🠦String | None | Refer to provider documentation |
+| `server` | The name of a server to use for the credential flow. Inherits from the plugin configuration's `default_server` field if present, and may override it. | String | Inherited | Yes |
+| `grant_type` | The grant type to use. Must be one of `authorization_code`, `refresh_token`, or `urn:ietf:params:oauth:grant-type:device_code`. | String | `authorization_code`<sup id="ret-4">[4](#footnote-4)</sup> | Yes |
+| `provider_options` | A list of options to pass on to the provider for configuring this token exchange. | Map of String🠦String | None | [Refer to provider documentation](#providers) |
 
 This operation takes additional parameters depending on which grant type is
 chosen:
@@ -432,7 +443,7 @@ Parameters:
 
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|----------|
-| `minimum_seconds` | Minimum additional duration to require the access token to be valid for. | Integer | 10<sup id="ret-2-b">[2](#footnote-2)</sup> | No |
+| `minimum_seconds` | Minimum additional duration to require the access token to be valid for. | Integer | 10<sup id="ret-3-b">[3](#footnote-3)</sup> | No |
 
 #### `PUT` (`write`)
 
@@ -444,7 +455,7 @@ Parameters:
 
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|----------|
-| `server` | The name of a server to use for the credential flow. | String | None | Yes |
+| `server` | The name of a server to use for the credential flow. Inherits from the plugin configuration's `default_server` field if present, and may override it. | String | Inherited | Yes |
 | `token_url_params` | A map of additional query string parameters to provide to the token URL. | Map of String🠦String | None | No |
 | `scopes` | A list of explicit scopes to request. | List of String | None | No |
 | `provider_options` | A list of options to pass on to the provider for configuring this token exchange. | Map of String🠦String | None | No |
@@ -545,14 +556,16 @@ arbitrary OAuth 2 authorization code grant flow.
 
 ## Footnotes
 
-<span id="footnote-1"><sup>1</sup> For users upgrading from versions prior to
+<span id="footnote-1"><sup>1</sup> For users upgrading from versions prior to 3.0.0, the default server will automatically be set to a legacy server for backward compatibility. <small>[↩](#ret-1)</small></span>
+
+<span id="footnote-2"><sup>2</sup> For users upgrading from versions prior to
 2.2.0 with valid configurations, the reaper will not be automatically enabled
-unless you replace your configuration. <small>[↩](#ret-1)</small></span>
+unless you replace your configuration. <small>[↩](#ret-2)</small></span>
 
-<span id="footnote-2"><sup>2</sup> The default is 10 seconds as specified in the
+<span id="footnote-3"><sup>3</sup> The default is 10 seconds as specified in the
 Go [OAuth 2.0 library](https://github.com/golang/oauth2) unless the token does
-not expire. <small>↩ [a](#ret-2-a) [b](#ret-2-b)</small></span>
+not expire. <small>↩ [a](#ret-3-a) [b](#ret-3-b)</small></span>
 
-<span id="footnote-3"><sup>3</sup> For compatibility, if `grant_type` is not
+<span id="footnote-4"><sup>4</sup> For compatibility, if `grant_type` is not
 provided and `refresh_token` is set, the `grant_type` will default to
-`refresh_token`. <small>[↩](#ret-3)</small></span>
+`refresh_token`. <small>[↩](#ret-4)</small></span>

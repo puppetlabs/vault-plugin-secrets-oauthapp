@@ -82,7 +82,6 @@ func (b *backend) serversDeleteOperation(ctx context.Context, req *logical.Reque
 	b.cache.AuthServer.Invalidate(keyer)
 
 	return nil, nil
-
 }
 
 const (

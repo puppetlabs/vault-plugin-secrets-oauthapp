@@ -68,21 +68,19 @@ func (b *backend) selfReadOperation(ctx context.Context, req *logical.Request, d
 }
 
 func (b *backend) selfUpdateOperation(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
-	serverName, ok := data.GetOk("server")
-	if !ok {
-		return logical.ErrorResponse("missing server"), nil
+	serverName, err := b.getServerNameOrDefault(ctx, req.Storage, data.Get("server").(string))
+	if err != nil {
+		return errorResponse(err)
 	}
 
-	ops, put, err := b.getProviderOperations(ctx, req.Storage, persistence.AuthServerName(serverName.(string)), defaultExpiryDelta)
-	if errmark.MarkedUser(err) {
-		return logical.ErrorResponse(errmark.MarkShort(err).Error()), nil
-	} else if err != nil {
-		return nil, err
+	ops, put, err := b.getProviderOperations(ctx, req.Storage, persistence.AuthServerName(serverName), defaultExpiryDelta)
+	if err != nil {
+		return errorResponse(err)
 	}
 	defer put()
 
 	entry := &persistence.ClientCredsEntry{
-		AuthServerName: serverName.(string),
+		AuthServerName: serverName,
 	}
 	entry.Config.TokenURLParams = data.Get("token_url_params").(map[string]string)
 	entry.Config.Scopes = data.Get("scopes").([]string)
