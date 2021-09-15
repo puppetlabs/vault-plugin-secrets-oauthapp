@@ -13,6 +13,7 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 * It is now possible to select a default server to use by setting the
   `default_server` field in the plugin configuration. When upgrading from v2,
   this field will be automatically set to maintain backward compatibility.
+* Listing existing servers is now supported at the new `servers` endpoint.
 
 ## [3.0.0-beta.3] - 2021-07-22
 

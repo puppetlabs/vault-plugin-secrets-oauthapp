@@ -42,6 +42,8 @@ func (u *Upgrader) Upgrade(ctx context.Context) error {
 
 	// Create server.
 	newAuthServer := &persistence.AuthServerEntry{
+		Name: "legacy",
+
 		ClientID:        currentConfig.ClientID,
 		ClientSecret:    currentConfig.ClientSecret,
 		AuthURLParams:   currentConfig.AuthURLParams,
@@ -49,7 +51,7 @@ func (u *Upgrader) Upgrade(ctx context.Context) error {
 		ProviderVersion: currentConfig.ProviderVersion,
 		ProviderOptions: currentConfig.ProviderOptions,
 	}
-	if err := u.data.AuthServer.Manager(u.storage).WriteAuthServerEntry(ctx, persistence.AuthServerName("legacy"), newAuthServer); err != nil {
+	if err := u.data.AuthServer.Manager(u.storage).WriteAuthServerEntry(ctx, persistence.AuthServerName(newAuthServer.Name), newAuthServer); err != nil {
 		return fmt.Errorf("failed to create legacy server configuration: %w", err)
 	}
 
@@ -63,7 +65,7 @@ func (u *Upgrader) Upgrade(ctx context.Context) error {
 				return err
 			}
 
-			entry.AuthServerName = "legacy"
+			entry.AuthServerName = newAuthServer.Name
 
 			if err := lacm.WriteAuthCodeEntry(ctx, entry); err != nil {
 				return err
@@ -86,7 +88,7 @@ func (u *Upgrader) Upgrade(ctx context.Context) error {
 				return err
 			}
 
-			entry.AuthServerName = "legacy"
+			entry.AuthServerName = newAuthServer.Name
 
 			if err := lccm.WriteClientCredsEntry(ctx, entry); err != nil {
 				return err
@@ -102,7 +104,7 @@ func (u *Upgrader) Upgrade(ctx context.Context) error {
 	// Write new configuration.
 	newConfig := &persistence.ConfigEntry{
 		Version:       currentConfig.Version,
-		DefaultServer: "legacy",
+		DefaultServer: newAuthServer.Name,
 		Tuning:        currentConfig.Tuning,
 	}
 	if err := u.data.Config.Manager(u.storage).WriteConfig(ctx, newConfig); err != nil {

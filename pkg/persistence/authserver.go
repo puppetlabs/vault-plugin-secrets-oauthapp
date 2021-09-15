@@ -22,6 +22,8 @@ type AuthServerKeyer interface {
 }
 
 type AuthServerEntry struct {
+	Name string `json:"name"`
+
 	ClientID        string            `json:"client_id"`
 	ClientSecret    string            `json:"client_secret"`
 	AuthURLParams   map[string]string `json:"auth_url_params"`
@@ -72,7 +74,15 @@ func (lasm *LockedAuthServerManager) ReadAuthServerEntry(ctx context.Context) (*
 }
 
 func (lasm *LockedAuthServerManager) WriteAuthServerEntry(ctx context.Context, entry *AuthServerEntry) error {
-	se, err := logical.StorageEntryJSON(lasm.keyer.AuthServerKey(), entry)
+	key := lasm.keyer.AuthServerKey()
+
+	// Sanity check: constructing the key from the name specified in the entry
+	// must equal the key we're using for this operation.
+	if AuthServerName(entry.Name).AuthServerKey() != key {
+		return fmt.Errorf("writing authorization server: name %q does not correspond to storage key", entry.Name)
+	}
+
+	se, err := logical.StorageEntryJSON(key, entry)
 	if err != nil {
 		return err
 	}

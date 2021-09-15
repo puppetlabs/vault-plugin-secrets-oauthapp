@@ -316,6 +316,12 @@ Parameters:
 Remove the current configuration, resetting tuning options to the plugin
 defaults.
 
+### `servers`
+
+#### `GET` (`list`)
+
+Show the names of all currently available servers.
+
 ### `servers/:name`
 
 #### `GET` (`read`)
