@@ -64,13 +64,17 @@ func (b *backend) credsReadOperation(ctx context.Context, req *logical.Request, 
 	case entry == nil:
 		return nil, nil
 	case !entry.TokenIssued():
-		if entry.UserError != "" {
+		if entry.AuthServerError != "" {
+			return logical.ErrorResponse("server %q has configuration problems: %s", entry.AuthServerName, entry.AuthServerError), nil
+		} else if entry.UserError != "" {
 			return logical.ErrorResponse(entry.UserError), nil
 		}
 
 		return logical.ErrorResponse("token pending issuance"), nil
 	case !b.tokenValid(entry.Token, expiryDelta):
-		if entry.UserError != "" {
+		if entry.AuthServerError != "" {
+			return logical.ErrorResponse("server %q has configuration problems: %s", entry.AuthServerName, entry.AuthServerError), nil
+		} else if entry.UserError != "" {
 			return logical.ErrorResponse(entry.UserError), nil
 		}
 
@@ -98,18 +102,16 @@ func (b *backend) credsReadOperation(ctx context.Context, req *logical.Request, 
 	resp := &logical.Response{
 		Data: rd,
 	}
-	if entry.UserError != "" {
-		resp.Warnings = []string{
-			fmt.Sprintf("token will expire: %s", entry.UserError),
-		}
+	if entry.AuthServerError != "" {
+		resp.AddWarning(fmt.Sprintf("server %q has configuration problems: %s", entry.AuthServerName, entry.AuthServerError))
+	} else if entry.UserError != "" {
+		resp.AddWarning(fmt.Sprintf("token will expire: %s", entry.UserError))
 	} else if entry.TransientErrorsSinceLastIssue > 0 {
-		resp.Warnings = []string{
-			fmt.Sprintf(
-				"%d attempt(s) to refresh this token failed, most recently: %s",
-				entry.TransientErrorsSinceLastIssue,
-				entry.LastTransientError,
-			),
-		}
+		resp.AddWarning(fmt.Sprintf(
+			"%d attempt(s) to refresh this token failed, most recently: %s",
+			entry.TransientErrorsSinceLastIssue,
+			entry.LastTransientError,
+		))
 	}
 	return resp, nil
 }
@@ -122,7 +124,7 @@ func (b *backend) credsUpdateAuthorizationCodeOperation(ctx context.Context, req
 
 	ops, put, err := b.getProviderOperations(ctx, req.Storage, persistence.AuthServerName(serverName), defaultExpiryDelta)
 	if err != nil {
-		return errorResponse(err)
+		return errorResponse(fmt.Errorf("server %q has configuration problems: %w", serverName, err))
 	}
 	defer put()
 
@@ -166,7 +168,7 @@ func (b *backend) credsUpdateRefreshTokenOperation(ctx context.Context, req *log
 
 	ops, put, err := b.getProviderOperations(ctx, req.Storage, persistence.AuthServerName(serverName), defaultExpiryDelta)
 	if err != nil {
-		return errorResponse(err)
+		return errorResponse(fmt.Errorf("server %q has configuration problems: %w", serverName, err))
 	}
 	defer put()
 
@@ -214,7 +216,7 @@ func (b *backend) credsUpdateDeviceCodeOperation(ctx context.Context, req *logic
 
 	ops, put, err := b.getProviderOperations(ctx, req.Storage, persistence.AuthServerName(serverName), defaultExpiryDelta)
 	if errmark.MarkedUser(err) {
-		return logical.ErrorResponse(errmark.MarkShort(err).Error()), nil
+		return logical.ErrorResponse(fmt.Errorf("server %q has configuration problems: %w", serverName, errmark.MarkShort(err)).Error()), nil
 	} else if err != nil {
 		return nil, err
 	}

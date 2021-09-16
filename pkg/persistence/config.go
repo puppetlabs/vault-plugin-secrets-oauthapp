@@ -22,7 +22,8 @@ const (
 	ConfigVersion1
 	ConfigVersion2
 	ConfigVersion3
-	ConfigVersionLatest = ConfigVersion3
+	ConfigVersion4
+	ConfigVersionLatest = ConfigVersion4
 )
 
 func (cv ConfigVersion) SupportsTuningRefresh() bool {
@@ -37,8 +38,12 @@ func (cv ConfigVersion) SupportsTuningProviderTimeout() bool {
 	return cv >= ConfigVersion2
 }
 
-func (cv ConfigVersion) SupportsTuningReaper() bool {
+func (cv ConfigVersion) SupportsTuningReap() bool {
 	return cv >= ConfigVersion2
+}
+
+func (cv ConfigVersion) SupportsTuningReapServerDeleted() bool {
+	return cv >= ConfigVersion4
 }
 
 type ConfigTuningEntry struct {
@@ -52,6 +57,7 @@ type ConfigTuningEntry struct {
 	ReapRevokedSeconds                int     `json:"reap_revoked_seconds"`
 	ReapTransientErrorAttempts        int     `json:"reap_transient_error_attempts"`
 	ReapTransientErrorSeconds         int     `json:"reap_transient_error_seconds"`
+	ReapServerDeletedSeconds          int     `json:"reap_server_deleted_seconds"`
 }
 
 var DefaultConfigTuningEntry = ConfigTuningEntry{
@@ -65,6 +71,7 @@ var DefaultConfigTuningEntry = ConfigTuningEntry{
 	ReapRevokedSeconds:                3600,
 	ReapTransientErrorAttempts:        10,
 	ReapTransientErrorSeconds:         86400,
+	ReapServerDeletedSeconds:          86400,
 }
 
 type ConfigEntry struct {
@@ -103,7 +110,7 @@ func (lcm *LockedConfigManager) ReadConfig(ctx context.Context) (*ConfigEntry, e
 		entry.Tuning.ProviderTimeoutExpiryLeewayFactor = DefaultConfigTuningEntry.ProviderTimeoutExpiryLeewayFactor
 	}
 
-	if !entry.Version.SupportsTuningReaper() {
+	if !entry.Version.SupportsTuningReap() {
 		// Disable reaper (users must opt in by writing new configuration
 		// version).
 		entry.Tuning.ReapCheckIntervalSeconds = 0
@@ -115,6 +122,10 @@ func (lcm *LockedConfigManager) ReadConfig(ctx context.Context) (*ConfigEntry, e
 		entry.Tuning.ReapRevokedSeconds = DefaultConfigTuningEntry.ReapRevokedSeconds
 		entry.Tuning.ReapTransientErrorAttempts = DefaultConfigTuningEntry.ReapTransientErrorAttempts
 		entry.Tuning.ReapTransientErrorSeconds = DefaultConfigTuningEntry.ReapTransientErrorSeconds
+	}
+
+	if !entry.Version.SupportsTuningReapServerDeleted() {
+		entry.Tuning.ReapServerDeletedSeconds = DefaultConfigTuningEntry.ReapServerDeletedSeconds
 	}
 
 	return entry, nil

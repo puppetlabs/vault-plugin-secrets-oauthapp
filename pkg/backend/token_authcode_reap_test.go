@@ -124,7 +124,6 @@ func TestPeriodicReap(t *testing.T) {
 			Storage:   storage,
 		}
 
-		// Now the token should be deleted.
 		resp, err = b.HandleRequest(ctx, req)
 		require.NoError(t, err)
 

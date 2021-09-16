@@ -2,6 +2,7 @@ package backend
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"time"
 
@@ -75,7 +76,7 @@ func (b *backend) selfUpdateOperation(ctx context.Context, req *logical.Request,
 
 	ops, put, err := b.getProviderOperations(ctx, req.Storage, persistence.AuthServerName(serverName), defaultExpiryDelta)
 	if err != nil {
-		return errorResponse(err)
+		return errorResponse(fmt.Errorf("server %q has configuration problems: %w", serverName, err))
 	}
 	defer put()
 

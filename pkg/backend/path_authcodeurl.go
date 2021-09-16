@@ -3,6 +3,7 @@ package backend
 import (
 	"context"
 	"encoding/base64"
+	"fmt"
 	"strings"
 
 	"github.com/hashicorp/vault/sdk/framework"
@@ -19,7 +20,7 @@ func (b *backend) authCodeURLUpdateOperation(ctx context.Context, req *logical.R
 
 	ops, put, err := b.getProviderOperations(ctx, req.Storage, persistence.AuthServerName(serverName), defaultExpiryDelta)
 	if err != nil {
-		return errorResponse(err)
+		return errorResponse(fmt.Errorf("server %q has configuration problems: %w", serverName, err))
 	}
 	defer put()
 

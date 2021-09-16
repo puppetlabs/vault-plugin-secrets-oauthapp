@@ -14,6 +14,15 @@ Versioning](https://semver.org/spec/v2.0.0.html).
   `default_server` field in the plugin configuration. When upgrading from v2,
   this field will be automatically set to maintain backward compatibility.
 * Listing existing servers is now supported at the new `servers` endpoint.
+* Add the new tuning option `tune_reap_server_deleted_seconds` to control how
+  long the plugin should wait before automatically deleting credentials that
+  refer to a nonexistent (deleted) server.
+
+### Fixed
+
+* When refreshing an authorization code credential or attempting to acquire a
+  device code credential, missing servers will no longer produce scheduler
+  errors.
 
 ## [3.0.0-beta.3] - 2021-07-22
 

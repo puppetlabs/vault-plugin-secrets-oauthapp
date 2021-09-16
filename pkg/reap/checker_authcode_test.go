@@ -82,6 +82,7 @@ func TestAuthCodeChecker(t *testing.T) {
 				ReapRevokedSeconds:         persistence.DefaultConfigTuningEntry.ReapRevokedSeconds,
 				ReapTransientErrorAttempts: persistence.DefaultConfigTuningEntry.ReapTransientErrorAttempts,
 				ReapTransientErrorSeconds:  persistence.DefaultConfigTuningEntry.ReapTransientErrorSeconds,
+				ReapServerDeletedSeconds:   persistence.DefaultConfigTuningEntry.ReapServerDeletedSeconds,
 			},
 			AuthCodeEntry: &persistence.AuthCodeEntry{
 				Token: &provider.Token{
@@ -171,6 +172,7 @@ func TestAuthCodeChecker(t *testing.T) {
 				ReapRevokedSeconds:         0,
 				ReapTransientErrorAttempts: persistence.DefaultConfigTuningEntry.ReapTransientErrorAttempts,
 				ReapTransientErrorSeconds:  persistence.DefaultConfigTuningEntry.ReapTransientErrorSeconds,
+				ReapServerDeletedSeconds:   persistence.DefaultConfigTuningEntry.ReapServerDeletedSeconds,
 			},
 			AuthCodeEntry: &persistence.AuthCodeEntry{
 				Token: &provider.Token{
@@ -290,6 +292,7 @@ func TestAuthCodeChecker(t *testing.T) {
 				ReapRevokedSeconds:         persistence.DefaultConfigTuningEntry.ReapRevokedSeconds,
 				ReapTransientErrorAttempts: 0,
 				ReapTransientErrorSeconds:  persistence.DefaultConfigTuningEntry.ReapTransientErrorSeconds,
+				ReapServerDeletedSeconds:   persistence.DefaultConfigTuningEntry.ReapServerDeletedSeconds,
 			},
 			AuthCodeEntry: &persistence.AuthCodeEntry{
 				Token: &provider.Token{
@@ -312,6 +315,7 @@ func TestAuthCodeChecker(t *testing.T) {
 				ReapRevokedSeconds:         persistence.DefaultConfigTuningEntry.ReapRevokedSeconds,
 				ReapTransientErrorAttempts: persistence.DefaultConfigTuningEntry.ReapTransientErrorAttempts,
 				ReapTransientErrorSeconds:  0,
+				ReapServerDeletedSeconds:   persistence.DefaultConfigTuningEntry.ReapServerDeletedSeconds,
 			},
 			AuthCodeEntry: &persistence.AuthCodeEntry{
 				Token: &provider.Token{
@@ -333,6 +337,7 @@ func TestAuthCodeChecker(t *testing.T) {
 				ReapRevokedSeconds:         persistence.DefaultConfigTuningEntry.ReapRevokedSeconds,
 				ReapTransientErrorAttempts: 0,
 				ReapTransientErrorSeconds:  0,
+				ReapServerDeletedSeconds:   persistence.DefaultConfigTuningEntry.ReapServerDeletedSeconds,
 			},
 			AuthCodeEntry: &persistence.AuthCodeEntry{
 				Token: &provider.Token{
@@ -357,6 +362,115 @@ func TestAuthCodeChecker(t *testing.T) {
 			},
 			Step:          time.Duration(persistence.DefaultConfigTuningEntry.ReapTransientErrorSeconds) * time.Second,
 			ExpectedError: "transient errors exceeded limits, most recently: oh no",
+		},
+		{
+			Name:              "Server error, valid without expiry, but time since last attempted issue not yet elapsed",
+			ConfigTuningEntry: persistence.DefaultConfigTuningEntry,
+			AuthCodeEntry: &persistence.AuthCodeEntry{
+				Token: &provider.Token{
+					Token: &oauth2.Token{AccessToken: "test"},
+				},
+				AuthServerName:         "test",
+				AuthServerError:        "uh oh",
+				LastAttemptedIssueTime: clk.Now(),
+			},
+			Step: time.Duration(persistence.DefaultConfigTuningEntry.ReapServerDeletedSeconds) * time.Second / 2,
+		},
+		{
+			Name:              "Server error, valid without expiry, and reapable",
+			ConfigTuningEntry: persistence.DefaultConfigTuningEntry,
+			AuthCodeEntry: &persistence.AuthCodeEntry{
+				Token: &provider.Token{
+					Token: &oauth2.Token{AccessToken: "test"},
+				},
+				AuthServerName:         "test",
+				AuthServerError:        "uh oh",
+				LastAttemptedIssueTime: clk.Now(),
+			},
+			Step:          time.Duration(persistence.DefaultConfigTuningEntry.ReapServerDeletedSeconds) * time.Second,
+			ExpectedError: `server "test" has configuration problems: uh oh`,
+		},
+		{
+			Name:              "Server error, valid with expiry",
+			ConfigTuningEntry: persistence.DefaultConfigTuningEntry,
+			AuthCodeEntry: &persistence.AuthCodeEntry{
+				Token: &provider.Token{
+					Token: &oauth2.Token{
+						AccessToken: "test",
+						Expiry:      clk.Now().Add(72 * time.Hour),
+					},
+				},
+				AuthServerName:         "test",
+				AuthServerError:        "uh oh",
+				LastAttemptedIssueTime: clk.Now(),
+			},
+			Step: time.Duration(persistence.DefaultConfigTuningEntry.ReapServerDeletedSeconds) * time.Second,
+		},
+		{
+			Name:              "Server error, expired, but not yet reapable",
+			ConfigTuningEntry: persistence.DefaultConfigTuningEntry,
+			AuthCodeEntry: &persistence.AuthCodeEntry{
+				Token: &provider.Token{
+					Token: &oauth2.Token{
+						AccessToken: "test",
+						Expiry:      clk.Now().Add(10 * time.Second),
+					},
+				},
+				AuthServerName:         "test",
+				AuthServerError:        "uh oh",
+				LastAttemptedIssueTime: clk.Now(),
+			},
+			Step: time.Duration(persistence.DefaultConfigTuningEntry.ReapServerDeletedSeconds) * time.Second,
+		},
+		{
+			Name:              "Server error, expired, and reapable",
+			ConfigTuningEntry: persistence.DefaultConfigTuningEntry,
+			AuthCodeEntry: &persistence.AuthCodeEntry{
+				Token: &provider.Token{
+					Token: &oauth2.Token{
+						AccessToken: "test",
+						Expiry:      clk.Now().Add(10 * time.Second),
+					},
+				},
+				AuthServerName:         "test",
+				AuthServerError:        "uh oh",
+				LastAttemptedIssueTime: clk.Now(),
+			},
+			Step:          time.Duration(persistence.DefaultConfigTuningEntry.ReapServerDeletedSeconds)*time.Second + 10*time.Second,
+			ExpectedError: `server "test" has configuration problems: uh oh`,
+		},
+		{
+			Name: "Server error, expired, and server deleted criterion disabled",
+			ConfigTuningEntry: persistence.ConfigTuningEntry{
+				ReapNonRefreshableSeconds:  persistence.DefaultConfigTuningEntry.ReapNonRefreshableSeconds,
+				ReapRevokedSeconds:         persistence.DefaultConfigTuningEntry.ReapRevokedSeconds,
+				ReapTransientErrorAttempts: persistence.DefaultConfigTuningEntry.ReapTransientErrorAttempts,
+				ReapTransientErrorSeconds:  persistence.DefaultConfigTuningEntry.ReapTransientErrorSeconds,
+				ReapServerDeletedSeconds:   0,
+			},
+			AuthCodeEntry: &persistence.AuthCodeEntry{
+				Token: &provider.Token{
+					Token: &oauth2.Token{
+						AccessToken: "test",
+						Expiry:      clk.Now(),
+					},
+				},
+				AuthServerName:         "test",
+				AuthServerError:        "uh oh",
+				LastAttemptedIssueTime: clk.Now(),
+			},
+			Step: time.Duration(persistence.DefaultConfigTuningEntry.ReapServerDeletedSeconds) * time.Second,
+		},
+		{
+			Name:              "Server error, never issued, and reapable",
+			ConfigTuningEntry: persistence.DefaultConfigTuningEntry,
+			AuthCodeEntry: &persistence.AuthCodeEntry{
+				AuthServerName:         "test",
+				AuthServerError:        "uh oh",
+				LastAttemptedIssueTime: clk.Now(),
+			},
+			Step:          time.Duration(persistence.DefaultConfigTuningEntry.ReapServerDeletedSeconds) * time.Second,
+			ExpectedError: `server "test" has configuration problems: uh oh`,
 		},
 	}
 	for _, test := range tests {

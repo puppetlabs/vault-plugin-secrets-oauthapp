@@ -263,6 +263,7 @@ Broadly, we group these into the following categories:
 * Expired and refresh failed because the provider rejected the refresh request
 * Expired and enough transient errors have occurred to discard the token (for
   example, instead of rejecting a token, the provider hangs the connection)
+* Expired and the server referenced by the credential no longer exists
 
 This plugin can automatically delete tokens that are expired and meet one of
 these criteria using a process called reaping. Like the automatic refreshing,
@@ -310,6 +311,7 @@ Parameters:
 | `tune_reap_revoked_seconds` | Minimum additional time to wait before automatically deleting an expired credential that has a revoked refresh token. Set to 0 to disable this reaping criterion. | Integer | 3600 | No |
 | `tune_reap_transient_error_attempts` | Minimum number of refresh attempts to make before automatically deleting an expired credential. Set to 0 to disable this reaping criterion. | Integer | 10 | No |
 | `tune_reap_transient_error_seconds` | Minimum additional time to wait before automatically deleting an expired credential that cannot be refreshed because of a transient problem like network connectivity issues. Set to 0 to disable this reaping criterion. | Integer | 86400 | No |
+| `tune_reap_server_deleted_seconds` | Minimum additional time to wait before automatically deleting an expired credential that no longer references a valid server. Set to 0 to disable this reaping criterion. | Integer | 86400 | No |
 
 #### `DELETE` (`delete`)
 
