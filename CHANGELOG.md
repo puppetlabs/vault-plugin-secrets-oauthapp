@@ -8,6 +8,8 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [3.0.0-beta.4] - 2021-09-15
+
 ### Added
 
 * It is now possible to select a default server to use by setting the
@@ -256,7 +258,8 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 * Initial release of the plugin.
 
-[Unreleased]: https://github.com/puppetlabs/vault-plugin-secrets-oauthapp/compare/v3.0.0-beta.3...HEAD
+[Unreleased]: https://github.com/puppetlabs/vault-plugin-secrets-oauthapp/compare/v3.0.0-beta.4...HEAD
+[3.0.0-beta.4]: https://github.com/puppetlabs/vault-plugin-secrets-oauthapp/compare/v3.0.0-beta.3...v3.0.0-beta.4
 [3.0.0-beta.3]: https://github.com/puppetlabs/vault-plugin-secrets-oauthapp/compare/v3.0.0-beta.2...v3.0.0-beta.3
 [3.0.0-beta.2]: https://github.com/puppetlabs/vault-plugin-secrets-oauthapp/compare/v3.0.0-beta.1...v3.0.0-beta.2
 [3.0.0-beta.1]: https://github.com/puppetlabs/vault-plugin-secrets-oauthapp/compare/v2.2.0...v3.0.0-beta.1
