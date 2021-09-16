@@ -15,6 +15,7 @@ import (
 	"github.com/hashicorp/vault/vault"
 	backendv2 "github.com/puppetlabs/vault-plugin-secrets-oauthapp/v2/pkg/backend"
 	backendv3 "github.com/puppetlabs/vault-plugin-secrets-oauthapp/v3/pkg/backend"
+	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v3/pkg/persistence"
 	"github.com/stretchr/testify/require"
 )
 
@@ -239,7 +240,7 @@ func testV2TToV3Credentials(core *vault.Core, token string, auths map[string]str
 			require.NoError(t, err)
 			require.NotNil(t, resp)
 			require.False(t, resp.IsError(), "response has error: %+v", resp.Error())
-			require.Equal(t, "legacy", resp.Data["server"])
+			require.Equal(t, persistence.LegacyAuthServerName, resp.Data["server"])
 			require.Equal(t, auths[path], resp.Data["access_token"])
 		}
 
@@ -286,7 +287,7 @@ func testV2ToV3LegacyDefaultServer(core *vault.Core, token string) func(t *testi
 		require.NoError(t, err)
 		require.NotNil(t, resp)
 		require.False(t, resp.IsError(), "response has error: %+v", resp.Error())
-		require.Equal(t, "legacy", resp.Data["default_server"])
+		require.Equal(t, persistence.LegacyAuthServerName, resp.Data["default_server"])
 
 		logger.Info("writing credential without server information")
 
@@ -315,7 +316,7 @@ func testV2ToV3LegacyDefaultServer(core *vault.Core, token string) func(t *testi
 		require.NoError(t, err)
 		require.NotNil(t, resp)
 		require.False(t, resp.IsError(), "response has error: %+v", resp.Error())
-		require.Equal(t, "legacy", resp.Data["server"])
+		require.Equal(t, persistence.LegacyAuthServerName, resp.Data["server"])
 		require.NotEmpty(t, resp.Data["access_token"])
 	}
 }

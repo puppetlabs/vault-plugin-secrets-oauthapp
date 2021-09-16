@@ -65,6 +65,12 @@ func (lccm *LockedClientCredsManager) ReadClientCredsEntry(ctx context.Context) 
 		return nil, err
 	}
 
+	// UPGRADING (v2): Set the server name to the default legacy server if it is
+	// not present here.
+	if entry.AuthServerName == "" {
+		entry.AuthServerName = LegacyAuthServerName
+	}
+
 	return entry, nil
 }
 

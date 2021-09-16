@@ -42,7 +42,7 @@ func (u *Upgrader) Upgrade(ctx context.Context) error {
 
 	// Create server.
 	newAuthServer := &persistence.AuthServerEntry{
-		Name: "legacy",
+		Name: persistence.LegacyAuthServerName,
 
 		ClientID:        currentConfig.ClientID,
 		ClientSecret:    currentConfig.ClientSecret,
@@ -53,52 +53,6 @@ func (u *Upgrader) Upgrade(ctx context.Context) error {
 	}
 	if err := u.data.AuthServer.Manager(u.storage).WriteAuthServerEntry(ctx, persistence.AuthServerName(newAuthServer.Name), newAuthServer); err != nil {
 		return fmt.Errorf("failed to create legacy server configuration: %w", err)
-	}
-
-	// Upgrade all auth code entries.
-	err = u.data.AuthCode.Manager(u.storage).ForEachAuthCodeKey(ctx, func(keyer persistence.AuthCodeKeyer) error {
-		return u.data.AuthCode.WithLock(keyer, func(lach *persistence.LockedAuthCodeHolder) error {
-			lacm := lach.Manager(u.storage)
-
-			entry, err := lacm.ReadAuthCodeEntry(ctx)
-			if err != nil {
-				return err
-			}
-
-			entry.AuthServerName = newAuthServer.Name
-
-			if err := lacm.WriteAuthCodeEntry(ctx, entry); err != nil {
-				return err
-			}
-
-			return nil
-		})
-	})
-	if err != nil {
-		return fmt.Errorf("failed to upgrade credentials: %w", err)
-	}
-
-	// Upgrade all client credentials entries.
-	err = u.data.ClientCreds.Manager(u.storage).ForEachClientCredsKey(ctx, func(keyer persistence.ClientCredsKeyer) error {
-		return u.data.ClientCreds.WithLock(keyer, func(lcch *persistence.LockedClientCredsHolder) error {
-			lccm := lcch.Manager(u.storage)
-
-			entry, err := lccm.ReadClientCredsEntry(ctx)
-			if err != nil {
-				return err
-			}
-
-			entry.AuthServerName = newAuthServer.Name
-
-			if err := lccm.WriteClientCredsEntry(ctx, entry); err != nil {
-				return err
-			}
-
-			return nil
-		})
-	})
-	if err != nil {
-		return fmt.Errorf("failed to upgrade credentials: %w", err)
 	}
 
 	// Write new configuration.
