@@ -26,10 +26,9 @@ func (b *backend) serversListOperation(ctx context.Context, req *logical.Request
 		if persistence.AuthServerName(entry.Name).AuthServerKey() != keyer.AuthServerKey() {
 			// Corrupt or likely empty data.
 			//
-			// Note: there was a brief period between v3.0.0-beta.1 and the
-			// v3.0.0 release where it was possible for the server name to be
-			// empty (in which case we can't show it here), so this check is
-			// important to maintain.
+			// UPGRADING (v3.0.0-beta.{1,2,3}): There was a brief period where
+			// we didn't record the server name in storage at all (in which case
+			// we can't show it here), so this check is important to maintain.
 			return nil
 		}
 

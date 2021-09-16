@@ -32,6 +32,10 @@ type AuthServerEntry struct {
 	ProviderOptions map[string]string `json:"provider_options"`
 }
 
+// UPGRADING (v2): LegacyAuthServerName is the name of the default server
+// created by the v2v3 upgrade.
+const LegacyAuthServerName = "legacy"
+
 type AuthServerKey string
 
 var _ AuthServerKeyer = AuthServerKey("")
