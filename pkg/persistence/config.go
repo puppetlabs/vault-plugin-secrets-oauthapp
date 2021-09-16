@@ -68,8 +68,9 @@ var DefaultConfigTuningEntry = ConfigTuningEntry{
 }
 
 type ConfigEntry struct {
-	Version ConfigVersion     `json:"version"`
-	Tuning  ConfigTuningEntry `json:"tuning"`
+	Version       ConfigVersion     `json:"version"`
+	DefaultServer string            `json:"default_server"`
+	Tuning        ConfigTuningEntry `json:"tuning"`
 }
 
 type LockedConfigManager struct {

@@ -101,8 +101,9 @@ func (u *Upgrader) Upgrade(ctx context.Context) error {
 
 	// Write new configuration.
 	newConfig := &persistence.ConfigEntry{
-		Version: currentConfig.Version,
-		Tuning:  currentConfig.Tuning,
+		Version:       currentConfig.Version,
+		DefaultServer: "legacy",
+		Tuning:        currentConfig.Tuning,
 	}
 	if err := u.data.Config.Manager(u.storage).WriteConfig(ctx, newConfig); err != nil {
 		return fmt.Errorf("failed to write new configuration: %w", err)

@@ -27,6 +27,9 @@ func TestV2ToV3Upgrade(t *testing.T) {
 	// Set up an initial token validity of 1 minute, which we'll then scale to 5
 	// minutes later to force a credential refresh.
 	desiredMinimumSeconds := 60
+	setDesiredMinimumSeconds := func(minimumSeconds int) {
+		desiredMinimumSeconds = minimumSeconds
+	}
 
 	// Set up a stub server to handle token requests. This server simply returns
 	// a random token with a pre-defined expiration for any HTTP request.
@@ -65,7 +68,7 @@ func TestV2ToV3Upgrade(t *testing.T) {
 		require.NoError(t, core.Shutdown())
 	}()
 
-	logger := core.Logger().ResetNamed("test")
+	logger := core.Logger().ResetNamed(t.Name())
 
 	// Set up test engine.
 	logger.Info("setting up test engine")
@@ -129,12 +132,12 @@ func TestV2ToV3Upgrade(t *testing.T) {
 	// Read initial token values.
 	logger.Info("reading initial credential information")
 
-	tokens := map[string]string{
+	auths := map[string]string{
 		"oauth2/creds/test-0": "",
 		"oauth2/creds/test-1": "",
 		"oauth2/self/test":    "",
 	}
-	for path := range tokens {
+	for path := range auths {
 		req := &logical.Request{
 			ClientToken: token,
 			Operation:   logical.ReadOperation,
@@ -147,7 +150,7 @@ func TestV2ToV3Upgrade(t *testing.T) {
 		require.False(t, resp.IsError(), "response has error: %+v", resp.Error())
 		require.NotEmpty(t, resp.Data["access_token"])
 
-		tokens[path] = resp.Data["access_token"].(string)
+		auths[path] = resp.Data["access_token"].(string)
 	}
 
 	// Update factory to use the new V3 backend. The next call to the factory
@@ -171,63 +174,148 @@ func TestV2ToV3Upgrade(t *testing.T) {
 	require.NotNil(t, resp)
 	require.False(t, resp.IsError(), "response has error: %+v", resp.Error())
 
-	// Read the new server.
-	logger.Info("reading new server information")
-
-	req = &logical.Request{
-		ClientToken: token,
-		Operation:   logical.ReadOperation,
-		Path:        "oauth2/servers/legacy",
+	tests := []struct {
+		Name string
+		Test func(t *testing.T, ctx context.Context)
+	}{
+		{
+			Name: "New server information",
+			Test: testV2ToV3ServerInformation(core, token),
+		},
+		{
+			Name: "Legacy credential refresh",
+			Test: testV2TToV3Credentials(core, token, auths, setDesiredMinimumSeconds),
+		},
+		{
+			Name: "Legacy server is set as default",
+			Test: testV2ToV3LegacyDefaultServer(core, token),
+		},
 	}
+	for _, test := range tests {
+		t.Run(test.Name, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(ctx)
+			defer cancel()
 
-	resp, err = core.HandleRequest(ctx, req)
-	require.NoError(t, err)
-	require.NotNil(t, resp)
-	require.False(t, resp.IsError(), "response has error: %+v", resp.Error())
-	require.Equal(t, "foo", resp.Data["client_id"])
+			test.Test(t, ctx)
+		})
+	}
+}
 
-	// Make sure we can still read all the original tokens. Because none of them
-	// have expired, the access tokens should be identical.
-	logger.Info("reading credential information stored by V2 backend")
+func testV2ToV3ServerInformation(core *vault.Core, token string) func(t *testing.T, ctx context.Context) {
+	return func(t *testing.T, ctx context.Context) {
+		// Read the new server.
+		logger := core.Logger().ResetNamed(t.Name())
+		logger.Info("reading new server information")
 
-	for path := range tokens {
 		req := &logical.Request{
 			ClientToken: token,
 			Operation:   logical.ReadOperation,
-			Path:        path,
+			Path:        "oauth2/servers/legacy",
 		}
 
 		resp, err := core.HandleRequest(ctx, req)
+		require.NoError(t, err)
+		require.NotNil(t, resp)
+		require.False(t, resp.IsError(), "response has error: %+v", resp.Error())
+		require.Equal(t, "foo", resp.Data["client_id"])
+	}
+}
+
+func testV2TToV3Credentials(core *vault.Core, token string, auths map[string]string, setDesiredMinimumSeconds func(minimumSeconds int)) func(t *testing.T, ctx context.Context) {
+	return func(t *testing.T, ctx context.Context) {
+		// Make sure we can still read all the original tokens. Because none of them
+		// have expired, the access tokens should be identical.
+		logger := core.Logger().ResetNamed(t.Name())
+		logger.Info("reading credential information stored by V2 backend")
+
+		for path := range auths {
+			req := &logical.Request{
+				ClientToken: token,
+				Operation:   logical.ReadOperation,
+				Path:        path,
+			}
+
+			resp, err := core.HandleRequest(ctx, req)
+			require.NoError(t, err)
+			require.NotNil(t, resp)
+			require.False(t, resp.IsError(), "response has error: %+v", resp.Error())
+			require.Equal(t, "legacy", resp.Data["server"])
+			require.Equal(t, auths[path], resp.Data["access_token"])
+		}
+
+		// Do the same, but this time force a refresh with a large minimum_seconds
+		// value. The access token should change as it requests new values from the
+		// newly created legacy server.
+		logger.Info("refreshing credentials using new server")
+
+		// Update value for the server.
+		desiredMinimumSeconds := 60 * 5
+		setDesiredMinimumSeconds(desiredMinimumSeconds)
+
+		for path := range auths {
+			req := &logical.Request{
+				ClientToken: token,
+				Operation:   logical.ReadOperation,
+				Path:        path,
+				Data: map[string]interface{}{
+					"minimum_seconds": desiredMinimumSeconds,
+				},
+			}
+
+			resp, err := core.HandleRequest(ctx, req)
+			require.NoError(t, err)
+			require.NotNil(t, resp)
+			require.False(t, resp.IsError(), "response has error: %+v", resp.Error())
+			require.NotEmpty(t, resp.Data["access_token"])
+			require.NotEqual(t, auths[path], resp.Data["access_token"])
+		}
+	}
+}
+
+func testV2ToV3LegacyDefaultServer(core *vault.Core, token string) func(t *testing.T, ctx context.Context) {
+	return func(t *testing.T, ctx context.Context) {
+		logger := core.Logger().ResetNamed(t.Name())
+		logger.Info("reading configuration")
+		req := &logical.Request{
+			ClientToken: token,
+			Operation:   logical.ReadOperation,
+			Path:        "oauth2/config",
+		}
+
+		resp, err := core.HandleRequest(ctx, req)
+		require.NoError(t, err)
+		require.NotNil(t, resp)
+		require.False(t, resp.IsError(), "response has error: %+v", resp.Error())
+		require.Equal(t, "legacy", resp.Data["default_server"])
+
+		logger.Info("writing credential without server information")
+
+		req = &logical.Request{
+			ClientToken: token,
+			Operation:   logical.UpdateOperation,
+			Path:        "oauth2/creds/test-legacy-default",
+			Data: map[string]interface{}{
+				"code": "test",
+			},
+		}
+
+		resp, err = core.HandleRequest(ctx, req)
+		require.NoError(t, err)
+		require.False(t, resp != nil && resp.IsError(), "response has error: %+v", resp.Error())
+		require.Nil(t, resp)
+
+		// Read the credential back and make sure the server is set.
+		req = &logical.Request{
+			ClientToken: token,
+			Operation:   logical.ReadOperation,
+			Path:        "oauth2/creds/test-legacy-default",
+		}
+
+		resp, err = core.HandleRequest(ctx, req)
 		require.NoError(t, err)
 		require.NotNil(t, resp)
 		require.False(t, resp.IsError(), "response has error: %+v", resp.Error())
 		require.Equal(t, "legacy", resp.Data["server"])
-		require.Equal(t, tokens[path], resp.Data["access_token"])
-	}
-
-	// Do the same, but this time force a refresh with a large minimum_seconds
-	// value. The access token should change as it requests new values from the
-	// newly created legacy server.
-	logger.Info("refreshing credentials using new server")
-
-	// Update value for the server.
-	desiredMinimumSeconds = 60 * 5
-
-	for path := range tokens {
-		req := &logical.Request{
-			ClientToken: token,
-			Operation:   logical.ReadOperation,
-			Path:        path,
-			Data: map[string]interface{}{
-				"minimum_seconds": desiredMinimumSeconds,
-			},
-		}
-
-		resp, err := core.HandleRequest(ctx, req)
-		require.NoError(t, err)
-		require.NotNil(t, resp)
-		require.False(t, resp.IsError(), "response has error: %+v", resp.Error())
 		require.NotEmpty(t, resp.Data["access_token"])
-		require.NotEqual(t, tokens[path], resp.Data["access_token"])
 	}
 }

@@ -20,6 +20,8 @@ func (b *backend) configReadOperation(ctx context.Context, req *logical.Request,
 
 	resp := &logical.Response{
 		Data: map[string]interface{}{
+			"default_server": cfg.DefaultServer,
+
 			"tune_provider_timeout_seconds":              cfg.Tuning.ProviderTimeoutSeconds,
 			"tune_provider_timeout_expiry_leeway_factor": cfg.Tuning.ProviderTimeoutExpiryLeewayFactor,
 
@@ -39,7 +41,8 @@ func (b *backend) configReadOperation(ctx context.Context, req *logical.Request,
 
 func (b *backend) configUpdateOperation(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
 	c := &persistence.ConfigEntry{
-		Version: persistence.ConfigVersionLatest,
+		Version:       persistence.ConfigVersionLatest,
+		DefaultServer: data.Get("default_server").(string),
 		Tuning: persistence.ConfigTuningEntry{
 			ProviderTimeoutSeconds:            data.Get("tune_provider_timeout_seconds").(int),
 			ProviderTimeoutExpiryLeewayFactor: data.Get("tune_provider_timeout_expiry_leeway_factor").(float64),
@@ -95,6 +98,10 @@ const (
 )
 
 var configFields = map[string]*framework.FieldSchema{
+	"default_server": {
+		Type:        framework.TypeString,
+		Description: "The name of a server to use as a default value if no server is specified in a credentials request.",
+	},
 	"tune_provider_timeout_seconds": {
 		Type:        framework.TypeDurationSecond,
 		Description: "Specifies the maximum time to wait for a provider response in seconds. Infinite if 0.",

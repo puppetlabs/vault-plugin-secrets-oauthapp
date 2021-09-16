@@ -115,16 +115,14 @@ func (b *backend) credsReadOperation(ctx context.Context, req *logical.Request, 
 }
 
 func (b *backend) credsUpdateAuthorizationCodeOperation(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
-	serverName, ok := data.GetOk("server")
-	if !ok {
-		return logical.ErrorResponse("missing server"), nil
+	serverName, err := b.getServerNameOrDefault(ctx, req.Storage, data.Get("server").(string))
+	if err != nil {
+		return errorResponse(err)
 	}
 
-	ops, put, err := b.getProviderOperations(ctx, req.Storage, persistence.AuthServerName(serverName.(string)), defaultExpiryDelta)
-	if errmark.MarkedUser(err) {
-		return logical.ErrorResponse(errmark.MarkShort(err).Error()), nil
-	} else if err != nil {
-		return nil, err
+	ops, put, err := b.getProviderOperations(ctx, req.Storage, persistence.AuthServerName(serverName), defaultExpiryDelta)
+	if err != nil {
+		return errorResponse(err)
 	}
 	defer put()
 
@@ -149,7 +147,7 @@ func (b *backend) credsUpdateAuthorizationCodeOperation(ctx context.Context, req
 	}
 
 	entry := &persistence.AuthCodeEntry{
-		AuthServerName: serverName.(string),
+		AuthServerName: serverName,
 	}
 	entry.SetToken(tok)
 
@@ -161,16 +159,14 @@ func (b *backend) credsUpdateAuthorizationCodeOperation(ctx context.Context, req
 }
 
 func (b *backend) credsUpdateRefreshTokenOperation(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
-	serverName, ok := data.GetOk("server")
-	if !ok {
-		return logical.ErrorResponse("missing server"), nil
+	serverName, err := b.getServerNameOrDefault(ctx, req.Storage, data.Get("server").(string))
+	if err != nil {
+		return errorResponse(err)
 	}
 
-	ops, put, err := b.getProviderOperations(ctx, req.Storage, persistence.AuthServerName(serverName.(string)), defaultExpiryDelta)
-	if errmark.MarkedUser(err) {
-		return logical.ErrorResponse(errmark.MarkShort(err).Error()), nil
-	} else if err != nil {
-		return nil, err
+	ops, put, err := b.getProviderOperations(ctx, req.Storage, persistence.AuthServerName(serverName), defaultExpiryDelta)
+	if err != nil {
+		return errorResponse(err)
 	}
 	defer put()
 
@@ -199,7 +195,7 @@ func (b *backend) credsUpdateRefreshTokenOperation(ctx context.Context, req *log
 	}
 
 	entry := &persistence.AuthCodeEntry{
-		AuthServerName: serverName.(string),
+		AuthServerName: serverName,
 	}
 	entry.SetToken(tok)
 
@@ -211,12 +207,12 @@ func (b *backend) credsUpdateRefreshTokenOperation(ctx context.Context, req *log
 }
 
 func (b *backend) credsUpdateDeviceCodeOperation(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
-	serverName, ok := data.GetOk("server")
-	if !ok {
-		return logical.ErrorResponse("missing server"), nil
+	serverName, err := b.getServerNameOrDefault(ctx, req.Storage, data.Get("server").(string))
+	if err != nil {
+		return errorResponse(err)
 	}
 
-	ops, put, err := b.getProviderOperations(ctx, req.Storage, persistence.AuthServerName(serverName.(string)), defaultExpiryDelta)
+	ops, put, err := b.getProviderOperations(ctx, req.Storage, persistence.AuthServerName(serverName), defaultExpiryDelta)
 	if errmark.MarkedUser(err) {
 		return logical.ErrorResponse(errmark.MarkShort(err).Error()), nil
 	} else if err != nil {
@@ -277,7 +273,7 @@ func (b *backend) credsUpdateDeviceCodeOperation(ctx context.Context, req *logic
 		ProviderOptions: data.Get("provider_options").(map[string]string),
 	}
 	ace := &persistence.AuthCodeEntry{
-		AuthServerName: serverName.(string),
+		AuthServerName: serverName,
 	}
 
 	// If we get this far, we're guaranteed to have a device code. We'll do
