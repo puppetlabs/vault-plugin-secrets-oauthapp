@@ -14,6 +14,7 @@ type AuthCodeChecker struct {
 	revokedTTL             time.Duration
 	transientErrorAttempts int
 	transientErrorTTL      time.Duration
+	serverDeletedTTL       time.Duration
 }
 
 // Check tests whether the given authorization code entry is still valid. If it
@@ -21,6 +22,16 @@ type AuthCodeChecker struct {
 // entry is not valid.
 func (acc *AuthCodeChecker) Check(ctx context.Context, entry *persistence.AuthCodeEntry) error {
 	now := clockctx.Clock(ctx).Now()
+
+	// We can get an error before we ever actually issue a token, so for the
+	// reference time to check, we'll either use the actual expiry or the last
+	// attempted issue time.
+	getReferenceTime := func() time.Time {
+		if entry.TokenIssued() && !entry.Expiry.IsZero() {
+			return entry.Expiry
+		}
+		return entry.LastAttemptedIssueTime
+	}
 
 	switch {
 	case entry.UserError != "":
@@ -30,15 +41,7 @@ func (acc *AuthCodeChecker) Check(ctx context.Context, entry *persistence.AuthCo
 			return nil
 		}
 
-		// We can get an error before we ever actually issue a token, so for
-		// the error, we'll either use the actual expiry or the last
-		// attempted issue time.
-		ref := entry.LastAttemptedIssueTime
-		if entry.TokenIssued() && !entry.Expiry.IsZero() {
-			ref = entry.Expiry
-		}
-
-		if ref.Add(acc.revokedTTL).After(now) {
+		if getReferenceTime().Add(acc.revokedTTL).After(now) {
 			// Not yet ready to be reaped.
 			return nil
 		}
@@ -56,17 +59,25 @@ func (acc *AuthCodeChecker) Check(ctx context.Context, entry *persistence.AuthCo
 			return nil
 		}
 
-		ref := entry.LastAttemptedIssueTime
-		if entry.TokenIssued() && !entry.Expiry.IsZero() {
-			ref = entry.Expiry
-		}
-
-		if ref.Add(acc.transientErrorTTL).After(now) {
+		if getReferenceTime().Add(acc.transientErrorTTL).After(now) {
 			// Not yet ready to be reaped.
 			return nil
 		}
 
 		return fmt.Errorf("transient errors exceeded limits, most recently: %s", entry.LastTransientError)
+	case entry.AuthServerError != "":
+		if acc.serverDeletedTTL <= 0 {
+			// We will not take action on this token if its backing server is
+			// deleted. Wait for the server to come back.
+			return nil
+		}
+
+		if getReferenceTime().Add(acc.serverDeletedTTL).After(now) {
+			// Not yet ready to be reaped.
+			return nil
+		}
+
+		return fmt.Errorf("server %q has configuration problems: %s", entry.AuthServerName, entry.AuthServerError)
 	case !entry.TokenIssued():
 		// Waiting for a token from an external process (e.g., device code
 		// auth). Do nothing.
@@ -91,5 +102,6 @@ func NewAuthCodeChecker(tuning persistence.ConfigTuningEntry) *AuthCodeChecker {
 		revokedTTL:             time.Duration(tuning.ReapRevokedSeconds) * time.Second,
 		transientErrorAttempts: tuning.ReapTransientErrorAttempts,
 		transientErrorTTL:      time.Duration(tuning.ReapTransientErrorSeconds) * time.Second,
+		serverDeletedTTL:       time.Duration(tuning.ReapServerDeletedSeconds) * time.Second,
 	}
 }

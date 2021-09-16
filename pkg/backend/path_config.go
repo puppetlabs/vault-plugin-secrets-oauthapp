@@ -34,6 +34,7 @@ func (b *backend) configReadOperation(ctx context.Context, req *logical.Request,
 			"tune_reap_revoked_seconds":          cfg.Tuning.ReapRevokedSeconds,
 			"tune_reap_transient_error_attempts": cfg.Tuning.ReapTransientErrorAttempts,
 			"tune_reap_transient_error_seconds":  cfg.Tuning.ReapTransientErrorSeconds,
+			"tune_reap_server_deleted_seconds":   cfg.Tuning.ReapServerDeletedSeconds,
 		},
 	}
 	return resp, nil
@@ -54,6 +55,7 @@ func (b *backend) configUpdateOperation(ctx context.Context, req *logical.Reques
 			ReapRevokedSeconds:                data.Get("tune_reap_revoked_seconds").(int),
 			ReapTransientErrorAttempts:        data.Get("tune_reap_transient_error_attempts").(int),
 			ReapTransientErrorSeconds:         data.Get("tune_reap_transient_error_seconds").(int),
+			ReapServerDeletedSeconds:          data.Get("tune_reap_server_deleted_seconds").(int),
 		},
 	}
 
@@ -151,6 +153,11 @@ var configFields = map[string]*framework.FieldSchema{
 		Type:        framework.TypeDurationSecond,
 		Description: "Specifies the minimum additional time to wait before automatically deleting an expired credential that cannot be refreshed because of a transient problem like network connectivity issues. Set to 0 to disable this reaping criterion.",
 		Default:     persistence.DefaultConfigTuningEntry.ReapTransientErrorSeconds,
+	},
+	"tune_reap_server_deleted_seconds": {
+		Type:        framework.TypeDurationSecond,
+		Description: "Specifies the minimum additional time to wait before automatically deleting an expired credential that no longer has its backing server configured.",
+		Default:     persistence.DefaultConfigTuningEntry.ReapServerDeletedSeconds,
 	},
 }
 

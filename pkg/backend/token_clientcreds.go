@@ -2,9 +2,11 @@ package backend
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/hashicorp/vault/sdk/logical"
+	"github.com/puppetlabs/leg/errmap/pkg/errmark"
 	"github.com/puppetlabs/leg/timeutil/pkg/clockctx"
 	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v3/pkg/persistence"
 	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v3/pkg/provider"
@@ -27,7 +29,9 @@ func (b *backend) updateClientCredsToken(ctx context.Context, storage logical.St
 		}
 
 		ops, put, err := b.getProviderOperations(ctx, storage, persistence.AuthServerName(candidate.AuthServerName), expiryDelta)
-		if err != nil {
+		if errmark.MarkedUser(err) {
+			return fmt.Errorf("server %q has configuration problems: %w", candidate.AuthServerName, err)
+		} else if err != nil {
 			return err
 		}
 		defer put()

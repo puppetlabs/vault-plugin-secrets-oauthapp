@@ -104,22 +104,25 @@ func (b *backend) exchangeDeviceAuth(ctx context.Context, storage logical.Storag
 
 		// We have a matching credential waiting to be issued.
 		ops, put, err := b.getProviderOperations(ctx, storage, persistence.AuthServerName(ct.AuthServerName), defaultExpiryDelta)
-		if err != nil {
+		if errmark.MarkedUser(err) {
+			ct.SetAuthServerError(errmark.MarkShort(err).Error())
+		} else if err != nil {
 			return err
-		}
-		defer put()
+		} else {
+			defer put()
 
-		// Perform the exchange.
-		auth, ct, err = deviceAuthExchange(clockctx.WithClock(ctx, b.clock), ops.Public(), auth, ct)
-		if err != nil {
-			return err
-		}
-
-		// We need to run the auth exchange again, so go ahead and update it
-		// now.
-		if !ct.TokenIssued() && ct.UserError == "" {
-			if err := cm.WriteDeviceAuthEntry(ctx, auth); err != nil {
+			// Perform the exchange.
+			auth, ct, err = deviceAuthExchange(clockctx.WithClock(ctx, b.clock), ops.Public(), auth, ct)
+			if err != nil {
 				return err
+			}
+
+			// We need to run the auth exchange again, so go ahead and update it
+			// now.
+			if !ct.TokenIssued() && ct.UserError == "" {
+				if err := cm.WriteDeviceAuthEntry(ctx, auth); err != nil {
+					return err
+				}
 			}
 		}
 

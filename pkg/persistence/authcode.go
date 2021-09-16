@@ -43,6 +43,10 @@ type AuthCodeEntry struct {
 	// LastIssueTime is the most recent time a token was successfully issued.
 	LastIssueTime time.Time `json:"last_issue_time,omitempty"`
 
+	// AuthServerError indicates that the actual backing server and provider
+	// could not be acquired to make this token request.
+	AuthServerError string `json:"auth_server_error,omitempty"`
+
 	// UserError is used to store a permanent error that indicates the end of
 	// this token's usable lifespan.
 	UserError string `json:"user_error,omitempty"`
@@ -65,18 +69,26 @@ type AuthCodeEntry struct {
 func (ace *AuthCodeEntry) SetToken(tok *provider.Token) {
 	ace.Token = tok
 	ace.LastIssueTime = time.Now()
+	ace.AuthServerError = ""
 	ace.UserError = ""
 	ace.TransientErrorsSinceLastIssue = 0
 	ace.LastTransientError = ""
 	ace.LastAttemptedIssueTime = time.Time{}
 }
 
+func (ace *AuthCodeEntry) SetAuthServerError(err string) {
+	ace.AuthServerError = err
+	ace.LastAttemptedIssueTime = time.Now()
+}
+
 func (ace *AuthCodeEntry) SetUserError(err string) {
+	ace.AuthServerError = ""
 	ace.UserError = err
 	ace.LastAttemptedIssueTime = time.Now()
 }
 
 func (ace *AuthCodeEntry) SetTransientError(err string) {
+	ace.AuthServerError = ""
 	ace.TransientErrorsSinceLastIssue++
 	ace.LastTransientError = err
 	ace.LastAttemptedIssueTime = time.Now()

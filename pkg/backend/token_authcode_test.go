@@ -2,12 +2,14 @@ package backend_test
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
 	"github.com/hashicorp/vault/sdk/logical"
 	"github.com/puppetlabs/leg/timeutil/pkg/clock"
 	"github.com/puppetlabs/leg/timeutil/pkg/clock/k8sext"
+	"github.com/puppetlabs/leg/timeutil/pkg/retry"
 	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v3/pkg/backend"
 	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v3/pkg/provider"
 	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v3/pkg/testutil"
@@ -428,4 +430,173 @@ func TestMinimumSeconds(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestServerDeletedFromUnderCred(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	client1 := testutil.MockClient{
+		ID:     "abc",
+		Secret: "def",
+	}
+
+	client2 := testutil.MockClient{
+		ID:     "123",
+		Secret: "456",
+	}
+
+	clk := testclock.NewFakeClock(time.Now())
+
+	expire := func(delegate testutil.MockAuthCodeExchangeFunc) testutil.MockAuthCodeExchangeFunc {
+		return testutil.AmendTokenMockAuthCodeExchange(delegate, func(t *provider.Token) error {
+			t.RefreshToken = "test"
+			t.Expiry = clk.Now().Add(30 * time.Second)
+			return nil
+		})
+	}
+
+	pr := provider.NewRegistry()
+	pr.MustRegister("mock", testutil.MockFactory(
+		testutil.MockWithAuthCodeExchange(client1, expire(testutil.IncrementMockAuthCodeExchange("client1_"))),
+		testutil.MockWithAuthCodeExchange(client2, expire(testutil.IncrementMockAuthCodeExchange("client2_"))),
+	))
+
+	storage := &logical.InmemStorage{}
+
+	b, err := backend.New(backend.Options{
+		ProviderRegistry: pr,
+		Clock:            k8sext.NewClock(clk),
+	})
+	require.NoError(t, err)
+	require.NoError(t, b.Setup(ctx, &logical.BackendConfig{StorageView: storage}))
+	require.NoError(t, b.Initialize(ctx, &logical.InitializationRequest{Storage: storage}))
+	defer b.Cleanup(ctx)
+
+	// Write global configuratio to turn off the reaper for creds without
+	// servers, which could fire since we're rapidly incrementing the clock.
+	req := &logical.Request{
+		Operation: logical.UpdateOperation,
+		Path:      backend.ConfigPath,
+		Storage:   storage,
+		Data: map[string]interface{}{
+			"tune_reap_server_deleted_seconds": 0,
+		},
+	}
+
+	resp, err := b.HandleRequest(ctx, req)
+	require.NoError(t, err)
+	require.False(t, resp != nil && resp.IsError(), "response has error: %+v", resp.Error())
+	require.Nil(t, resp)
+
+	// Write server configuration.
+	req = &logical.Request{
+		Operation: logical.UpdateOperation,
+		Path:      backend.ServersPathPrefix + `mock`,
+		Storage:   storage,
+		Data: map[string]interface{}{
+			"client_id":     client1.ID,
+			"client_secret": client1.Secret,
+			"provider":      "mock",
+		},
+	}
+
+	resp, err = b.HandleRequest(ctx, req)
+	require.NoError(t, err)
+	require.False(t, resp != nil && resp.IsError(), "response has error: %+v", resp.Error())
+	require.Nil(t, resp)
+
+	// Write a credential.
+	req = &logical.Request{
+		Operation: logical.UpdateOperation,
+		Path:      backend.CredsPathPrefix + `test`,
+		Storage:   storage,
+		Data: map[string]interface{}{
+			"server": "mock",
+			"code":   "test",
+		},
+	}
+
+	resp, err = b.HandleRequest(ctx, req)
+	require.NoError(t, err)
+	require.False(t, resp != nil && resp.IsError(), "response has error: %+v", resp.Error())
+	require.Nil(t, resp)
+
+	// Now the token should be valid.
+	req = &logical.Request{
+		Operation: logical.ReadOperation,
+		Path:      backend.CredsPathPrefix + `test`,
+		Storage:   storage,
+	}
+
+	resp, err = b.HandleRequest(ctx, req)
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	require.False(t, resp.IsError(), "response has error: %+v", resp.Error())
+	require.Contains(t, resp.Data["access_token"], "client1_")
+
+	// Delete the server.
+	req = &logical.Request{
+		Operation: logical.DeleteOperation,
+		Path:      backend.ServersPathPrefix + `mock`,
+		Storage:   storage,
+	}
+
+	resp, err = b.HandleRequest(ctx, req)
+	require.NoError(t, err)
+	require.False(t, resp != nil && resp.IsError(), "response has error: %+v", resp.Error())
+	require.Nil(t, resp)
+
+	// Force the refresher to run.
+	clk.Step(time.Minute)
+
+	// The token should expire, and we should see a warning about the server
+	// configuration.
+	require.NoError(t, retry.Wait(ctx, func(ctx context.Context) (bool, error) {
+		req = &logical.Request{
+			Operation: logical.ReadOperation,
+			Path:      backend.CredsPathPrefix + `test`,
+			Storage:   storage,
+		}
+
+		resp, err = b.HandleRequest(ctx, req)
+		require.NoError(t, err)
+		require.NotNil(t, resp)
+		if !resp.IsError() {
+			return retry.Repeat(fmt.Errorf("token still valid"))
+		}
+		require.EqualError(t, resp.Error(), fmt.Sprintf(`server "mock" has configuration problems: %s`, backend.ErrNoSuchServer))
+
+		return retry.Done(nil)
+	}))
+
+	// Put the server back.
+	req = &logical.Request{
+		Operation: logical.UpdateOperation,
+		Path:      backend.ServersPathPrefix + `mock`,
+		Storage:   storage,
+		Data: map[string]interface{}{
+			"client_id":     client2.ID,
+			"client_secret": client2.Secret,
+			"provider":      "mock",
+		},
+	}
+
+	resp, err = b.HandleRequest(ctx, req)
+	require.NoError(t, err)
+	require.False(t, resp != nil && resp.IsError(), "response has error: %+v", resp.Error())
+	require.Nil(t, resp)
+
+	// Now the credential should become available again.
+	req = &logical.Request{
+		Operation: logical.ReadOperation,
+		Path:      backend.CredsPathPrefix + `test`,
+		Storage:   storage,
+	}
+
+	resp, err = b.HandleRequest(ctx, req)
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	require.False(t, resp.IsError(), "response has error: %+v", resp.Error())
+	require.Contains(t, resp.Data["access_token"], "client2_")
 }

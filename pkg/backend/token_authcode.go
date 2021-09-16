@@ -113,22 +113,25 @@ func (b *backend) refreshCredToken(ctx context.Context, storage logical.Storage,
 		}
 
 		ops, put, err := b.getProviderOperations(ctx, storage, persistence.AuthServerName(candidate.AuthServerName), expiryDelta)
-		if err != nil {
+		if errmark.MarkedUser(err) {
+			candidate.SetAuthServerError(errmark.MarkShort(err).Error())
+		} else if err != nil {
 			return err
-		}
-		defer put()
-
-		// Refresh.
-		refreshed, err := ops.Private().RefreshToken(clockctx.WithClock(ctx, b.clock), candidate.Token)
-		if err != nil {
-			msg := errmap.Wrap(errmark.MarkShort(err), "refresh failed").Error()
-			if errmark.MarkedUser(err) {
-				candidate.SetUserError(msg)
-			} else {
-				candidate.SetTransientError(msg)
-			}
 		} else {
-			candidate.SetToken(refreshed)
+			defer put()
+
+			// Refresh.
+			refreshed, err := ops.Private().RefreshToken(clockctx.WithClock(ctx, b.clock), candidate.Token)
+			if err != nil {
+				msg := errmap.Wrap(errmark.MarkShort(err), "refresh failed").Error()
+				if errmark.MarkedUser(err) {
+					candidate.SetUserError(msg)
+				} else {
+					candidate.SetTransientError(msg)
+				}
+			} else {
+				candidate.SetToken(refreshed)
+			}
 		}
 
 		if err := acm.WriteAuthCodeEntry(ctx, candidate); err != nil {

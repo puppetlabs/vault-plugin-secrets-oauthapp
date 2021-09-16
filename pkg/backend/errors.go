@@ -9,7 +9,7 @@ import (
 
 var (
 	ErrMissingServerField = errors.New("missing server (consider configuring a default server)")
-	ErrNoSuchServer       = errors.New("no server with the given name")
+	ErrNoSuchServer       = errors.New("server configuration does not exist (was it deleted?)")
 )
 
 func errorResponse(err error) (*logical.Response, error) {
