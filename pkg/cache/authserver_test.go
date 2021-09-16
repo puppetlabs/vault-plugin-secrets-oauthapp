@@ -23,8 +23,12 @@ func TestAuthServerCache(t *testing.T) {
 	h := persistence.NewHolder()
 
 	// Write server configurations.
+	namer := func(i int) string {
+		return fmt.Sprintf("server-%d", i)
+	}
+
 	keyer := func(i int) persistence.AuthServerKeyer {
-		return persistence.AuthServerName(fmt.Sprintf("server-%d", i))
+		return persistence.AuthServerName(namer(i))
 	}
 
 	client := testutil.MockClient{
@@ -67,6 +71,8 @@ func TestAuthServerCache(t *testing.T) {
 
 	for i := 0; i < 4; i++ {
 		entry := &persistence.AuthServerEntry{
+			Name: namer(i),
+
 			ClientID:        client.ID,
 			ClientSecret:    client.Secret,
 			ProviderName:    "mock",
@@ -76,7 +82,7 @@ func TestAuthServerCache(t *testing.T) {
 			},
 		}
 
-		require.NoError(t, h.AuthServer.Manager(storage).WriteAuthServerEntry(ctx, keyer(i), entry))
+		require.NoError(t, h.AuthServer.Manager(storage).WriteAuthServerEntry(ctx, persistence.AuthServerName(entry.Name), entry))
 	}
 
 	asc, err := cache.NewAuthServerCache(2, pr, h.AuthServer)

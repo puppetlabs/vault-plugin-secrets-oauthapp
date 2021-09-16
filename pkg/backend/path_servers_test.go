@@ -174,4 +174,17 @@ func TestMultipleServers(t *testing.T) {
 			require.Empty(t, resp.Data["expire_time"])
 		})
 	}
+
+	// Check that we can list the servers.
+	req := &logical.Request{
+		Operation: logical.ListOperation,
+		Path:      backend.ServersPathPrefix,
+		Storage:   storage,
+	}
+
+	resp, err := b.HandleRequest(ctx, req)
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	require.False(t, resp.IsError(), "response has error: %+v", resp.Error())
+	require.Equal(t, []string{"server1", "server2", "server3"}, resp.Data["keys"])
 }

@@ -30,6 +30,7 @@ func paths(b *backend) []*framework.Path {
 		pathConfig(b),
 		pathCreds(b),
 		pathSelf(b),
+		pathServersList(b),
 		pathServers(b),
 	}
 }

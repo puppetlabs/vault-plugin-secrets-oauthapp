@@ -3,6 +3,7 @@ package backend
 import (
 	"context"
 	"errors"
+	"sort"
 	"strings"
 
 	"github.com/hashicorp/vault/sdk/framework"
@@ -11,6 +12,37 @@ import (
 	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v3/pkg/persistence"
 	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v3/pkg/provider"
 )
+
+func (b *backend) serversListOperation(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
+	var serverNames []string
+
+	m := b.data.AuthServer.Manager(req.Storage)
+	err := m.ForEachAuthServerKey(ctx, func(keyer persistence.AuthServerKeyer) error {
+		entry, err := m.ReadAuthServerEntry(ctx, keyer)
+		if err != nil {
+			return err
+		}
+
+		if persistence.AuthServerName(entry.Name).AuthServerKey() != keyer.AuthServerKey() {
+			// Corrupt or likely empty data.
+			//
+			// Note: there was a brief period between v3.0.0-beta.1 and the
+			// v3.0.0 release where it was possible for the server name to be
+			// empty (in which case we can't show it here), so this check is
+			// important to maintain.
+			return nil
+		}
+
+		serverNames = append(serverNames, entry.Name)
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	sort.Strings(serverNames)
+	return logical.ListResponse(serverNames), nil
+}
 
 func (b *backend) serversReadOperation(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
 	server, err := b.cache.AuthServer.Get(ctx, req.Storage, persistence.AuthServerName(data.Get("name").(string)))
@@ -53,8 +85,9 @@ func (b *backend) serversUpdateOperation(ctx context.Context, req *logical.Reque
 		return nil, err
 	}
 
-	keyer := persistence.AuthServerName(data.Get("name").(string))
 	entry := &persistence.AuthServerEntry{
+		Name: data.Get("name").(string),
+
 		ClientID:        clientID.(string),
 		ClientSecret:    data.Get("client_secret").(string),
 		AuthURLParams:   data.Get("auth_url_params").(map[string]string),
@@ -62,6 +95,7 @@ func (b *backend) serversUpdateOperation(ctx context.Context, req *logical.Reque
 		ProviderVersion: p.Version(),
 		ProviderOptions: providerOptions,
 	}
+	keyer := persistence.AuthServerName(entry.Name)
 
 	if err := b.data.AuthServer.Manager(req.Storage).WriteAuthServerEntry(ctx, keyer, entry); err != nil {
 		return nil, err
@@ -127,6 +161,20 @@ servers and client information for use in other endpoints. Other
 endpoints that contain a server name as a path parameter or field
 reference the names of servers defined in this endpoint.
 `
+
+func pathServersList(b *backend) *framework.Path {
+	return &framework.Path{
+		Pattern: ServersPathPrefix + `?$`,
+		Operations: map[logical.Operation]framework.OperationHandler{
+			logical.ListOperation: &framework.PathOperation{
+				Callback: b.serversListOperation,
+				Summary:  "List available OAuth 2.0 authorization server names.",
+			},
+		},
+		HelpSynopsis:    strings.TrimSpace(serversHelpSynopsis),
+		HelpDescription: strings.TrimSpace(serversHelpDescription),
+	}
+}
 
 func pathServers(b *backend) *framework.Path {
 	return &framework.Path{
