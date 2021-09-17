@@ -112,7 +112,7 @@ func (b *backend) exchangeDeviceAuth(ctx context.Context, storage logical.Storag
 			defer put()
 
 			// Perform the exchange.
-			auth, ct, err = deviceAuthExchange(clockctx.WithClock(ctx, b.clock), ops.Public(), auth, ct)
+			auth, ct, err = deviceAuthExchange(clockctx.WithClock(ctx, b.clock), ops, auth, ct)
 			if err != nil {
 				return err
 			}

@@ -92,6 +92,65 @@ func TestBasicAuthCodeExchange(t *testing.T) {
 	require.Empty(t, resp.Data["expire_time"])
 }
 
+func TestClientSecretsFallback(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	client := testutil.MockClient{
+		ID:     "abc",
+		Secret: "def",
+	}
+
+	token := &provider.Token{
+		Token: &oauth2.Token{
+			AccessToken: "valid",
+		},
+	}
+
+	pr := provider.NewRegistry()
+	pr.MustRegister("mock", testutil.MockFactory(testutil.MockWithAuthCodeExchange(client, testutil.StaticMockAuthCodeExchange(token))))
+
+	storage := &logical.InmemStorage{}
+
+	b, err := backend.New(backend.Options{ProviderRegistry: pr})
+	require.NoError(t, err)
+	require.NoError(t, b.Setup(ctx, &logical.BackendConfig{StorageView: storage}))
+
+	// Write server configuration.
+	req := &logical.Request{
+		Operation: logical.UpdateOperation,
+		Path:      backend.ServersPathPrefix + `mock`,
+		Storage:   storage,
+		Data: map[string]interface{}{
+			"client_id":      client.ID,
+			"client_secret":  "hij",
+			"client_secrets": []string{"pqr", client.Secret},
+			"provider":       "mock",
+		},
+	}
+
+	resp, err := b.HandleRequest(ctx, req)
+	require.NoError(t, err)
+	require.False(t, resp != nil && resp.IsError(), "response has error: %+v", resp.Error())
+	require.Nil(t, resp)
+
+	// Write a valid credential.
+	req = &logical.Request{
+		Operation: logical.UpdateOperation,
+		Path:      backend.CredsPathPrefix + `test`,
+		Storage:   storage,
+		Data: map[string]interface{}{
+			"server": "mock",
+			"code":   "test",
+		},
+	}
+
+	resp, err = b.HandleRequest(ctx, req)
+	require.NoError(t, err)
+	require.False(t, resp != nil && resp.IsError(), "response has error: %+v", resp.Error())
+	require.Nil(t, resp)
+}
+
 func TestInvalidAuthCodeExchange(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -120,9 +179,9 @@ func TestInvalidAuthCodeExchange(t *testing.T) {
 		Path:      backend.ServersPathPrefix + `mock`,
 		Storage:   storage,
 		Data: map[string]interface{}{
-			"client_id":     client.ID,
-			"client_secret": client.Secret,
-			"provider":      "mock",
+			"client_id":      client.ID,
+			"client_secrets": []string{client.Secret, "totally_invalid"},
+			"provider":       "mock",
 		},
 	}
 
@@ -145,7 +204,9 @@ func TestInvalidAuthCodeExchange(t *testing.T) {
 	resp, err = b.HandleRequest(ctx, req)
 	require.NoError(t, err)
 	require.NotNil(t, resp)
-	require.EqualError(t, resp.Error(), "exchange failed: server rejected request: unauthorized_client")
+	require.EqualError(t, resp.Error(), `provider request failed for all client secrets:
+		* exchange failed: server rejected request: unauthorized_client
+		* exchange failed: server rejected request: invalid_client`)
 }
 
 func TestRefreshableAuthCodeExchange(t *testing.T) {

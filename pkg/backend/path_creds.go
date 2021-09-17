@@ -136,7 +136,7 @@ func (b *backend) credsUpdateAuthorizationCodeOperation(ctx context.Context, req
 		return logical.ErrorResponse("cannot use refresh_token with authorization_code grant type"), nil
 	}
 
-	tok, err := ops.Private().AuthCodeExchange(
+	tok, err := ops.AuthCodeExchange(
 		clockctx.WithClock(ctx, b.clock),
 		code.(string),
 		provider.WithRedirectURL(data.Get("redirect_url").(string)),
@@ -185,7 +185,7 @@ func (b *backend) credsUpdateRefreshTokenOperation(ctx context.Context, req *log
 			RefreshToken: refreshToken.(string),
 		},
 	}
-	tok, err = ops.Private().RefreshToken(
+	tok, err = ops.RefreshToken(
 		clockctx.WithClock(ctx, b.clock),
 		tok,
 		provider.WithProviderOptions(data.Get("provider_options").(map[string]string)),
@@ -235,7 +235,7 @@ func (b *backend) credsUpdateDeviceCodeOperation(ctx context.Context, req *logic
 	if !ok {
 		now := b.clock.Now()
 
-		auth, ok, err := ops.Public().DeviceCodeAuth(
+		auth, ok, err := ops.DeviceCodeAuth(
 			clockctx.WithClock(ctx, b.clock),
 			provider.WithScopes(data.Get("scopes").([]string)),
 			provider.WithProviderOptions(data.Get("provider_options").(map[string]string)),
@@ -281,7 +281,7 @@ func (b *backend) credsUpdateDeviceCodeOperation(ctx context.Context, req *logic
 	// If we get this far, we're guaranteed to have a device code. We'll do
 	// one request to make sure that it's not completely broken. Then we'll
 	// submit it to be polled.
-	dae, ace, err = deviceAuthExchange(clockctx.WithClock(ctx, b.clock), ops.Public(), dae, ace)
+	dae, ace, err = deviceAuthExchange(clockctx.WithClock(ctx, b.clock), ops, dae, ace)
 	if err != nil {
 		return nil, err
 	} else if ace.UserError != "" {
@@ -378,7 +378,7 @@ var credsFields = map[string]*framework.FieldSchema{
 		Description: "Specifies a device token retrieved from the provider by some means external to this plugin.",
 	},
 	"scopes": {
-		Type:        framework.TypeStringSlice,
+		Type:        framework.TypeCommaStringSlice,
 		Description: "Specifies the scopes to provide for a device code authorization request.",
 	},
 	"provider_options": {

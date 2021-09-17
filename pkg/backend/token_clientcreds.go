@@ -36,7 +36,7 @@ func (b *backend) updateClientCredsToken(ctx context.Context, storage logical.St
 		}
 		defer put()
 
-		updated, err := ops.Private().ClientCredentials(
+		updated, err := ops.ClientCredentials(
 			clockctx.WithClock(ctx, b.clock),
 			provider.WithURLParams(candidate.Config.TokenURLParams),
 			provider.WithScopes(candidate.Config.Scopes),

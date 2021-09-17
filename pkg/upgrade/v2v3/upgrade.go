@@ -45,11 +45,13 @@ func (u *Upgrader) Upgrade(ctx context.Context) error {
 		Name: persistence.LegacyAuthServerName,
 
 		ClientID:        currentConfig.ClientID,
-		ClientSecret:    currentConfig.ClientSecret,
 		AuthURLParams:   currentConfig.AuthURLParams,
 		ProviderName:    currentConfig.ProviderName,
 		ProviderVersion: currentConfig.ProviderVersion,
 		ProviderOptions: currentConfig.ProviderOptions,
+	}
+	if currentConfig.ClientSecret != "" {
+		newAuthServer.ClientSecrets = []string{currentConfig.ClientSecret}
 	}
 	if err := u.data.AuthServer.Manager(u.storage).WriteAuthServerEntry(ctx, persistence.AuthServerName(newAuthServer.Name), newAuthServer); err != nil {
 		return fmt.Errorf("failed to create legacy server configuration: %w", err)

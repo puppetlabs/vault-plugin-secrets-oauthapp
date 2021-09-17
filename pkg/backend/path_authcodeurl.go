@@ -39,7 +39,7 @@ func (b *backend) authCodeURLUpdateOperation(ctx context.Context, req *logical.R
 		resp.Data["state"] = state
 	}
 
-	url, ok := ops.Public().AuthCodeURL(
+	url, ok := ops.AuthCodeURL(
 		state.(string),
 		provider.WithRedirectURL(data.Get("redirect_url").(string)),
 		provider.WithScopes(data.Get("scopes").([]string)),

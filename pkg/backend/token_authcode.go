@@ -121,7 +121,7 @@ func (b *backend) refreshCredToken(ctx context.Context, storage logical.Storage,
 			defer put()
 
 			// Refresh.
-			refreshed, err := ops.Private().RefreshToken(clockctx.WithClock(ctx, b.clock), candidate.Token)
+			refreshed, err := ops.RefreshToken(clockctx.WithClock(ctx, b.clock), candidate.Token)
 			if err != nil {
 				msg := errmap.Wrap(errmark.MarkShort(err), "refresh failed").Error()
 				if errmark.MarkedUser(err) {

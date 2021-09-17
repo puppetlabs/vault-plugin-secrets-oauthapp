@@ -74,7 +74,7 @@ func TestAuthServerCache(t *testing.T) {
 			Name: namer(i),
 
 			ClientID:        client.ID,
-			ClientSecret:    client.Secret,
+			ClientSecrets:   []string{client.Secret},
 			ProviderName:    "mock",
 			ProviderVersion: provider.VersionLatest,
 			ProviderOptions: map[string]string{

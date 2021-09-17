@@ -84,11 +84,17 @@ func (b *backend) serversUpdateOperation(ctx context.Context, req *logical.Reque
 		return nil, err
 	}
 
+	var clientSecrets []string
+	if clientSecret := data.Get("client_secret").(string); clientSecret != "" {
+		clientSecrets = append(clientSecrets, clientSecret)
+	}
+	clientSecrets = append(clientSecrets, data.Get("client_secrets").([]string)...)
+
 	entry := &persistence.AuthServerEntry{
 		Name: data.Get("name").(string),
 
 		ClientID:        clientID.(string),
-		ClientSecret:    data.Get("client_secret").(string),
+		ClientSecrets:   clientSecrets,
 		AuthURLParams:   data.Get("auth_url_params").(map[string]string),
 		ProviderName:    providerName.(string),
 		ProviderVersion: p.Version(),
@@ -134,7 +140,11 @@ var serversFields = map[string]*framework.FieldSchema{
 	},
 	"client_secret": {
 		Type:        framework.TypeString,
-		Description: "Specifies the OAuth 2 client secret.",
+		Description: "Specifies the OAuth 2 client secret. Prepended to the values of the client_secrets field if present.",
+	},
+	"client_secrets": {
+		Type:        framework.TypeCommaStringSlice,
+		Description: "Specifies OAuth 2 client secrets, each of which will be tried in order. Appended to the value of the client_secret field if present.",
 	},
 	"auth_url_params": {
 		Type:        framework.TypeKVPairs,

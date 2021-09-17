@@ -6,12 +6,13 @@ require (
 	github.com/coreos/go-oidc v2.2.1+incompatible
 	github.com/golangci/golangci-lint v1.33.0
 	github.com/hashicorp/go-hclog v0.16.1
+	github.com/hashicorp/go-multierror v1.1.1
 	github.com/hashicorp/go-uuid v1.0.2
 	github.com/hashicorp/golang-lru v0.5.4
 	github.com/hashicorp/vault v1.8.2
 	github.com/hashicorp/vault/api v1.1.2-0.20210713235431-1fc8af4c041f
 	github.com/hashicorp/vault/sdk v0.2.2-0.20210825150427-9b1f4d486f5d
-	github.com/puppetlabs/leg/errmap v0.1.0
+	github.com/puppetlabs/leg/errmap v0.1.1
 	github.com/puppetlabs/leg/scheduler v0.3.0
 	github.com/puppetlabs/leg/timeutil v0.4.2
 	github.com/puppetlabs/vault-plugin-secrets-oauthapp/v2 v2.2.0
