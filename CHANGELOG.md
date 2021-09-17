@@ -8,6 +8,8 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [3.0.0-beta.5] - 2021-09-17
+
 ### Added
 
 * Add the option `client_secrets` to server configurations. When this is set to
@@ -264,7 +266,8 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 * Initial release of the plugin.
 
-[Unreleased]: https://github.com/puppetlabs/vault-plugin-secrets-oauthapp/compare/v3.0.0-beta.4...HEAD
+[Unreleased]: https://github.com/puppetlabs/vault-plugin-secrets-oauthapp/compare/v3.0.0-beta.5...HEAD
+[3.0.0-beta.5]: https://github.com/puppetlabs/vault-plugin-secrets-oauthapp/compare/v3.0.0-beta.4...v3.0.0-beta.5
 [3.0.0-beta.4]: https://github.com/puppetlabs/vault-plugin-secrets-oauthapp/compare/v3.0.0-beta.3...v3.0.0-beta.4
 [3.0.0-beta.3]: https://github.com/puppetlabs/vault-plugin-secrets-oauthapp/compare/v3.0.0-beta.2...v3.0.0-beta.3
 [3.0.0-beta.2]: https://github.com/puppetlabs/vault-plugin-secrets-oauthapp/compare/v3.0.0-beta.1...v3.0.0-beta.2
