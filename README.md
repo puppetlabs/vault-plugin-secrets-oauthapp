@@ -233,6 +233,12 @@ token is close to expiration. You can set a different factor using the
 `tune_provider_timeout_expiry_leeway_factor` option. To disable timeout scaling,
 set the leeway factor to 1.
 
+The provider timeout is applied when a request is made to a provider. If a
+plugin endpoint might make multiple requests to a provider, for example if
+multiple client secrets are specified in a server configuration, the total
+request time for a client of this plugin may be significantly higher than the
+value of the provider timeout.
+
 ### Automatic refreshing
 
 To avoid having to contact providers when tokens are read from storage and need
@@ -339,7 +345,8 @@ Parameters:
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|----------|
 | `client_id` | The OAuth 2.0 client ID. | String | None | Yes |
-| `client_secret` | The OAuth 2.0 client secret. | String | None | No |
+| `client_secret` | The OAuth 2.0 client secret. Prepended to the value of `client_secrets` if it is also present. | String | None | No |
+| `client_secrets` | An ordered list of OAuth 2.0 client secrets to try. Appended to the value of `client_secret` if it is also present. | List of String | None | No |
 | `auth_url_params` | A map of additional query string parameters to provide to the authorization code URL. | Map of String🠦String | None | No |
 | `provider` | The name of the provider to use. See [the list of providers](#providers). | String | None | Yes |
 | `provider_options` | Options to configure the specified provider. | Map of String🠦String | None | [Refer to provider documentation](#providers) |

@@ -9,6 +9,7 @@ import (
 
 	"github.com/puppetlabs/leg/errmap/pkg/errmark"
 	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v3/pkg/oauth2ext/devicecode"
+	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v3/pkg/oauth2ext/interop"
 	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v3/pkg/oauth2ext/semerr"
 	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v3/pkg/provider"
 	"golang.org/x/oauth2"
@@ -83,7 +84,7 @@ func (mo *mockOperations) DeviceCodeAuth(ctx context.Context, opts ...provider.D
 
 func (mo *mockOperations) DeviceCodeExchange(ctx context.Context, deviceCode string, opts ...provider.DeviceCodeExchangeOption) (*provider.Token, error) {
 	if mo.deviceCodeExchangeFn == nil {
-		return nil, semerr.Map(MockErrorResponse(http.StatusInternalServerError, nil))
+		return nil, semerr.Map(MockErrorResponse(http.StatusUnauthorized, &interop.JSONError{Error: "invalid_client"}))
 	}
 
 	o := &provider.DeviceCodeExchangeOptions{}
@@ -112,7 +113,7 @@ func (mo *mockOperations) DeviceCodeExchange(ctx context.Context, deviceCode str
 
 func (mo *mockOperations) AuthCodeExchange(ctx context.Context, code string, opts ...provider.AuthCodeExchangeOption) (*provider.Token, error) {
 	if mo.authCodeExchangeFn == nil {
-		return nil, semerr.Map(MockErrorResponse(http.StatusInternalServerError, nil))
+		return nil, semerr.Map(MockErrorResponse(http.StatusUnauthorized, &interop.JSONError{Error: "invalid_client"}))
 	}
 
 	o := &provider.AuthCodeExchangeOptions{}
@@ -167,7 +168,7 @@ func (mo *mockOperations) RefreshToken(ctx context.Context, t *provider.Token, o
 
 func (mo *mockOperations) ClientCredentials(ctx context.Context, opts ...provider.ClientCredentialsOption) (*provider.Token, error) {
 	if mo.clientCredentialsFn == nil {
-		return nil, semerr.Map(MockErrorResponse(http.StatusInternalServerError, nil))
+		return nil, semerr.Map(MockErrorResponse(http.StatusUnauthorized, &interop.JSONError{Error: "invalid_client"}))
 	}
 
 	o := &provider.ClientCredentialsOptions{}

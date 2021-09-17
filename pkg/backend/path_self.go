@@ -87,7 +87,7 @@ func (b *backend) selfUpdateOperation(ctx context.Context, req *logical.Request,
 	entry.Config.Scopes = data.Get("scopes").([]string)
 	entry.Config.ProviderOptions = data.Get("provider_options").(map[string]string)
 
-	tok, err := ops.Private().ClientCredentials(
+	tok, err := ops.ClientCredentials(
 		clockctx.WithClock(ctx, b.clock),
 		provider.WithURLParams(entry.Config.TokenURLParams),
 		provider.WithScopes(entry.Config.Scopes),

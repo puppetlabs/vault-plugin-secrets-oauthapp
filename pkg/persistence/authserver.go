@@ -25,7 +25,7 @@ type AuthServerEntry struct {
 	Name string `json:"name"`
 
 	ClientID        string            `json:"client_id"`
-	ClientSecret    string            `json:"client_secret"`
+	ClientSecrets   []string          `json:"client_secrets"`
 	AuthURLParams   map[string]string `json:"auth_url_params"`
 	ProviderName    string            `json:"provider_name"`
 	ProviderVersion int               `json:"provider_version"`
@@ -72,6 +72,20 @@ func (lasm *LockedAuthServerManager) ReadAuthServerEntry(ctx context.Context) (*
 	entry := &AuthServerEntry{}
 	if err := se.DecodeJSON(entry); err != nil {
 		return nil, err
+	}
+
+	// UPGRADING (v3.0.0-beta.{1,2,3,4}): Early v3 versions only supported a
+	// single client secret for a server, so we check for it here and copy it
+	// into the returned value if necessary.
+	var migrating struct {
+		ClientSecret string `json:"client_secret"`
+	}
+	if err := se.DecodeJSON(&migrating); err != nil {
+		return nil, err
+	}
+
+	if migrating.ClientSecret != "" {
+		entry.ClientSecrets = append([]string{migrating.ClientSecret}, entry.ClientSecrets...)
 	}
 
 	return entry, nil

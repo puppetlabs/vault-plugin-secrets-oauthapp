@@ -8,6 +8,12 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+* Add the option `client_secrets` to server configurations. When this is set to
+  a list, the plugin will attempt to use each secret in order until it receives
+  a successful provider response.
+
 ## [3.0.0-beta.4] - 2021-09-15
 
 ### Added
