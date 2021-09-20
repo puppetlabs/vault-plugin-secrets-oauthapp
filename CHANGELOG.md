@@ -8,55 +8,26 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-## [3.0.0-beta.5] - 2021-09-17
-
-### Added
-
-* Add the option `client_secrets` to server configurations. When this is set to
-  a list, the plugin will attempt to use each secret in order until it receives
-  a successful provider response.
-
-## [3.0.0-beta.4] - 2021-09-15
-
-### Added
-
-* It is now possible to select a default server to use by setting the
-  `default_server` field in the plugin configuration. When upgrading from v2,
-  this field will be automatically set to maintain backward compatibility.
-* Listing existing servers is now supported at the new `servers` endpoint.
-* Add the new tuning option `tune_reap_server_deleted_seconds` to control how
-  long the plugin should wait before automatically deleting credentials that
-  refer to a nonexistent (deleted) server.
-
-### Fixed
-
-* When refreshing an authorization code credential or attempting to acquire a
-  device code credential, missing servers will no longer produce scheduler
-  errors.
-
-## [3.0.0-beta.3] - 2021-07-22
-
-### Build
-
-* Remove darwin/386 from distribution as it is no longer supported by Go or
-  Vault.
-
-## [3.0.0-beta.2] - 2021-07-22
-
-### Build
-
-* Remove darwin/386 from distribution as it is no longer supported by Go or
-  Vault.
-
-## [3.0.0-beta.1] - 2021-07-22
+## [3.0.0] - 2021-09-20
 
 ### Added
 
 * It is now possible to manage multiple authorization servers at the same time
   by writing separate provider configurations to the `servers/:name` endpoint.
+  Listing servers is supported at the `servers` endpoint.
+* Additionally, server configurations support a new `client_secrets` field that
+  was not present in the plugin configuration in v2. When this field is set to a
+  list, the plugin will attempt to use each secret in order until it receives a
+  successful provider response.
+* The plugin configuration supports selecting a default server to use by setting
+  the `default_server` field. When upgrading from v2, this field will be
+  automatically set to maintain backward compatibility.
 * It is no longer necessary to explicitly specify a state when requesting an
   authorization code URL. The plugin will generate a random state and return it
   in the response.
+* Add the new tuning option `tune_reap_server_deleted_seconds` to control how
+  long the plugin should wait before automatically deleting credentials that
+  refer to a nonexistent (deleted) server.
 
 ### Changed
 
@@ -70,8 +41,6 @@ Versioning](https://semver.org/spec/v2.0.0.html).
   reading from an unconfigured path at the `self/:name` endpoint. Instead,
   initialize such an access token by writing to the `self/:name` endpoint with
   any necessary configuration first.
-* [BREAKING] When writing a credential, you must reference the server to use for
-  the desired flow by specifying the `server` parameter.
 * The device code flow support library now sends an `Accept: application/json`
   header to improve compatibility with legacy device code endpoints that support
   both JSON and form-encoded responses.
@@ -81,6 +50,11 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 * The scheduled processes for refreshing credentials, reaping credentials, and
   managing the device code flow no longer start on a Vault server configured as
   a performance secondary, performance standby, or disaster recovery secondary.
+
+### Build
+
+* Remove darwin/386 from distribution as it is no longer supported by Go or
+  Vault.
 
 ## [2.2.0] - 2021-07-13
 
@@ -266,12 +240,8 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 * Initial release of the plugin.
 
-[Unreleased]: https://github.com/puppetlabs/vault-plugin-secrets-oauthapp/compare/v3.0.0-beta.5...HEAD
-[3.0.0-beta.5]: https://github.com/puppetlabs/vault-plugin-secrets-oauthapp/compare/v3.0.0-beta.4...v3.0.0-beta.5
-[3.0.0-beta.4]: https://github.com/puppetlabs/vault-plugin-secrets-oauthapp/compare/v3.0.0-beta.3...v3.0.0-beta.4
-[3.0.0-beta.3]: https://github.com/puppetlabs/vault-plugin-secrets-oauthapp/compare/v3.0.0-beta.2...v3.0.0-beta.3
-[3.0.0-beta.2]: https://github.com/puppetlabs/vault-plugin-secrets-oauthapp/compare/v3.0.0-beta.1...v3.0.0-beta.2
-[3.0.0-beta.1]: https://github.com/puppetlabs/vault-plugin-secrets-oauthapp/compare/v2.2.0...v3.0.0-beta.1
+[Unreleased]: https://github.com/puppetlabs/vault-plugin-secrets-oauthapp/compare/v3.0.0...HEAD
+[3.0.0]: https://github.com/puppetlabs/vault-plugin-secrets-oauthapp/compare/v2.2.0...v3.0.0
 [2.2.0]: https://github.com/puppetlabs/vault-plugin-secrets-oauthapp/compare/v2.1.1...v2.2.0
 [2.1.1]: https://github.com/puppetlabs/vault-plugin-secrets-oauthapp/compare/v2.1.0...v2.1.1
 [2.1.0]: https://github.com/puppetlabs/vault-plugin-secrets-oauthapp/compare/v2.0.0...v2.1.0
