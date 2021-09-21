@@ -391,14 +391,22 @@ refresh token, and device code flows.
 #### `GET` (`read`)
 
 Retrieve a current access token for the given credential. Reuses previous token
-if it is not yet expired or close to it. Otherwise, requests a new credential
-using the `refresh_token` grant type if possible.
+if it is not yet expired or close to it. Otherwise, requests a new access
+token using the saved refresh token if possible.
 
 Parameters:
 
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|----------|
 | `minimum_seconds` | Minimum additional duration to require the access token to be valid for. | Integer | 10<sup id="ret-3-a">[3](#footnote-3)</sup> | No |
+| `scopes` | A list of explicit scopes to request. | List of String | None | No |
+| `audience` | A list of explicit audiences to request. | List of String | None | No |
+| `resource` | A list of explicit resources to request. | List of String | None | No |
+
+If scopes, audience, and/or resource is requested, an access token that
+is more limited according to those requested parameters than the
+corresponding refresh token is returned.  The more limited access token
+is not cached for later requests; the less limited one is cached as usual.
 
 #### `PUT` (`write`)
 

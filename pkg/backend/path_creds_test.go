@@ -3,6 +3,7 @@ package backend_test
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -383,6 +384,142 @@ func TestRefreshFailureReturnsNotConfigured(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, resp)
 	require.EqualError(t, resp.Error(), "token expired")
+}
+
+func TestLimitedExchange(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	client := testutil.MockClient{
+		ID:     "hij",
+		Secret: "def",
+	}
+
+	storage := &logical.InmemStorage{}
+
+	b, err := backend.New(backend.Options{ProviderRegistry: provider.GlobalRegistry})
+	require.NoError(t, err)
+	require.NoError(t, b.Setup(ctx, &logical.BackendConfig{StorageView: storage}))
+
+	tp := testutil.NewMockTokenProvider()
+	defer tp.Close()
+
+	// Write configuration.
+	req := &logical.Request{
+		Operation: logical.UpdateOperation,
+		Path:      backend.ServersPathPrefix + `mock`,
+		Storage:   storage,
+		Data: map[string]interface{}{
+			"client_id":     client.ID,
+			"client_secret": client.Secret,
+			"provider":      "custom",
+			"provider_options": map[string]string{
+				"auth_code_url": "not-used",
+				"token_url":     tp.GetServerURL() + "/token",
+			},
+		},
+	}
+
+	resp, err := b.HandleRequest(ctx, req)
+	require.NoError(t, err)
+	require.False(t, resp != nil && resp.IsError(), "response has error: %+v", resp.Error())
+	require.Nil(t, resp)
+
+	// Write a valid credential.
+	req = &logical.Request{
+		Operation: logical.UpdateOperation,
+		Path:      backend.CredsPathPrefix + `test`,
+		Storage:   storage,
+		Data: map[string]interface{}{
+			"server":        "mock",
+			"refresh_token": "test",
+		},
+	}
+
+	resp, err = b.HandleRequest(ctx, req)
+	require.NoError(t, err)
+	require.False(t, resp != nil && resp.IsError(), "response has error: %+v", resp.Error())
+	require.Nil(t, resp)
+
+	req = &logical.Request{
+		Operation: logical.ReadOperation,
+		Path:      backend.CredsPathPrefix + `test`,
+		Storage:   storage,
+	}
+
+	resp, err = b.HandleRequest(ctx, req)
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	require.False(t, resp.IsError(), "response has error: %+v", resp.Error())
+	require.NotNil(t, resp.Data["access_token"])
+	v, err := url.ParseQuery(resp.Data["access_token"].(string))
+	require.NoError(t, err)
+	default_scopes := v["scopes"]
+	require.NotNil(t, default_scopes)
+	default_audience := v["audience"]
+	require.NotNil(t, default_audience)
+	default_resource := v["resource"]
+	require.NotNil(t, default_resource)
+
+	req = &logical.Request{
+		Operation: logical.ReadOperation,
+		Path:      backend.CredsPathPrefix + `test`,
+		Storage:   storage,
+		Data: map[string]interface{}{
+			"scopes": "scopea,scopec",
+		},
+	}
+
+	resp, err = b.HandleRequest(ctx, req)
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	require.False(t, resp.IsError(), "response has error: %+v", resp.Error())
+	require.NotNil(t, resp.Data["access_token"])
+	v, err = url.ParseQuery(resp.Data["access_token"].(string))
+	require.NoError(t, err)
+	require.Equal(t, []string{"scopea scopec"}, v["scopes"])
+	require.Equal(t, default_audience, v["audience"])
+	require.Equal(t, default_resource, v["resource"])
+
+	req = &logical.Request{
+		Operation: logical.ReadOperation,
+		Path:      backend.CredsPathPrefix + `test`,
+		Storage:   storage,
+		Data: map[string]interface{}{
+			"audience": "specific",
+		},
+	}
+
+	resp, err = b.HandleRequest(ctx, req)
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	require.False(t, resp.IsError(), "response has error: %+v", resp.Error())
+	require.NotNil(t, resp.Data["access_token"])
+	v, err = url.ParseQuery(resp.Data["access_token"].(string))
+	require.NoError(t, err)
+	require.Equal(t, default_scopes, v["scopes"])
+	require.Equal(t, []string{"specific"}, v["audience"])
+	require.Equal(t, default_resource, v["resource"])
+
+	req = &logical.Request{
+		Operation: logical.ReadOperation,
+		Path:      backend.CredsPathPrefix + `test`,
+		Storage:   storage,
+		Data: map[string]interface{}{
+			"resource": "https://specific",
+		},
+	}
+
+	resp, err = b.HandleRequest(ctx, req)
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	require.False(t, resp.IsError(), "response has error: %+v", resp.Error())
+	require.NotNil(t, resp.Data["access_token"])
+	v, err = url.ParseQuery(resp.Data["access_token"].(string))
+	require.NoError(t, err)
+	require.Equal(t, default_scopes, v["scopes"])
+	require.Equal(t, default_audience, v["audience"])
+	require.Equal(t, []string{"https://specific"}, v["resource"])
 }
 
 func TestDeviceCodeAuthAndExchange(t *testing.T) {
