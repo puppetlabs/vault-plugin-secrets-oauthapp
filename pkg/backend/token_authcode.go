@@ -15,6 +15,7 @@ import (
 	"github.com/puppetlabs/leg/timeutil/pkg/clockctx"
 	"github.com/puppetlabs/leg/timeutil/pkg/retry"
 	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v3/pkg/persistence"
+	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v3/pkg/provider"
 )
 
 type refreshProcess struct {
@@ -121,7 +122,10 @@ func (b *backend) refreshCredToken(ctx context.Context, storage logical.Storage,
 			defer put()
 
 			// Refresh.
-			refreshed, err := ops.RefreshToken(clockctx.WithClock(ctx, b.clock), candidate.Token)
+			refreshed, err := ops.RefreshToken(clockctx.WithClock(ctx, b.clock),
+				candidate.Token,
+				provider.WithProviderOptions(candidate.ProviderOptions))
+
 			if err != nil {
 				msg := errmap.Wrap(errmark.MarkShort(err), "refresh failed").Error()
 				if errmark.MarkedUser(err) {
