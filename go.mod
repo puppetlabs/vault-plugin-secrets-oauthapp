@@ -16,6 +16,7 @@ require (
 	github.com/puppetlabs/leg/scheduler v0.3.0
 	github.com/puppetlabs/leg/timeutil v0.4.2
 	github.com/puppetlabs/vault-plugin-secrets-oauthapp/v2 v2.2.0
+	github.com/spf13/cast v1.3.0
 	github.com/stretchr/testify v1.7.0
 	github.com/tencentcloud/tencentcloud-sdk-go v3.0.171+incompatible // indirect
 	golang.org/x/oauth2 v0.0.0-20200107190931-bf48bf16ab8d

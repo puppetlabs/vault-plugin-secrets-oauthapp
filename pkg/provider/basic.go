@@ -9,6 +9,7 @@ import (
 	"github.com/puppetlabs/leg/errmap/pkg/errmark"
 	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v3/pkg/oauth2ext/devicecode"
 	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v3/pkg/oauth2ext/semerr"
+	"github.com/spf13/cast"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/bitbucket"
 	"golang.org/x/oauth2/clientcredentials"
@@ -16,6 +17,7 @@ import (
 	"golang.org/x/oauth2/gitlab"
 	"golang.org/x/oauth2/microsoft"
 	"golang.org/x/oauth2/slack"
+	"time"
 )
 
 func init() {
@@ -163,6 +165,11 @@ func (bo *basicOperations) RefreshToken(ctx context.Context, t *Token, opts ...R
 	}).Token()
 	if err != nil {
 		return nil, semerr.Map(err)
+	}
+
+	tokenExpiry := cast.ToInt64(o.ProviderOptions["token_expiry"])
+	if tok.Expiry.IsZero() && tokenExpiry > 0 {
+		tok.Expiry = time.Now().Add(time.Duration(tokenExpiry) * time.Second)
 	}
 
 	return &Token{
