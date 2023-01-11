@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/url"
+	"strconv"
 
 	gooidc "github.com/coreos/go-oidc"
 	"github.com/puppetlabs/leg/errmap/pkg/errmark"
@@ -16,6 +17,7 @@ import (
 	"golang.org/x/oauth2/gitlab"
 	"golang.org/x/oauth2/microsoft"
 	"golang.org/x/oauth2/slack"
+	"time"
 )
 
 func init() {
@@ -163,6 +165,11 @@ func (bo *basicOperations) RefreshToken(ctx context.Context, t *Token, opts ...R
 	}).Token()
 	if err != nil {
 		return nil, semerr.Map(err)
+	}
+
+	tokenExpiry, parseErr := strconv.ParseInt(o.ProviderOptions["token_expiry"], 10, 64)
+	if tok.Expiry.IsZero() && parseErr != nil && tokenExpiry > 0 {
+		tok.Expiry = time.Now().Add(time.Duration(tokenExpiry) * time.Second)
 	}
 
 	return &Token{
