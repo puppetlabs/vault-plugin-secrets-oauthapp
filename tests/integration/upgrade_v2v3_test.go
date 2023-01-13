@@ -41,14 +41,15 @@ func TestV2ToV3Upgrade(t *testing.T) {
 		refreshToken, err := uuid.GenerateRandomBytes(16)
 		require.NoError(t, err)
 
-		_, _ = w.Write([]byte(fmt.Sprintf(
+		_, _ = fmt.Fprintf(
+			w,
 			"access_token=%s&refresh_token=%s&expires_in=%d",
 			base64.RawURLEncoding.EncodeToString(accessToken),
 			base64.RawURLEncoding.EncodeToString(refreshToken),
 			// The server will give an extra minute of leeway to account for
 			// slow tests.
 			desiredMinimumSeconds+60,
-		)))
+		)
 	}))
 	defer srv.Close()
 

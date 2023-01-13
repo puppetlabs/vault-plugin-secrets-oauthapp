@@ -2,7 +2,7 @@ package provider_test
 
 import (
 	"context"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"net/url"
 	"testing"
@@ -68,7 +68,7 @@ func TestBasicPrivate(t *testing.T) {
 	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/token":
-			b, err := ioutil.ReadAll(r.Body)
+			b, err := io.ReadAll(r.Body)
 			require.NoError(t, err)
 
 			data, err := url.ParseQuery(string(b))

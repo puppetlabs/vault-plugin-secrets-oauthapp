@@ -2,7 +2,7 @@ package provider_test
 
 import (
 	"context"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"net/url"
 	"testing"
@@ -237,7 +237,7 @@ func TestTimeoutProvider(t *testing.T) {
 			default:
 			}
 
-			b, err := ioutil.ReadAll(r.Body)
+			b, err := io.ReadAll(r.Body)
 			require.NoError(t, err)
 
 			data, err := url.ParseQuery(string(b))
