@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"net/url"
 	"testing"
@@ -67,7 +66,7 @@ func TestOIDCFlow(t *testing.T) {
 				},
 			})
 		case "/token":
-			b, err := ioutil.ReadAll(r.Body)
+			b, err := io.ReadAll(r.Body)
 			require.NoError(t, err)
 
 			data, err := url.ParseQuery(string(b))
@@ -179,7 +178,7 @@ func TestOIDCRefreshWithIDToken(t *testing.T) {
 				},
 			})
 		case "/token":
-			b, err := ioutil.ReadAll(r.Body)
+			b, err := io.ReadAll(r.Body)
 			require.NoError(t, err)
 
 			data, err := url.ParseQuery(string(b))
@@ -291,7 +290,7 @@ func TestOIDCDeviceCodeFlow(t *testing.T) {
 				Email:   "test-user@example.com",
 			})
 		case "/device":
-			b, err := ioutil.ReadAll(r.Body)
+			b, err := io.ReadAll(r.Body)
 			require.NoError(t, err)
 
 			data, err := url.ParseQuery(string(b))
@@ -322,7 +321,7 @@ func TestOIDCDeviceCodeFlow(t *testing.T) {
 				w.WriteHeader(http.StatusUnauthorized)
 			}
 		case "/token":
-			b, err := ioutil.ReadAll(r.Body)
+			b, err := io.ReadAll(r.Body)
 			require.NoError(t, err)
 
 			data, err := url.ParseQuery(string(b))
@@ -398,7 +397,7 @@ func TestOIDCDeviceCodeFlow(t *testing.T) {
 	errors.As(err, &oe)
 	require.Equal(t, "authorization_pending", oe.Code)
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, auth.VerificationURIComplete, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, auth.VerificationURIComplete, http.NoBody)
 	require.NoError(t, err)
 	_, err = c.Do(req)
 	require.NoError(t, err)
@@ -436,7 +435,7 @@ func TestOIDCRefreshWithoutIDToken(t *testing.T) {
 				},
 			})
 		case "/token":
-			b, err := ioutil.ReadAll(r.Body)
+			b, err := io.ReadAll(r.Body)
 			require.NoError(t, err)
 
 			data, err := url.ParseQuery(string(b))

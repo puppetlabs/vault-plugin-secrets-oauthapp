@@ -23,7 +23,6 @@ linters:
   disable-all: true
   enable:
   - bodyclose
-  - deadcode
   - errcheck
   - exportloopref
   - gocritic
@@ -36,10 +35,8 @@ linters:
   - noctx
   - nolintlint
   - staticcheck
-  - structcheck
   - typecheck
   - unused
-  - varcheck
 
 issues:
   exclude-rules:

@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"net/url"
 	"strings"
@@ -61,7 +60,7 @@ func (c *Config) DeviceCodeAuth(ctx context.Context) (*Auth, error) {
 
 	switch {
 	case resp.StatusCode < 200 || resp.StatusCode >= 300:
-		body, err := ioutil.ReadAll(reader)
+		body, err := io.ReadAll(reader)
 		if err != nil {
 			return nil, fmt.Errorf("cannot fetch device code authorization: %w", err)
 		}
@@ -113,7 +112,7 @@ func (c *Config) DeviceCodeExchange(ctx context.Context, deviceCode string) (*oa
 	// consistency.
 	reader := io.LimitReader(resp.Body, 1<<20)
 
-	body, err := ioutil.ReadAll(reader)
+	body, err := io.ReadAll(reader)
 	if err != nil {
 		return nil, fmt.Errorf("cannot fetch device code authorization: %w", err)
 	}
