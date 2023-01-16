@@ -13,6 +13,8 @@ import (
 )
 
 func (b *backend) updateClientCredsToken(ctx context.Context, storage logical.Storage, keyer persistence.ClientCredsKeyer, expiryDelta time.Duration) (*persistence.ClientCredsEntry, error) {
+	ctx = clockctx.WithClock(ctx, b.clock)
+
 	var entry *persistence.ClientCredsEntry
 	err := b.data.ClientCreds.WithLock(keyer, func(ch *persistence.LockedClientCredsHolder) error {
 		cm := ch.Manager(storage)
@@ -37,7 +39,7 @@ func (b *backend) updateClientCredsToken(ctx context.Context, storage logical.St
 		defer put()
 
 		updated, err := ops.ClientCredentials(
-			clockctx.WithClock(ctx, b.clock),
+			ctx,
 			provider.WithURLParams(candidate.Config.TokenURLParams),
 			provider.WithScopes(candidate.Config.Scopes),
 			provider.WithProviderOptions(candidate.Config.ProviderOptions),
@@ -47,7 +49,7 @@ func (b *backend) updateClientCredsToken(ctx context.Context, storage logical.St
 		}
 
 		// Store the new creds.
-		candidate.Token = updated
+		candidate.SetToken(ctx, updated)
 
 		if err := cm.WriteClientCredsEntry(ctx, candidate); err != nil {
 			return err

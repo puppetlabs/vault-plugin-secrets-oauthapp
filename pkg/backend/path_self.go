@@ -50,6 +50,10 @@ func (b *backend) selfReadOperation(ctx context.Context, req *logical.Request, d
 		rd["extra_data"] = entry.Token.ExtraData
 	}
 
+	if entry.MaximumExpirySeconds > 0 {
+		rd["maximum_expiry_seconds"] = entry.MaximumExpirySeconds
+	}
+
 	if len(entry.Config.TokenURLParams) > 0 {
 		rd["token_url_params"] = entry.Config.TokenURLParams
 	}
@@ -69,6 +73,8 @@ func (b *backend) selfReadOperation(ctx context.Context, req *logical.Request, d
 }
 
 func (b *backend) selfUpdateOperation(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
+	ctx = clockctx.WithClock(ctx, b.clock)
+
 	serverName, err := b.getServerNameOrDefault(ctx, req.Storage, data.Get("server").(string))
 	if err != nil {
 		return errorResponse(err)
@@ -81,14 +87,15 @@ func (b *backend) selfUpdateOperation(ctx context.Context, req *logical.Request,
 	defer put()
 
 	entry := &persistence.ClientCredsEntry{
-		AuthServerName: serverName,
+		AuthServerName:       serverName,
+		MaximumExpirySeconds: data.Get("maximum_expiry_seconds").(int),
 	}
 	entry.Config.TokenURLParams = data.Get("token_url_params").(map[string]string)
 	entry.Config.Scopes = data.Get("scopes").([]string)
 	entry.Config.ProviderOptions = data.Get("provider_options").(map[string]string)
 
 	tok, err := ops.ClientCredentials(
-		clockctx.WithClock(ctx, b.clock),
+		ctx,
 		provider.WithURLParams(entry.Config.TokenURLParams),
 		provider.WithScopes(entry.Config.Scopes),
 		provider.WithProviderOptions(entry.Config.ProviderOptions),
@@ -99,7 +106,7 @@ func (b *backend) selfUpdateOperation(ctx context.Context, req *logical.Request,
 		return nil, err
 	}
 
-	entry.Token = tok
+	entry.SetToken(ctx, tok)
 
 	if err := b.data.ClientCreds.Manager(req.Storage).WriteClientCredsEntry(ctx, persistence.ClientCredsName(data.Get("name").(string)), entry); err != nil {
 		return nil, err
@@ -128,7 +135,7 @@ var selfFields = map[string]*framework.FieldSchema{
 	},
 	// fields for read operation
 	"minimum_seconds": {
-		Type:        framework.TypeInt,
+		Type:        framework.TypeDurationSecond,
 		Description: "Minimum remaining seconds to allow when reusing access token.",
 		Query:       true,
 	},
@@ -136,6 +143,10 @@ var selfFields = map[string]*framework.FieldSchema{
 	"server": {
 		Type:        framework.TypeString,
 		Description: "The name of the authorization server to use for this credential.",
+	},
+	"maximum_expiry_seconds": {
+		Type:        framework.TypeDurationSecond,
+		Description: "Maximum number of seconds for the access token to be considered valid.",
 	},
 	"token_url_params": {
 		Type:        framework.TypeKVPairs,

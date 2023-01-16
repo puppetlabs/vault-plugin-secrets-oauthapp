@@ -12,6 +12,7 @@ import (
 
 	"github.com/hashicorp/vault/sdk/helper/locksutil"
 	"github.com/hashicorp/vault/sdk/logical"
+	"github.com/puppetlabs/leg/timeutil/pkg/clockctx"
 	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v3/pkg/provider"
 	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v3/pkg/vaultext"
 )
@@ -40,6 +41,9 @@ type AuthCodeEntry struct {
 	// entry.
 	AuthServerName string `json:"auth_server_name"`
 
+	// MaximumExpirySeconds caps issued auth tokens to a desired lifetime.
+	MaximumExpirySeconds int `json:"maximum_expiry_seconds,omitempty"`
+
 	// LastIssueTime is the most recent time a token was successfully issued.
 	LastIssueTime time.Time `json:"last_issue_time,omitempty"`
 
@@ -66,9 +70,15 @@ type AuthCodeEntry struct {
 	LastAttemptedIssueTime time.Time `json:"last_attempted_issue_time,omitempty"`
 }
 
-func (ace *AuthCodeEntry) SetToken(tok *provider.Token) {
+func (ace *AuthCodeEntry) SetToken(ctx context.Context, tok *provider.Token) {
 	ace.Token = tok
-	ace.LastIssueTime = time.Now()
+	ace.LastIssueTime = clockctx.Clock(ctx).Now()
+	if ace.MaximumExpirySeconds != 0 {
+		maximumExpiry := ace.LastIssueTime.Add(time.Duration(ace.MaximumExpirySeconds) * time.Second)
+		if ace.Expiry.IsZero() || ace.Expiry.After(maximumExpiry) {
+			ace.Expiry = maximumExpiry
+		}
+	}
 	ace.AuthServerError = ""
 	ace.UserError = ""
 	ace.TransientErrorsSinceLastIssue = 0
@@ -76,22 +86,22 @@ func (ace *AuthCodeEntry) SetToken(tok *provider.Token) {
 	ace.LastAttemptedIssueTime = time.Time{}
 }
 
-func (ace *AuthCodeEntry) SetAuthServerError(err string) {
+func (ace *AuthCodeEntry) SetAuthServerError(ctx context.Context, err string) {
 	ace.AuthServerError = err
-	ace.LastAttemptedIssueTime = time.Now()
+	ace.LastAttemptedIssueTime = clockctx.Clock(ctx).Now()
 }
 
-func (ace *AuthCodeEntry) SetUserError(err string) {
+func (ace *AuthCodeEntry) SetUserError(ctx context.Context, err string) {
 	ace.AuthServerError = ""
 	ace.UserError = err
-	ace.LastAttemptedIssueTime = time.Now()
+	ace.LastAttemptedIssueTime = clockctx.Clock(ctx).Now()
 }
 
-func (ace *AuthCodeEntry) SetTransientError(err string) {
+func (ace *AuthCodeEntry) SetTransientError(ctx context.Context, err string) {
 	ace.AuthServerError = ""
 	ace.TransientErrorsSinceLastIssue++
 	ace.LastTransientError = err
-	ace.LastAttemptedIssueTime = time.Now()
+	ace.LastAttemptedIssueTime = clockctx.Clock(ctx).Now()
 }
 
 // TokenIssued indicates whether a token has been issued at all.
@@ -110,8 +120,8 @@ type DeviceAuthEntry struct {
 	ProviderOptions        map[string]string `json:"provider_options"`
 }
 
-func (dae *DeviceAuthEntry) ShouldPoll() bool {
-	return dae.LastAttemptedIssueTime.Add(time.Duration(dae.Interval) * time.Second).Before(time.Now())
+func (dae *DeviceAuthEntry) ShouldPoll(ctx context.Context) bool {
+	return dae.LastAttemptedIssueTime.Add(time.Duration(dae.Interval) * time.Second).Before(clockctx.Clock(ctx).Now())
 }
 
 type AuthCodeKey string

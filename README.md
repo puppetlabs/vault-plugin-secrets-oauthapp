@@ -412,6 +412,7 @@ Parameters:
 |------|-------------|------|---------|----------|
 | `server` | The name of a server to use for the credential flow. Inherits from the plugin configuration's `default_server` field if present, and may override it. | String | Inherited | Yes |
 | `grant_type` | The grant type to use. Must be one of `authorization_code`, `refresh_token`, or `urn:ietf:params:oauth:grant-type:device_code`. | String | `authorization_code`<sup id="ret-4">[4](#footnote-4)</sup> | Yes |
+| `maximum_expiry_seconds` | The upper limit for a token's valid duration. The lesser of this value and the expiry provided in the response will be used. If the server does not provide an expiry (i.e., the server considers the token to be valid indefinitely), this parameter takes precedence and the token will be refreshed if possible. | Integer | None | No |
 | `provider_options` | A list of options to pass on to the provider for configuring this token exchange. | Map of String🠦String | None | [Refer to provider documentation](#providers) |
 
 This operation takes additional parameters depending on which grant type is
@@ -473,6 +474,7 @@ Parameters:
 | `server` | The name of a server to use for the credential flow. Inherits from the plugin configuration's `default_server` field if present, and may override it. | String | Inherited | Yes |
 | `token_url_params` | A map of additional query string parameters to provide to the token URL. | Map of String🠦String | None | No |
 | `scopes` | A list of explicit scopes to request. | List of String | None | No |
+| `maximum_expiry_seconds` | The upper limit for a token's valid duration. The lesser of this value and the expiry provided in the response will be used. If the server does not provide an expiry (i.e., the server considers the token to be valid indefinitely), this parameter takes precedence. | Integer | None | No |
 | `provider_options` | A list of options to pass on to the provider for configuring this token exchange. | Map of String🠦String | None | No |
 
 #### `DELETE` (`delete`)

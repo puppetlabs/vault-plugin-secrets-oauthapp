@@ -8,6 +8,12 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+* Add support for configuring the maximum valid lifetime of a token with a new
+  `maximum_expiry_seconds` parameter on the `creds/:name` and `self/:name`
+  endpoints.
+
 ## [3.0.0] - 2021-09-20
 
 ### Added

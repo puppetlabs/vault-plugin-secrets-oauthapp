@@ -3,6 +3,7 @@ package testutil
 import (
 	"fmt"
 	"sync/atomic"
+	"time"
 
 	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v3/pkg/provider"
 	"golang.org/x/oauth2"
@@ -27,6 +28,13 @@ func AmendTokenMockClientCredentials(get MockClientCredentialsFunc, amend func(t
 
 		return token, nil
 	}
+}
+
+func ExpiringMockClientCredentials(fn MockClientCredentialsFunc, duration time.Duration) MockClientCredentialsFunc {
+	return AmendTokenMockClientCredentials(fn, func(t *provider.Token) error {
+		t.Expiry = time.Now().Add(duration)
+		return nil
+	})
 }
 
 func RandomMockClientCredentials(_ *provider.ClientCredentialsOptions) (*provider.Token, error) {
