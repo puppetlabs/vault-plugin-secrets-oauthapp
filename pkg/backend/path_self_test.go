@@ -14,7 +14,7 @@ import (
 	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v3/pkg/testutil"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/oauth2"
-	testclock "k8s.io/apimachinery/pkg/util/clock"
+	testclock "k8s.io/utils/clock/testing"
 )
 
 func TestClientCredentials(t *testing.T) {
