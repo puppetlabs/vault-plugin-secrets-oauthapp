@@ -15,7 +15,7 @@ import (
 	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v3/pkg/provider"
 	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v3/pkg/testutil"
 	"github.com/stretchr/testify/require"
-	testclock "k8s.io/apimachinery/pkg/util/clock"
+	testclock "k8s.io/utils/clock/testing"
 )
 
 func TestPeriodicReap(t *testing.T) {

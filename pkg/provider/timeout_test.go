@@ -2,7 +2,7 @@ package provider_test
 
 import (
 	"context"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"net/url"
 	"testing"
@@ -14,7 +14,7 @@ import (
 	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v3/pkg/testutil"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/oauth2"
-	testclock "k8s.io/apimachinery/pkg/util/clock"
+	testclock "k8s.io/utils/clock/testing"
 )
 
 func TestConstantTimeoutAlgorithm(t *testing.T) {
@@ -237,7 +237,7 @@ func TestTimeoutProvider(t *testing.T) {
 			default:
 			}
 
-			b, err := ioutil.ReadAll(r.Body)
+			b, err := io.ReadAll(r.Body)
 			require.NoError(t, err)
 
 			data, err := url.ParseQuery(string(b))

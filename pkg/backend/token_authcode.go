@@ -15,6 +15,7 @@ import (
 	"github.com/puppetlabs/leg/timeutil/pkg/clockctx"
 	"github.com/puppetlabs/leg/timeutil/pkg/retry"
 	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v3/pkg/persistence"
+	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v3/pkg/provider"
 )
 
 type refreshProcess struct {
@@ -97,6 +98,8 @@ func (rd *refreshDescriptor) Run(ctx context.Context, pc chan<- scheduler.Proces
 }
 
 func (b *backend) refreshCredToken(ctx context.Context, storage logical.Storage, keyer persistence.AuthCodeKeyer, expiryDelta time.Duration) (*persistence.AuthCodeEntry, error) {
+	ctx = clockctx.WithClock(ctx, b.clock)
+
 	var entry *persistence.AuthCodeEntry
 	err := b.data.AuthCode.WithLock(keyer, func(ach *persistence.LockedAuthCodeHolder) error {
 		acm := ach.Manager(storage)
@@ -114,23 +117,24 @@ func (b *backend) refreshCredToken(ctx context.Context, storage logical.Storage,
 
 		ops, put, err := b.getProviderOperations(ctx, storage, persistence.AuthServerName(candidate.AuthServerName), expiryDelta)
 		if errmark.MarkedUser(err) {
-			candidate.SetAuthServerError(errmark.MarkShort(err).Error())
+			candidate.SetAuthServerError(ctx, errmark.MarkShort(err).Error())
 		} else if err != nil {
 			return err
 		} else {
 			defer put()
 
 			// Refresh.
-			refreshed, err := ops.RefreshToken(clockctx.WithClock(ctx, b.clock), candidate.Token)
+			refreshed, err := ops.RefreshToken(ctx, candidate.Token, provider.WithProviderOptions(candidate.ProviderOptions))
+
 			if err != nil {
 				msg := errmap.Wrap(errmark.MarkShort(err), "refresh failed").Error()
 				if errmark.MarkedUser(err) {
-					candidate.SetUserError(msg)
+					candidate.SetUserError(ctx, msg)
 				} else {
-					candidate.SetTransientError(msg)
+					candidate.SetTransientError(ctx, msg)
 				}
 			} else {
-				candidate.SetToken(refreshed)
+				candidate.SetToken(ctx, refreshed)
 			}
 		}
 

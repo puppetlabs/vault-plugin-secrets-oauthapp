@@ -4,9 +4,11 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
+	"time"
 
 	"github.com/hashicorp/vault/sdk/helper/locksutil"
 	"github.com/hashicorp/vault/sdk/logical"
+	"github.com/puppetlabs/leg/timeutil/pkg/clockctx"
 	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v3/pkg/provider"
 	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v3/pkg/vaultext"
 )
@@ -28,11 +30,24 @@ type ClientCredsEntry struct {
 	// entry.
 	AuthServerName string `json:"auth_server_name"`
 
+	// MaximumExpirySeconds caps issued auth tokens to a desired lifetime.
+	MaximumExpirySeconds int `json:"maximum_expiry_seconds,omitempty"`
+
 	Config struct {
 		Scopes          []string          `json:"scopes"`
 		TokenURLParams  map[string]string `json:"token_url_params"`
 		ProviderOptions map[string]string `json:"provider_options"`
 	} `json:"config"`
+}
+
+func (cce *ClientCredsEntry) SetToken(ctx context.Context, tok *provider.Token) {
+	cce.Token = tok
+	if cce.MaximumExpirySeconds != 0 {
+		maximumExpiry := clockctx.Clock(ctx).Now().Add(time.Duration(cce.MaximumExpirySeconds) * time.Second)
+		if cce.Token.Expiry.IsZero() || cce.Token.Expiry.After(maximumExpiry) {
+			cce.Token.Expiry = maximumExpiry
+		}
+	}
 }
 
 type ClientCredsKey string

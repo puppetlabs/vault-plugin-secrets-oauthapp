@@ -4,11 +4,11 @@ jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/setup-go@v2
+    - uses: actions/checkout@v3
+    - uses: actions/setup-go@v3
       with:
-        go-version: '1.16'
-    - uses: actions/checkout@v2
-    - uses: actions/cache@v2
+        go-version: '1.18'
+    - uses: actions/cache@v3
       with:
         path: |
           ~/go/pkg/mod
@@ -21,11 +21,11 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/setup-go@v2
+    - uses: actions/checkout@v3
+    - uses: actions/setup-go@v3
       with:
-        go-version: '1.16'
-    - uses: actions/checkout@v2
-    - uses: actions/cache@v2
+        go-version: '1.18'
+    - uses: actions/cache@v3
       with:
         path: |
           ~/go/pkg/mod
@@ -38,11 +38,11 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/setup-go@v2
+    - uses: actions/checkout@v3
+    - uses: actions/setup-go@v3
       with:
-        go-version: '1.16'
-    - uses: actions/checkout@v2
-    - uses: actions/cache@v2
+        go-version: '1.18'
+    - uses: actions/cache@v3
       with:
         path: |
           ~/go/pkg/mod
@@ -60,10 +60,10 @@ jobs:
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v')
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v3
     - name: Get tag version
       id: get-tag-version
-      uses: actions/github-script@v3
+      uses: actions/github-script@v6
       with:
         result-encoding: string
         script: |
@@ -121,11 +121,11 @@ jobs:
         - os: solaris
           arch: amd64
     steps:
-    - uses: actions/setup-go@v2
+    - uses: actions/checkout@v3
+    - uses: actions/setup-go@v3
       with:
-        go-version: '1.16'
-    - uses: actions/checkout@v2
-    - uses: actions/cache@v2
+        go-version: '1.18'
+    - uses: actions/cache@v3
       with:
         path: |
           ~/go/pkg/mod
@@ -148,11 +148,11 @@ jobs:
         checksum_name="${archive_name}.sha256.asc"
         checksum_media_type="$( file -b --mime-type "./artifacts/${checksum_name}" )"
 
-        echo "::set-output name=archive-name::${archive_name}"
-        echo "::set-output name=archive-media-type::${archive_media_type}"
+        echo "archive-name=${archive_name}" >>"$GITHUB_OUTPUT"
+        echo "archive-media-type=${archive_media_type}" >>"$GITHUB_OUTPUT"
 
-        echo "::set-output name=checksum-name::${checksum_name}"
-        echo "::set-output name=checksum-media-type::${checksum_media_type}"
+        echo "checksum-name=${checksum_name}" >>"$GITHUB_OUTPUT"
+        echo "checksum-media-type=${checksum_media_type}" >>"$GITHUB_OUTPUT"
     - name: Upload checksum asset
       uses: actions/upload-release-asset@v1
       env:

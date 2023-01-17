@@ -95,6 +95,10 @@ func (b *backend) credsReadOperation(ctx context.Context, req *logical.Request, 
 		rd["extra_data"] = entry.ExtraData
 	}
 
+	if entry.MaximumExpirySeconds > 0 {
+		rd["maximum_expiry_seconds"] = entry.MaximumExpirySeconds
+	}
+
 	if len(entry.ProviderOptions) > 0 {
 		rd["provider_options"] = entry.ProviderOptions
 	}
@@ -117,6 +121,8 @@ func (b *backend) credsReadOperation(ctx context.Context, req *logical.Request, 
 }
 
 func (b *backend) credsUpdateAuthorizationCodeOperation(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
+	ctx = clockctx.WithClock(ctx, b.clock)
+
 	serverName, err := b.getServerNameOrDefault(ctx, req.Storage, data.Get("server").(string))
 	if err != nil {
 		return errorResponse(err)
@@ -137,7 +143,7 @@ func (b *backend) credsUpdateAuthorizationCodeOperation(ctx context.Context, req
 	}
 
 	tok, err := ops.AuthCodeExchange(
-		clockctx.WithClock(ctx, b.clock),
+		ctx,
 		code.(string),
 		provider.WithRedirectURL(data.Get("redirect_url").(string)),
 		provider.WithProviderOptions(data.Get("provider_options").(map[string]string)),
@@ -149,9 +155,10 @@ func (b *backend) credsUpdateAuthorizationCodeOperation(ctx context.Context, req
 	}
 
 	entry := &persistence.AuthCodeEntry{
-		AuthServerName: serverName,
+		AuthServerName:       serverName,
+		MaximumExpirySeconds: data.Get("maximum_expiry_seconds").(int),
 	}
-	entry.SetToken(tok)
+	entry.SetToken(ctx, tok)
 
 	if err := b.data.AuthCode.Manager(req.Storage).WriteAuthCodeEntry(ctx, persistence.AuthCodeName(data.Get("name").(string)), entry); err != nil {
 		return nil, err
@@ -161,6 +168,8 @@ func (b *backend) credsUpdateAuthorizationCodeOperation(ctx context.Context, req
 }
 
 func (b *backend) credsUpdateRefreshTokenOperation(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
+	ctx = clockctx.WithClock(ctx, b.clock)
+
 	serverName, err := b.getServerNameOrDefault(ctx, req.Storage, data.Get("server").(string))
 	if err != nil {
 		return errorResponse(err)
@@ -185,11 +194,7 @@ func (b *backend) credsUpdateRefreshTokenOperation(ctx context.Context, req *log
 			RefreshToken: refreshToken.(string),
 		},
 	}
-	tok, err = ops.RefreshToken(
-		clockctx.WithClock(ctx, b.clock),
-		tok,
-		provider.WithProviderOptions(data.Get("provider_options").(map[string]string)),
-	)
+	tok, err = ops.RefreshToken(ctx, tok, provider.WithProviderOptions(data.Get("provider_options").(map[string]string)))
 	if errmark.MarkedUser(err) {
 		return logical.ErrorResponse(errmap.Wrap(errmark.MarkShort(err), "refresh failed").Error()), nil
 	} else if err != nil {
@@ -197,9 +202,10 @@ func (b *backend) credsUpdateRefreshTokenOperation(ctx context.Context, req *log
 	}
 
 	entry := &persistence.AuthCodeEntry{
-		AuthServerName: serverName,
+		AuthServerName:       serverName,
+		MaximumExpirySeconds: data.Get("maximum_expiry_seconds").(int),
 	}
-	entry.SetToken(tok)
+	entry.SetToken(ctx, tok)
 
 	if err := b.data.AuthCode.Manager(req.Storage).WriteAuthCodeEntry(ctx, persistence.AuthCodeName(data.Get("name").(string)), entry); err != nil {
 		return nil, err
@@ -209,6 +215,8 @@ func (b *backend) credsUpdateRefreshTokenOperation(ctx context.Context, req *log
 }
 
 func (b *backend) credsUpdateDeviceCodeOperation(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
+	ctx = clockctx.WithClock(ctx, b.clock)
+
 	serverName, err := b.getServerNameOrDefault(ctx, req.Storage, data.Get("server").(string))
 	if err != nil {
 		return errorResponse(err)
@@ -236,7 +244,7 @@ func (b *backend) credsUpdateDeviceCodeOperation(ctx context.Context, req *logic
 		now := b.clock.Now()
 
 		auth, ok, err := ops.DeviceCodeAuth(
-			clockctx.WithClock(ctx, b.clock),
+			ctx,
 			provider.WithScopes(data.Get("scopes").([]string)),
 			provider.WithProviderOptions(data.Get("provider_options").(map[string]string)),
 		)
@@ -275,13 +283,14 @@ func (b *backend) credsUpdateDeviceCodeOperation(ctx context.Context, req *logic
 		ProviderOptions: data.Get("provider_options").(map[string]string),
 	}
 	ace := &persistence.AuthCodeEntry{
-		AuthServerName: serverName,
+		AuthServerName:       serverName,
+		MaximumExpirySeconds: data.Get("maximum_expiry_seconds").(int),
 	}
 
 	// If we get this far, we're guaranteed to have a device code. We'll do
 	// one request to make sure that it's not completely broken. Then we'll
 	// submit it to be polled.
-	dae, ace, err = deviceAuthExchange(clockctx.WithClock(ctx, b.clock), ops, dae, ace)
+	dae, ace, err = deviceAuthExchange(ctx, ops, dae, ace)
 	if err != nil {
 		return nil, err
 	} else if ace.UserError != "" {
@@ -346,7 +355,7 @@ var credsFields = map[string]*framework.FieldSchema{
 	},
 	// fields for read operation
 	"minimum_seconds": {
-		Type:        framework.TypeInt,
+		Type:        framework.TypeDurationSecond,
 		Description: "Minimum remaining seconds to allow when reusing access token.",
 		Default:     0,
 		Query:       true,
@@ -360,6 +369,10 @@ var credsFields = map[string]*framework.FieldSchema{
 		Type:          framework.TypeString,
 		Description:   "The grant type to use for this operation.",
 		AllowedValues: credGrantTypes(),
+	},
+	"maximum_expiry_seconds": {
+		Type:        framework.TypeDurationSecond,
+		Description: "Maximum number of seconds for the access token to be considered valid.",
 	},
 	"code": {
 		Type:        framework.TypeString,

@@ -75,6 +75,8 @@ func (dced *deviceCodeExchangeDescriptor) Run(ctx context.Context, pc chan<- sch
 }
 
 func (b *backend) exchangeDeviceAuth(ctx context.Context, storage logical.Storage, keyer persistence.AuthCodeKeyer) error {
+	ctx = clockctx.WithClock(ctx, b.clock)
+
 	return b.data.AuthCode.WithLock(keyer, func(ch *persistence.LockedAuthCodeHolder) error {
 		cm := ch.Manager(storage)
 
@@ -98,21 +100,21 @@ func (b *backend) exchangeDeviceAuth(ctx context.Context, storage logical.Storag
 
 		// Check the issue time one last time. Someone could have updated this from
 		// under us as well.
-		if !auth.ShouldPoll() {
+		if !auth.ShouldPoll(ctx) {
 			return nil
 		}
 
 		// We have a matching credential waiting to be issued.
 		ops, put, err := b.getProviderOperations(ctx, storage, persistence.AuthServerName(ct.AuthServerName), defaultExpiryDelta)
 		if errmark.MarkedUser(err) {
-			ct.SetAuthServerError(errmark.MarkShort(err).Error())
+			ct.SetAuthServerError(ctx, errmark.MarkShort(err).Error())
 		} else if err != nil {
 			return err
 		} else {
 			defer put()
 
 			// Perform the exchange.
-			auth, ct, err = deviceAuthExchange(clockctx.WithClock(ctx, b.clock), ops, auth, ct)
+			auth, ct, err = deviceAuthExchange(ctx, ops, auth, ct)
 			if err != nil {
 				return err
 			}
@@ -151,7 +153,7 @@ func (b *backend) getExchangeDeviceAuth(ctx context.Context, storage logical.Sto
 		return err
 	case entry == nil:
 		return nil
-	case !entry.ShouldPoll():
+	case !entry.ShouldPoll(clockctx.WithClock(ctx, b.clock)):
 		return nil
 	default:
 		return b.exchangeDeviceAuth(ctx, storage, keyer)
@@ -176,14 +178,14 @@ func deviceAuthExchange(ctx context.Context, ops provider.PublicOperations, dae 
 			dae.Interval += 5 // seconds
 		case semerr.IsCode(err, "authorization_pending"):
 		case errmark.MarkedUser(err):
-			ace.SetUserError(msg)
+			ace.SetUserError(ctx, msg)
 		default:
-			ace.SetTransientError(msg)
+			ace.SetTransientError(ctx, msg)
 		}
 
 		dae.LastAttemptedIssueTime = ace.LastAttemptedIssueTime
 	} else {
-		ace.SetToken(tok)
+		ace.SetToken(ctx, tok)
 	}
 
 	return dae, ace, nil
