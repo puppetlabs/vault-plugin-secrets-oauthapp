@@ -3,7 +3,6 @@ package backend
 import (
 	"context"
 
-	"github.com/hashicorp/vault/sdk/helper/pluginutil"
 	"github.com/hashicorp/vault/sdk/logical"
 	"github.com/puppetlabs/leg/scheduler"
 	"github.com/puppetlabs/leg/timeutil/pkg/clockctx"
@@ -16,24 +15,18 @@ var upgrades = []framework.UpgraderFactoryFunc{
 	v2v3.Factory,
 }
 
-func (b *backend) Setup(ctx context.Context, conf *logical.BackendConfig) error {
-	if err := b.Backend.Setup(ctx, conf); err != nil {
+func (b *backend) initialize(ctx context.Context, req *logical.InitializationRequest) error {
+	ownsStorage := b.ownsStorage()
+
+	// Upgrade or wait for primary to upgrade.
+	if err := framework.Upgrade(clockctx.WithClock(ctx, b.clock), upgrades, b.data, req.Storage, !ownsStorage); err != nil {
 		return err
 	}
 
-	// Do not manipulate storage or track upgrade status in metadata mode.
-	if pluginutil.InMetadataMode() {
-		return nil
-	}
-
-	return framework.Upgrade(clockctx.WithClock(ctx, b.clock), upgrades, b.data, conf.StorageView, !b.ownsStorage())
-}
-
-func (b *backend) initialize(ctx context.Context, req *logical.InitializationRequest) error {
 	// Only start up the scheduler if we own the underlying storage, which isn't
 	// the case for a variety of standby/secondary server configurations in
 	// Vault Enterprise.
-	if !b.ownsStorage() {
+	if !ownsStorage {
 		return nil
 	}
 
