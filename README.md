@@ -391,22 +391,14 @@ refresh token, and device code flows.
 #### `GET` (`read`)
 
 Retrieve a current access token for the given credential. Reuses previous token
-if it is not yet expired or close to it. Otherwise, requests a new access
-token using the saved refresh token if possible.
+if it is not yet expired or close to it. Otherwise, requests a new credential
+using the `refresh_token` grant type if possible.
 
 Parameters:
 
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|----------|
 | `minimum_seconds` | Minimum additional duration to require the access token to be valid for. | Integer | 10<sup id="ret-3-a">[3](#footnote-3)</sup> | No |
-| `scopes` | A list of explicit scopes to request. | List of String | None | No |
-| `audience` | A list of explicit audiences to request. | List of String | None | No |
-| `resource` | A list of explicit resources to request. | List of String | None | No |
-
-If scopes, audience, and/or resource is requested, an access token that
-is more limited according to those requested parameters than the
-corresponding refresh token is returned.  The more limited access token
-is not cached for later requests; the less limited one is cached as usual.
 
 #### `PUT` (`write`)
 
@@ -488,6 +480,28 @@ Parameters:
 #### `DELETE` (`delete`)
 
 Remove the credential information from storage.
+
+### `sts/:name`
+
+This path is for tokens to be obtained using the [RFC 8693 token exchange
+flow](https://datatracker.ietf.org/doc/html/rfc8693). The credential identified
+by the `name` path parameter must be an existing credential that exists under
+the corresponding `creds/:name` path.
+
+#### `GET` (`read`)
+
+Retrieve a new access token by performing a token exchange request on demand.
+The token exchange operation always sends the access token from the
+corresponding credential as the subject token and explicitly requests a new
+access token from the authorization server.
+
+Parameters:
+
+| Name | Description | Type | Default | Required |
+|------|-------------|------|---------|----------|
+| `scopes` | A list of explicit scopes to request. | List of String | None | No |
+| `audiences` | A list of explicit audiences to request. | List of String | None | No |
+| `resources` | A list of explicit resources to request. | List of String | None | No |
 
 ## Providers
 

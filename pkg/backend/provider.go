@@ -131,6 +131,24 @@ func (po *providerOperations) ClientCredentials(ctx context.Context, opts ...pro
 	return nil, &providerError{err}
 }
 
+func (po *providerOperations) TokenExchange(ctx context.Context, t *provider.Token, opts ...provider.TokenExchangeOption) (*provider.Token, error) {
+	if len(po.entry.ClientSecrets) == 0 {
+		return nil, errmark.MarkUser(provider.ErrMissingClientSecret)
+	}
+
+	err := &multierror.Error{ErrorFormat: providerErrorFormat}
+	for _, clientSecret := range po.entry.ClientSecrets {
+		rt, rerr := po.provider.Private(po.entry.ClientID, clientSecret).TokenExchange(ctx, t, opts...)
+		if rerr == nil {
+			return rt, nil
+		}
+
+		err = multierror.Append(err, rerr)
+	}
+
+	return nil, &providerError{err}
+}
+
 func (b *backend) getProviderOperations(ctx context.Context, storage logical.Storage, keyer persistence.AuthServerKeyer, expiryDelta time.Duration) (*providerOperations, func(), error) {
 	cfg, err := b.cache.Config.Get(ctx, storage)
 	if err != nil {

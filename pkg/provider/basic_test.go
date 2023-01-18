@@ -91,6 +91,14 @@ func TestBasicPrivate(t *testing.T) {
 				_, _ = w.Write([]byte(`access_token=ijkl&refresh_token=efgh&token_type=bearer&expires_in=3600`))
 			case "client_credentials":
 				_, _ = w.Write([]byte(`access_token=mnop&token_type=bearer&expires_in=86400`))
+			case "urn:ietf:params:oauth:grant-type:token-exchange":
+				assert.Equal(t, "ijkl", data.Get("subject_token"))
+				assert.Equal(t, "sub1 sub2", data.Get("scope"))
+				assert.Equal(t, []string{"urn:r1", "urn:r2"}, data["resource"])
+				assert.Equal(t, []string{"urn:a1", "urn:a2"}, data["audience"])
+				assert.Equal(t, "quux", data.Get("baz"))
+
+				_, _ = w.Write([]byte(`access_token=qrst&token_type=bearer&expires_in=120`))
 			default:
 				assert.Fail(t, "unexpected `grant_type` value: %q", data.Get("grant_type"))
 			}
@@ -127,6 +135,22 @@ func TestBasicPrivate(t *testing.T) {
 	// Our refreshed response is good for an hour.
 	require.Equal(t, "ijkl", token.AccessToken)
 	require.True(t, token.Valid())
+
+	token, err = ops.TokenExchange(
+		ctx,
+		token,
+		provider.WithScopes{"sub1", "sub2"},
+		provider.WithResources{"urn:r1", "urn:r2"},
+		provider.WithAudiences{"urn:a1", "urn:a2"},
+		provider.WithURLParams{"baz": "quux"},
+	)
+	require.NoError(t, err)
+	require.NotNil(t, token)
+	require.True(t, token.Valid())
+	require.Equal(t, "qrst", token.AccessToken)
+	require.Equal(t, "Bearer", token.Type())
+	require.Empty(t, token.RefreshToken)
+	require.NotEmpty(t, token.Expiry)
 
 	token, err = ops.ClientCredentials(ctx)
 	require.NoError(t, err)

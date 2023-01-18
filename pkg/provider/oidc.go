@@ -148,12 +148,8 @@ func (oo *oidcOperations) AuthCodeExchange(ctx context.Context, code string, opt
 		t.ExtraData = make(map[string]interface{})
 	}
 
-	// If code is empty we're doing an RFC8693 token exchange and then
-	// the ID token is optional. Otherwise, verify the ID token.
-	if code != "" {
-		if err := oo.verifyUpdateIDToken(ctx, t); err != nil {
-			return nil, errmark.MarkUser(err)
-		}
+	if err := oo.verifyUpdateIDToken(ctx, t); err != nil {
+		return nil, errmark.MarkUser(err)
 	}
 
 	if err := oo.updateUserInfo(ctx, t); err != nil {
@@ -200,6 +196,10 @@ func (oo *oidcOperations) RefreshToken(ctx context.Context, t *Token, opts ...Re
 
 func (oo *oidcOperations) ClientCredentials(ctx context.Context, opts ...ClientCredentialsOption) (*Token, error) {
 	return oo.delegate.ClientCredentials(ctx, opts...)
+}
+
+func (oo *oidcOperations) TokenExchange(ctx context.Context, t *Token, opts ...TokenExchangeOption) (*Token, error) {
+	return oo.delegate.TokenExchange(ctx, t, opts...)
 }
 
 type oidc struct {

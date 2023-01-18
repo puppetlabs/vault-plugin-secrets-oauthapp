@@ -49,55 +49,6 @@ func credGrantTypes() (types []interface{}) {
 	return
 }
 
-// credsCheckExchange checks to see if an exchange is requested on a
-//  credsReadOperation and if so exchanges the token for a new one.
-//  This is a separate function in order to avoid lint complaint of
-//  cyclomatic complexity.
-func (b *backend) credsCheckExchange(ctx context.Context, req *logical.Request, data *framework.FieldData, entry *persistence.AuthCodeEntry, expiryDelta time.Duration) (*logical.Response, error) {
-	scopes := data.Get("scopes").([]string)
-	audiences := data.Get("audience").([]string)
-	resources := data.Get("resource").([]string)
-	if len(scopes) > 0 || len(audiences) > 0 || len(resources) > 0 {
-		// Do an RFC8693 token exchange to limit the access token
-		options := map[string]string{
-			"grant_type":         "urn:ietf:params:oauth:grant-type:token-exchange",
-			"subject_token":      entry.AccessToken,
-			"subject_token_type": "urn:ietf:params:oauth:token-type:access_token",
-		}
-		if len(scopes) > 0 {
-			options["scope"] = strings.Join(scopes, " ")
-		}
-		if len(audiences) > 0 {
-			options["audience"] = strings.Join(audiences, " ")
-		}
-		if len(resources) > 0 {
-			options["resource"] = strings.Join(resources, " ")
-		}
-
-		ops, put, err := b.getProviderOperations(
-			ctx,
-			req.Storage,
-			persistence.AuthServerName(entry.AuthServerName),
-			expiryDelta,
-		)
-		if errmark.MarkedUser(err) {
-			return logical.ErrorResponse(errmark.MarkShort(err).Error()), nil
-		} else if err != nil {
-			return nil, err
-		}
-		defer put()
-		entry.Token, err = ops.AuthCodeExchange(
-			ctx,
-			"",
-			provider.WithURLParams(options),
-		)
-		if err != nil {
-			return nil, err
-		}
-	}
-	return nil, nil
-}
-
 func (b *backend) credsReadOperation(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
 	expiryDelta := time.Duration(data.Get("minimum_seconds").(int)) * time.Second
 
@@ -128,11 +79,6 @@ func (b *backend) credsReadOperation(ctx context.Context, req *logical.Request, 
 		}
 
 		return logical.ErrorResponse("token expired"), nil
-	}
-
-	logicalerr, err := b.credsCheckExchange(ctx, req, data, entry, expiryDelta)
-	if logicalerr != nil || err != nil {
-		return logicalerr, err
 	}
 
 	rd := map[string]interface{}{
@@ -407,19 +353,7 @@ var credsFields = map[string]*framework.FieldSchema{
 		Type:        framework.TypeString,
 		Description: "Specifies the name of the credential.",
 	},
-	"scopes": {
-		Type:        framework.TypeCommaStringSlice,
-		Description: "Specifies the scopes to provide for a device code authorization request or the subset of scopes to request for an access token exchange.",
-	},
 	// fields for read operation
-	"audience": {
-		Type:        framework.TypeCommaStringSlice,
-		Description: "An audience to request for access token, default same as refresh token.",
-	},
-	"resource": {
-		Type:        framework.TypeCommaStringSlice,
-		Description: "A resource to request for access token, default same as refresh token.",
-	},
 	"minimum_seconds": {
 		Type:        framework.TypeDurationSecond,
 		Description: "Minimum remaining seconds to allow when reusing access token.",
@@ -455,6 +389,10 @@ var credsFields = map[string]*framework.FieldSchema{
 	"device_code": {
 		Type:        framework.TypeString,
 		Description: "Specifies a device token retrieved from the provider by some means external to this plugin.",
+	},
+	"scopes": {
+		Type:        framework.TypeCommaStringSlice,
+		Description: "Specifies the scopes to provide for a device code authorization request.",
 	},
 	"provider_options": {
 		Type:        framework.TypeKVPairs,

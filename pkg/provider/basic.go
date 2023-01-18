@@ -4,9 +4,11 @@ import (
 	"context"
 	"fmt"
 	"net/url"
+	"strings"
 
 	gooidc "github.com/coreos/go-oidc"
 	"github.com/puppetlabs/leg/errmap/pkg/errmark"
+	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v3/pkg/oauth2ext/clientctx"
 	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v3/pkg/oauth2ext/devicecode"
 	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v3/pkg/oauth2ext/semerr"
 	"golang.org/x/oauth2"
@@ -193,6 +195,67 @@ func (bo *basicOperations) ClientCredentials(ctx context.Context, opts ...Client
 	}
 
 	tok, err := cc.Token(ctx)
+	if err != nil {
+		return nil, semerr.Map(err)
+	}
+
+	return &Token{
+		Token: tok,
+
+		ProviderVersion: bo.vsn,
+		ProviderOptions: o.ProviderOptions,
+	}, nil
+}
+
+func (bo *basicOperations) TokenExchange(ctx context.Context, t *Token, opts ...TokenExchangeOption) (*Token, error) {
+	if bo.clientSecret == "" {
+		return nil, errmark.MarkUser(ErrMissingClientSecret)
+	}
+
+	o := &TokenExchangeOptions{}
+	o.ApplyOptions(opts)
+
+	endpoint := bo.endpointFactory(o.ProviderOptions)
+
+	cfg := &oauth2.Config{
+		Endpoint:     endpoint.Endpoint,
+		ClientID:     bo.clientID,
+		ClientSecret: bo.clientSecret,
+	}
+
+	// Add audiences and resources, which require multiple instances of the same
+	// parameter to be specified, and therefore can't use oauth2.AuthCodeOption.
+	ctx = clientctx.WithUpdatedRequestBody(ctx, func(body []byte) ([]byte, error) {
+		vs, err := url.ParseQuery(string(body))
+		if err != nil {
+			return nil, err
+		}
+
+		if len(o.Audiences) > 0 {
+			vs["audience"] = o.Audiences
+		}
+		if len(o.Resources) > 0 {
+			vs["resource"] = o.Resources
+		}
+
+		return []byte(vs.Encode()), nil
+	})
+
+	o.AuthCodeOptions = append(
+		o.AuthCodeOptions,
+		oauth2.SetAuthURLParam("grant_type", "urn:ietf:params:oauth:grant-type:token-exchange"),
+		oauth2.SetAuthURLParam("subject_token_type", "urn:ietf:params:oauth:token-type:access_token"),
+		oauth2.SetAuthURLParam("subject_token", t.AccessToken),
+		oauth2.SetAuthURLParam("requested_token_type", "urn:ietf:params:oauth:token-type:access_token"),
+	)
+
+	if len(o.Scopes) > 0 {
+		o.AuthCodeOptions = append(o.AuthCodeOptions, oauth2.SetAuthURLParam("scope", strings.Join(o.Scopes, " ")))
+	}
+
+	// Sending an empty code is harmless and this is the only way to use the
+	// regular token endpoint while switching the grant type.
+	tok, err := cfg.Exchange(ctx, "", o.AuthCodeOptions...)
 	if err != nil {
 		return nil, semerr.Map(err)
 	}
