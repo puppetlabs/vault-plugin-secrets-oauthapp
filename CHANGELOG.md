@@ -8,6 +8,8 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [3.1.0] - 2023-01-23
+
 ### Added
 
 * Add support for configuring the maximum valid lifetime of a token with a new
@@ -248,7 +250,8 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 * Initial release of the plugin.
 
-[Unreleased]: https://github.com/puppetlabs/vault-plugin-secrets-oauthapp/compare/v3.0.0...HEAD
+[Unreleased]: https://github.com/puppetlabs/vault-plugin-secrets-oauthapp/compare/v3.1.0...HEAD
+[3.1.0]: https://github.com/puppetlabs/vault-plugin-secrets-oauthapp/compare/v3.0.0...v3.1.0
 [3.0.0]: https://github.com/puppetlabs/vault-plugin-secrets-oauthapp/compare/v2.2.0...v3.0.0
 [2.2.0]: https://github.com/puppetlabs/vault-plugin-secrets-oauthapp/compare/v2.1.1...v2.2.0
 [2.1.1]: https://github.com/puppetlabs/vault-plugin-secrets-oauthapp/compare/v2.1.0...v2.1.1
