@@ -198,6 +198,10 @@ func (oo *oidcOperations) ClientCredentials(ctx context.Context, opts ...ClientC
 	return oo.delegate.ClientCredentials(ctx, opts...)
 }
 
+func (oo *oidcOperations) TokenExchange(ctx context.Context, t *Token, opts ...TokenExchangeOption) (*Token, error) {
+	return oo.delegate.TokenExchange(ctx, t, opts...)
+}
+
 type oidc struct {
 	vsn             int
 	p               *gooidc.Provider

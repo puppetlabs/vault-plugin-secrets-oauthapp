@@ -13,6 +13,8 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 * Add support for configuring the maximum valid lifetime of a token with a new
   `maximum_expiry_seconds` parameter on the `creds/:name` and `self/:name`
   endpoints.
+* The OAuth 2.0 token exchange flow (RFC 8693) for impersonation is now
+  supported by reading from the `sts/:name` endpoint.
 
 ## [3.0.0] - 2021-09-20
 

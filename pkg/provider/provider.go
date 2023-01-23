@@ -176,6 +176,25 @@ func (o *ClientCredentialsOptions) ApplyOptions(opts []ClientCredentialsOption) 
 	}
 }
 
+// TokenExchangeOptions are options for the TokenExchange operation.
+type TokenExchangeOptions struct {
+	Scopes          []string
+	Audiences       []string
+	Resources       []string
+	AuthCodeOptions []oauth2.AuthCodeOption
+	ProviderOptions map[string]string
+}
+
+type TokenExchangeOption interface {
+	ApplyToTokenExchangeOptions(target *TokenExchangeOptions)
+}
+
+func (o *TokenExchangeOptions) ApplyOptions(opts []TokenExchangeOption) {
+	for _, opt := range opts {
+		opt.ApplyToTokenExchangeOptions(o)
+	}
+}
+
 // PrivateOperations defines the operations for a client that require knowledge
 // of the client ID and client secret.
 type PrivateOperations interface {
@@ -186,6 +205,9 @@ type PrivateOperations interface {
 
 	// ClientCredentials performs a client credentials flow request.
 	ClientCredentials(ctx context.Context, opts ...ClientCredentialsOption) (*Token, error)
+
+	// TokenExchange performs an RFC 8693 token exchange operation.
+	TokenExchange(ctx context.Context, t *Token, opts ...TokenExchangeOption) (*Token, error)
 }
 
 const VersionLatest = -1

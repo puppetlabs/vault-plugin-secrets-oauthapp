@@ -44,6 +44,7 @@ type MockAuthCodeExchangeFunc func(code string, opts *provider.AuthCodeExchangeO
 type MockClientCredentialsFunc func(opts *provider.ClientCredentialsOptions) (*provider.Token, error)
 type MockDeviceCodeAuthFunc func(opts *provider.DeviceCodeAuthOptions) (*devicecode.Auth, error)
 type MockDeviceCodeExchangeFunc func(deviceCode string, opts *provider.DeviceCodeExchangeOptions) (*provider.Token, error)
+type MockTokenExchangeFunc func(t *provider.Token, opts *provider.TokenExchangeOptions) (*provider.Token, error)
 
 type mockOperations struct {
 	clientID             string
@@ -52,6 +53,7 @@ type mockOperations struct {
 	clientCredentialsFn  MockClientCredentialsFunc
 	deviceCodeAuthFn     MockDeviceCodeAuthFunc
 	deviceCodeExchangeFn MockDeviceCodeExchangeFunc
+	tokenExchangeFn      MockTokenExchangeFunc
 }
 
 func (mo *mockOperations) AuthCodeURL(state string, opts ...provider.AuthCodeURLOption) (string, bool) {
@@ -185,6 +187,25 @@ func (mo *mockOperations) ClientCredentials(ctx context.Context, opts ...provide
 	return tok, nil
 }
 
+func (mo *mockOperations) TokenExchange(ctx context.Context, t *provider.Token, opts ...provider.TokenExchangeOption) (*provider.Token, error) {
+	if mo.tokenExchangeFn == nil {
+		return nil, semerr.Map(MockErrorResponse(http.StatusUnauthorized, &interop.JSONError{Error: "invalid_client"}))
+	}
+
+	o := &provider.TokenExchangeOptions{}
+	o.ApplyOptions(opts)
+
+	tok, err := mo.tokenExchangeFn(t, o)
+	if err != nil {
+		return nil, semerr.Map(err)
+	}
+
+	tok.ProviderVersion = mo.owner.vsn
+	tok.ProviderOptions = o.ProviderOptions
+
+	return tok, nil
+}
+
 type mockProvider struct {
 	owner *mock
 }
@@ -206,6 +227,7 @@ func (mp *mockProvider) Private(clientID, clientSecret string) provider.PrivateO
 		clientCredentialsFn:  mp.owner.clientCredentialsFns[mc],
 		deviceCodeAuthFn:     mp.owner.deviceCodeAuthFns[mc],
 		deviceCodeExchangeFn: mp.owner.deviceCodeExchangeFns[mc],
+		tokenExchangeFn:      mp.owner.tokenExchangeFns[mc],
 		owner:                mp.owner,
 	}
 }
@@ -217,6 +239,7 @@ type mock struct {
 	clientCredentialsFns  map[MockClient]MockClientCredentialsFunc
 	deviceCodeAuthFns     map[MockClient]MockDeviceCodeAuthFunc
 	deviceCodeExchangeFns map[MockClient]MockDeviceCodeExchangeFunc
+	tokenExchangeFns      map[MockClient]MockTokenExchangeFunc
 	refresh               map[string]string
 	refreshMut            sync.RWMutex
 }
@@ -304,6 +327,12 @@ func MockWithDeviceCodeExchange(client MockClient, fn MockDeviceCodeExchangeFunc
 	}
 }
 
+func MockWithTokenExchange(client MockClient, fn MockTokenExchangeFunc) MockOption {
+	return func(m *mock) {
+		m.tokenExchangeFns[client] = fn
+	}
+}
+
 func MockFactory(opts ...MockOption) provider.FactoryFunc {
 	m := &mock{
 		expectedOpts:          make(map[string]string),
@@ -311,6 +340,7 @@ func MockFactory(opts ...MockOption) provider.FactoryFunc {
 		clientCredentialsFns:  make(map[MockClient]MockClientCredentialsFunc),
 		deviceCodeAuthFns:     make(map[MockClient]MockDeviceCodeAuthFunc),
 		deviceCodeExchangeFns: make(map[MockClient]MockDeviceCodeExchangeFunc),
+		tokenExchangeFns:      make(map[MockClient]MockTokenExchangeFunc),
 		refresh:               make(map[string]string),
 	}
 

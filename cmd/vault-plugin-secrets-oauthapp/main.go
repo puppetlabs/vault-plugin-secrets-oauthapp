@@ -15,7 +15,7 @@ func main() {
 	flags := meta.FlagSet()
 	_ = flags.Parse(os.Args[1:])
 
-	err := plugin.Serve(&plugin.ServeOpts{
+	err := plugin.ServeMultiplex(&plugin.ServeOpts{
 		BackendFactoryFunc: backend.Factory,
 		TLSProviderFunc:    api.VaultPluginTLSProvider(meta.GetTLSConfig()),
 	})

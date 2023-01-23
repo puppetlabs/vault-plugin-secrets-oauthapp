@@ -78,12 +78,12 @@ func ErrorMockAuthCodeExchange(_ string, _ *provider.AuthCodeExchangeOptions) (*
 }
 
 func RestrictMockAuthCodeExchange(m map[string]MockAuthCodeExchangeFunc) MockAuthCodeExchangeFunc {
-	return func(token string, opts *provider.AuthCodeExchangeOptions) (*provider.Token, error) {
-		fn, found := m[token]
+	return func(code string, opts *provider.AuthCodeExchangeOptions) (*provider.Token, error) {
+		fn, found := m[code]
 		if !found {
 			fn = ErrorMockAuthCodeExchange
 		}
 
-		return fn(token, opts)
+		return fn(code, opts)
 	}
 }

@@ -481,6 +481,28 @@ Parameters:
 
 Remove the credential information from storage.
 
+### `sts/:name`
+
+This path is for tokens to be obtained using the [RFC 8693 token exchange
+flow](https://datatracker.ietf.org/doc/html/rfc8693). The credential identified
+by the `name` path parameter must be an existing credential that exists under
+the corresponding `creds/:name` path.
+
+#### `GET` (`read`)
+
+Retrieve a new access token by performing a token exchange request on demand.
+The token exchange operation always sends the access token from the
+corresponding credential as the subject token and explicitly requests a new
+access token from the authorization server.
+
+Parameters:
+
+| Name | Description | Type | Default | Required |
+|------|-------------|------|---------|----------|
+| `scopes` | A list of explicit scopes to request. | List of String | None | No |
+| `audiences` | A list of explicit audiences to request. | List of String | None | No |
+| `resources` | A list of explicit resources to request. | List of String | None | No |
+
 ## Providers
 
 ### Bitbucket (`bitbucket`)

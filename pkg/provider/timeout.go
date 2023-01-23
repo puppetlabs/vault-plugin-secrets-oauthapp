@@ -189,6 +189,13 @@ func (pto *privateTimeoutOperations) ClientCredentials(ctx context.Context, opts
 	return pto.delegate.ClientCredentials(ctx, opts...)
 }
 
+func (pto *privateTimeoutOperations) TokenExchange(ctx context.Context, t *Token, opts ...TokenExchangeOption) (*Token, error) {
+	ctx, cancel := contextWithTimeout(ctx, pto.alg, t)
+	defer cancel()
+
+	return pto.delegate.TokenExchange(ctx, t, opts...)
+}
+
 type TimeoutProvider struct {
 	delegate Provider
 	alg      TimeoutAlgorithm

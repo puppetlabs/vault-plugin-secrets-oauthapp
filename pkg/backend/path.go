@@ -8,7 +8,7 @@ import (
 )
 
 // nameRegex allows any character other than a : followed by a /, which allows
-// us to specially reserve a small subset of possible names for future derived
+// us to specially reserve a small subset of possible names for derived
 // credentials (STS).
 func nameRegex(name string) string {
 	return fmt.Sprintf(`(?P<%s>(?:[^:]|:[^/])+)`, name)
@@ -32,5 +32,6 @@ func paths(b *backend) []*framework.Path {
 		pathSelf(b),
 		pathServersList(b),
 		pathServers(b),
+		pathSTS(b),
 	}
 }
