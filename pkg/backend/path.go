@@ -20,6 +20,7 @@ func pathsSpecial() *logical.Paths {
 			CredsPathPrefix,
 			SelfPathPrefix,
 			ServersPathPrefix,
+			STSPathPrefix,
 		},
 	}
 }
