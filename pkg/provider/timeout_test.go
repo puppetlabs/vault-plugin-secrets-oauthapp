@@ -2,6 +2,7 @@ package provider_test
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/url"
@@ -287,7 +288,7 @@ func TestTimeoutProvider(t *testing.T) {
 	// range, so we should only have to step by 10 seconds to cause a timeout.
 	stepper <- 10 * time.Second
 	_, err = ops.RefreshToken(ctx, tok)
-	require.Equal(t, context.DeadlineExceeded, err)
+	require.True(t, errors.Is(err, context.DeadlineExceeded))
 
 	// Step the remaining 50 seconds to get exactly to the end of the expiry
 	// delta, with a maximum leeway.
@@ -296,10 +297,10 @@ func TestTimeoutProvider(t *testing.T) {
 	// We now have to wait 15 seconds with a leeway factor of 1.5.
 	stepper <- 15 * time.Second
 	_, err = ops.RefreshToken(ctx, tok)
-	require.Equal(t, context.DeadlineExceeded, err)
+	require.True(t, errors.Is(err, context.DeadlineExceeded))
 
 	// Issuing a new token will retain the default 10 second timeout.
 	stepper <- 10 * time.Second
 	_, err = ops.AuthCodeExchange(ctx, "wait")
-	require.Equal(t, context.DeadlineExceeded, err)
+	require.True(t, errors.Is(err, context.DeadlineExceeded))
 }
