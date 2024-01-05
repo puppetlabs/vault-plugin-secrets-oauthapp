@@ -17,7 +17,7 @@ export ZIP_M ?= zip -m
 
 export GOFLAGS ?=
 
-PLUGIN_DIST_TARGETS ?= $(addprefix dist-bin-,darwin-amd64 windows-amd64 windows-386 linux-amd64 linux-386 linux-arm64 linux-arm freebsd-amd64 freebsd-386 freebsd-arm netbsd-amd64 netbsd-386 openbsd-amd64 openbsd-386 solaris-amd64)
+PLUGIN_DIST_TARGETS ?= $(addprefix dist-bin-,darwin-amd64 darwin-arm64 windows-amd64 windows-386 linux-amd64 linux-386 linux-arm64 linux-arm freebsd-amd64 freebsd-386 freebsd-arm netbsd-amd64 netbsd-386 openbsd-amd64 openbsd-386 solaris-amd64)
 
 #
 #
