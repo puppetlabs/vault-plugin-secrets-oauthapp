@@ -3,6 +3,7 @@ package testutil
 import (
 	"fmt"
 	"net/http"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -39,6 +40,20 @@ func ExpiringMockTokenExchange(fn MockTokenExchangeFunc, duration time.Duration)
 	})
 }
 
+func ExpiringMockTokenExchangeStep(fn MockTokenExchangeFunc, step func(i int) (time.Duration, error)) MockTokenExchangeFunc {
+	var i int32
+
+	return AmendTokenMockTokenExchange(fn, func(t *provider.Token) error {
+		exp, err := step(int(atomic.AddInt32(&i, 1)))
+		if err != nil {
+			return err
+		}
+
+		t.Expiry = time.Now().Add(exp)
+		return nil
+	})
+}
+
 func IncrementMockTokenExchange(prefix string) MockTokenExchangeFunc {
 	var i int32
 
@@ -64,7 +79,15 @@ func FilterMockTokenExchange(fn MockTokenExchangeFunc, filters ...func(t *provid
 
 func RestrictMockTokenExchange(m map[string]MockTokenExchangeFunc) MockTokenExchangeFunc {
 	return func(t *provider.Token, opts *provider.TokenExchangeOptions) (*provider.Token, error) {
-		fn, found := m[t.AccessToken]
+		found := false
+		var name string
+		var fn MockTokenExchangeFunc
+		for name, fn = range m {
+			if strings.HasPrefix(t.AccessToken, name) {
+				found = true
+				break
+			}
+		}
 		if !found {
 			return nil, MockErrorResponse(http.StatusForbidden, &interop.JSONError{Error: "access_denied"})
 		}

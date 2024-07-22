@@ -15,6 +15,7 @@ import (
 	"github.com/puppetlabs/leg/timeutil/pkg/clockctx"
 	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v3/pkg/provider"
 	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v3/pkg/vaultext"
+	"golang.org/x/oauth2"
 )
 
 const (
@@ -68,6 +69,9 @@ type AuthCodeEntry struct {
 	// If the most recent exchange did not succeed, this holds the time that
 	// exchange occurred.
 	LastAttemptedIssueTime time.Time `json:"last_attempted_issue_time,omitempty"`
+
+	// Cache of successfully exchanged tokens
+	ExchangedTokens map[string]*oauth2.Token `json:"exchanged_tokens"`
 }
 
 func (ace *AuthCodeEntry) SetToken(ctx context.Context, tok *provider.Token) {
