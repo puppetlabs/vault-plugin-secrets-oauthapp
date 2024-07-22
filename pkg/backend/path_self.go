@@ -32,7 +32,7 @@ func (b *backend) selfReadOperation(ctx context.Context, req *logical.Request, d
 		return nil, err
 	case entry == nil:
 		return nil, nil
-	case !b.tokenValid(entry.Token, expiryDelta):
+	case !b.tokenValid(entry.Token.Token, expiryDelta):
 		return logical.ErrorResponse("token expired"), nil
 	}
 

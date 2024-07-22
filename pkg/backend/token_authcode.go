@@ -16,6 +16,7 @@ import (
 	"github.com/puppetlabs/leg/timeutil/pkg/retry"
 	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v3/pkg/persistence"
 	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v3/pkg/provider"
+	"golang.org/x/oauth2"
 )
 
 type refreshProcess struct {
@@ -110,7 +111,7 @@ func (b *backend) refreshCredToken(ctx context.Context, storage logical.Storage,
 		switch {
 		case err != nil || candidate == nil:
 			return err
-		case !candidate.TokenIssued() || b.tokenValid(candidate.Token, expiryDelta) || candidate.RefreshToken == "":
+		case !candidate.TokenIssued() || b.tokenValid(candidate.Token.Token, expiryDelta) || candidate.RefreshToken == "":
 			entry = candidate
 			return nil
 		}
@@ -155,9 +156,42 @@ func (b *backend) getRefreshCredToken(ctx context.Context, storage logical.Stora
 		return nil, err
 	case entry == nil:
 		return nil, nil
-	case !entry.TokenIssued() || b.tokenValid(entry.Token, expiryDelta):
+	case !entry.TokenIssued() || b.tokenValid(entry.Token.Token, expiryDelta):
 		return entry, nil
 	default:
 		return b.refreshCredToken(ctx, storage, keyer, expiryDelta)
 	}
+}
+
+func (b *backend) storeExchangedToken(ctx context.Context, storage logical.Storage, keyer persistence.AuthCodeKeyer, exchangeKey string, tok *oauth2.Token) error {
+	ctx = clockctx.WithClock(ctx, b.clock)
+
+	err := b.data.AuthCode.WithLock(keyer, func(ach *persistence.LockedAuthCodeHolder) error {
+		acm := ach.Manager(storage)
+
+		entry, err := acm.ReadAuthCodeEntry(ctx)
+		if err != nil || entry == nil {
+			return err
+		}
+
+		if entry.ExchangedTokens == nil {
+			// first time, make the map
+			entry.ExchangedTokens = make(map[string]*oauth2.Token)
+		} else {
+			// remove every expired exchanged token while we're here
+			for k, t := range entry.ExchangedTokens {
+				if !b.tokenValid(t, defaultExpiryDelta) {
+					delete(entry.ExchangedTokens, k)
+				}
+			}
+		}
+		entry.ExchangedTokens[exchangeKey] = tok
+
+		if err := acm.WriteAuthCodeEntry(ctx, entry); err != nil {
+			return err
+		}
+
+		return nil
+	})
+	return err
 }

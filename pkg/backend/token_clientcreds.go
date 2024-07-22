@@ -25,7 +25,7 @@ func (b *backend) updateClientCredsToken(ctx context.Context, storage logical.St
 		switch {
 		case err != nil || candidate == nil:
 			return err
-		case b.tokenValid(candidate.Token, expiryDelta):
+		case b.tokenValid(candidate.Token.Token, expiryDelta):
 			entry = candidate
 			return nil
 		}
@@ -66,7 +66,7 @@ func (b *backend) getUpdateClientCredsToken(ctx context.Context, storage logical
 	switch {
 	case err != nil:
 		return nil, err
-	case entry != nil && b.tokenValid(entry.Token, expiryDelta):
+	case entry != nil && b.tokenValid(entry.Token.Token, expiryDelta):
 		return entry, nil
 	default:
 		return b.updateClientCredsToken(ctx, storage, keyer, expiryDelta)

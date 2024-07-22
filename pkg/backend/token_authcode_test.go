@@ -3,6 +3,7 @@ package backend_test
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -14,6 +15,7 @@ import (
 	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v3/pkg/provider"
 	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v3/pkg/testutil"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/oauth2"
 	testclock "k8s.io/utils/clock/testing"
 )
 
@@ -290,8 +292,14 @@ func TestMinimumSeconds(t *testing.T) {
 		Secret: "def",
 	}
 
-	exchanges := map[string]testutil.MockAuthCodeExchangeFunc{
-		"first": testutil.RandomMockAuthCodeExchange,
+	authCodeExchanges := map[string]testutil.MockAuthCodeExchangeFunc{
+		"first": testutil.StaticMockAuthCodeExchange(
+			&provider.Token{
+				Token: &oauth2.Token{
+					AccessToken: "first",
+				},
+			},
+		),
 		"second": testutil.RefreshableMockAuthCodeExchange(
 			testutil.IncrementMockAuthCodeExchange("second_"),
 			func(i int) (time.Duration, error) {
@@ -300,9 +308,31 @@ func TestMinimumSeconds(t *testing.T) {
 			},
 		),
 	}
+	tokenExchanges := map[string]testutil.MockTokenExchangeFunc{
+		// use same names as above to re-use the refresh tokens
+		"first": testutil.StaticMockTokenExchange(
+			&provider.Token{
+				Token: &oauth2.Token{
+					AccessToken: "first",
+				},
+			},
+		),
+		"second": testutil.ExpiringMockTokenExchangeStep(
+			testutil.IncrementMockTokenExchange("second_"),
+			func(i int) (time.Duration, error) {
+				// add 30 seconds for each subsequent read
+				return (70 + time.Duration(i)*30) * time.Second, nil
+			},
+		),
+	}
 
 	pr := provider.NewRegistry()
-	pr.MustRegister("mock", testutil.MockFactory(testutil.MockWithAuthCodeExchange(client, testutil.RestrictMockAuthCodeExchange(exchanges))))
+	pr.MustRegister("mock", testutil.MockFactory(
+		testutil.MockWithAuthCodeExchange(client,
+			testutil.RestrictMockAuthCodeExchange(authCodeExchanges)),
+		testutil.MockWithTokenExchange(client,
+			testutil.RestrictMockTokenExchange(tokenExchanges)),
+	))
 
 	storage := &logical.InmemStorage{}
 
@@ -331,7 +361,7 @@ func TestMinimumSeconds(t *testing.T) {
 	require.Nil(t, resp)
 
 	// Write our credentials.
-	for code := range exchanges {
+	for code := range authCodeExchanges {
 		req = &logical.Request{
 			Operation: logical.UpdateOperation,
 			Path:      backend.CredsPathPrefix + code,
@@ -346,6 +376,19 @@ func TestMinimumSeconds(t *testing.T) {
 		require.NoError(t, err)
 		require.False(t, resp != nil && resp.IsError(), "response has error: %+v", resp.Error())
 		require.Nil(t, resp)
+	}
+	for code := range tokenExchanges {
+		req = &logical.Request{
+			Operation: logical.ReadOperation,
+			Path:      backend.STSPathPrefix + code,
+			Storage:   storage,
+		}
+
+		resp, err = b.HandleRequest(ctx, req)
+		require.NoError(t, err)
+		require.NotNil(t, resp)
+		require.False(t, resp.IsError(), "response has error: %+v", resp.Error())
+		require.True(t, len(resp.Warnings) == 0)
 	}
 
 	tokens := make(map[string]string)
@@ -364,6 +407,7 @@ func TestMinimumSeconds(t *testing.T) {
 		{
 			Name:                "make sure minimum_seconds added to first does not generate new token",
 			Token:               "first",
+			Data:                map[string]interface{}{"minimum_seconds": "10"},
 			ExpectedAccessToken: func() string { return tokens["first"] },
 		},
 		// The initial token will be issued at +100s (70 seconds + 30 seconds),
@@ -384,7 +428,7 @@ func TestMinimumSeconds(t *testing.T) {
 			ExpectedAccessToken: func() string { return "second_2" },
 			ExpectedExpireTime:  true,
 		},
-		// If we ask for +140s (> +130s), we should get another refresh.
+		// If we ask for +140s (> +130s), we should get another refresh to +160s.
 		{
 			Name:                "test minimum_seconds more than the expiry of the second token",
 			Token:               "second",
@@ -392,8 +436,8 @@ func TestMinimumSeconds(t *testing.T) {
 			ExpectedAccessToken: func() string { return "second_3" },
 			ExpectedExpireTime:  true,
 		},
-		// Finally, if we ask for something outside the range of what we can
-		// reasonably issue, we'll just get an error.
+		// Finally, if we ask for something outside the range of what is issued,
+		// we'll just get an error.
 		{
 			Name:          "verify that second is marked expired if new token is less than request",
 			Token:         "second",
@@ -401,34 +445,39 @@ func TestMinimumSeconds(t *testing.T) {
 			ExpectedError: "token expired",
 		},
 	}
-	for _, test := range tests {
-		t.Run(test.Name, func(t *testing.T) {
-			req := &logical.Request{
-				Operation: logical.ReadOperation,
-				Path:      backend.CredsPathPrefix + test.Token,
-				Storage:   storage,
-				Data:      test.Data,
-			}
 
-			resp, err := b.HandleRequest(ctx, req)
-			require.NoError(t, err)
-			require.NotNil(t, resp)
-			if test.ExpectedError != "" {
-				require.True(t, resp.IsError())
-				require.EqualError(t, resp.Error(), test.ExpectedError)
-			} else {
-				require.False(t, resp.IsError(), "response has error: %+v", resp.Error())
-				require.Equal(t, test.ExpectedExpireTime, resp.Data["expire_time"] != nil)
-
-				if test.ExpectedAccessToken != nil {
-					require.Equal(t, test.ExpectedAccessToken(), resp.Data["access_token"])
-				} else {
-					require.NotEmpty(t, resp.Data["access_token"])
+	prefixes := []string{backend.CredsPathPrefix, backend.STSPathPrefix}
+	for _, prefix := range prefixes {
+		pfx := strings.ReplaceAll(prefix, "/", "")
+		for _, test := range tests {
+			t.Run(pfx+" "+test.Name, func(t *testing.T) {
+				req := &logical.Request{
+					Operation: logical.ReadOperation,
+					Path:      prefix + test.Token,
+					Storage:   storage,
+					Data:      test.Data,
 				}
 
-				tokens[test.Token] = resp.Data["access_token"].(string)
-			}
-		})
+				resp, err := b.HandleRequest(ctx, req)
+				require.NoError(t, err)
+				require.NotNil(t, resp)
+				if test.ExpectedError != "" {
+					require.True(t, resp.IsError())
+					require.EqualError(t, resp.Error(), test.ExpectedError)
+				} else {
+					require.False(t, resp.IsError(), "response has error: %+v", resp.Error())
+					require.Equal(t, test.ExpectedExpireTime, resp.Data["expire_time"] != nil)
+
+					if test.ExpectedAccessToken != nil {
+						require.Equal(t, test.ExpectedAccessToken(), resp.Data["access_token"])
+					} else {
+						require.NotEmpty(t, resp.Data["access_token"])
+					}
+
+					tokens[test.Token] = resp.Data["access_token"].(string)
+				}
+			})
+		}
 	}
 }
 

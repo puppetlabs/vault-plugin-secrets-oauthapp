@@ -71,7 +71,7 @@ func (b *backend) credsReadOperation(ctx context.Context, req *logical.Request, 
 		}
 
 		return logical.ErrorResponse("token pending issuance"), nil
-	case !b.tokenValid(entry.Token, expiryDelta):
+	case !b.tokenValid(entry.Token.Token, expiryDelta):
 		if entry.AuthServerError != "" {
 			return logical.ErrorResponse("server %q has configuration problems: %s", entry.AuthServerName, entry.AuthServerError), nil
 		} else if entry.UserError != "" {

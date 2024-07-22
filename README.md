@@ -491,9 +491,12 @@ the corresponding `creds/:name` path.
 #### `GET` (`read`)
 
 Retrieve a new access token by performing a token exchange request on demand.
-The token exchange operation always sends the access token from the
+The token exchange operation sends the access token from the
 corresponding credential as the subject token and explicitly requests a new
 access token from the authorization server.
+Reuses previous token that was made with the same parameters
+if the provider specified an expiration time
+and the token is not yet expired or close to it.
 
 Parameters:
 
@@ -502,6 +505,7 @@ Parameters:
 | `scopes` | A list of explicit scopes to request. | List of String | None | No |
 | `audiences` | A list of explicit audiences to request. | List of String | None | No |
 | `resources` | A list of explicit resources to request. | List of String | None | No |
+| `minimum_seconds` | Minimum additional duration to require the access token to be valid for. | Integer | 10<sup id="ret-3-b">[3](#footnote-3)</sup> | No |
 
 ## Providers
 

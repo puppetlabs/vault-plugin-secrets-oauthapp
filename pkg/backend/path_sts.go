@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/hashicorp/vault/sdk/framework"
 	"github.com/hashicorp/vault/sdk/logical"
@@ -11,14 +12,17 @@ import (
 	"github.com/puppetlabs/leg/errmap/pkg/errmark"
 	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v3/pkg/persistence"
 	"github.com/puppetlabs/vault-plugin-secrets-oauthapp/v3/pkg/provider"
+	"golang.org/x/oauth2"
 )
 
 func (b *backend) stsReadOperation(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
+	keyer := persistence.AuthCodeName(data.Get("name").(string))
+	expiryDelta := time.Duration(data.Get("minimum_seconds").(int)) * time.Second
 	entry, err := b.getRefreshCredToken(
 		ctx,
 		req.Storage,
-		persistence.AuthCodeName(data.Get("name").(string)),
-		defaultExpiryDelta,
+		keyer,
+		expiryDelta,
 	)
 	switch {
 	case err != nil:
@@ -33,7 +37,7 @@ func (b *backend) stsReadOperation(ctx context.Context, req *logical.Request, da
 		}
 
 		return logical.ErrorResponse("token pending issuance"), nil
-	case !b.tokenValid(entry.Token, defaultExpiryDelta):
+	case !b.tokenValid(entry.Token.Token, expiryDelta):
 		if entry.AuthServerError != "" {
 			return logical.ErrorResponse("server %q has configuration problems: %s", entry.AuthServerName, entry.AuthServerError), nil
 		} else if entry.UserError != "" {
@@ -43,26 +47,59 @@ func (b *backend) stsReadOperation(ctx context.Context, req *logical.Request, da
 		return logical.ErrorResponse("token expired"), nil
 	}
 
-	ops, put, err := b.getProviderOperations(ctx, req.Storage, persistence.AuthServerName(entry.AuthServerName), defaultExpiryDelta)
-	if errmark.MarkedUser(err) {
-		return logical.ErrorResponse(fmt.Errorf("server %q has configuration problems: %w", entry.AuthServerName, errmark.MarkShort(err)).Error()), nil
-	} else if err != nil {
-		return nil, err
-	}
-	defer put()
+	scopes := data.Get("scopes").([]string)
+	audiences := data.Get("audiences").([]string)
+	resources := data.Get("resources").([]string)
+	exchangeKey := "scopes=" + strings.Join(scopes, " ") +
+		",audiences=" + strings.Join(audiences, " ") +
+		",resources=" + strings.Join(resources, " ")
 
-	tok, err := ops.TokenExchange(
-		ctx,
-		entry.Token,
-		provider.WithScopes(data.Get("scopes").([]string)),
-		provider.WithAudiences(data.Get("audiences").([]string)),
-		provider.WithResources(data.Get("resources").([]string)),
-		provider.WithProviderOptions(entry.ProviderOptions),
-	)
-	if errmark.MarkedUser(err) {
-		return logical.ErrorResponse(errmap.Wrap(errmark.MarkShort(err), "exchange failed").Error()), nil
-	} else if err != nil {
-		return nil, err
+	tok, ok := entry.ExchangedTokens[exchangeKey]
+	if !ok || !b.tokenValid(tok, expiryDelta) {
+		ops, put, err := b.getProviderOperations(ctx, req.Storage, persistence.AuthServerName(entry.AuthServerName), defaultExpiryDelta)
+		if errmark.MarkedUser(err) {
+			return logical.ErrorResponse(fmt.Errorf("server %q has configuration problems: %w", entry.AuthServerName, errmark.MarkShort(err)).Error()), nil
+		} else if err != nil {
+			return nil, err
+		}
+		defer put()
+
+		exchangedTok, err := ops.TokenExchange(
+			ctx,
+			entry.Token,
+			provider.WithScopes(scopes),
+			provider.WithAudiences(audiences),
+			provider.WithResources(resources),
+			provider.WithProviderOptions(entry.ProviderOptions),
+		)
+		if errmark.MarkedUser(err) {
+			return logical.ErrorResponse(errmap.Wrap(errmark.MarkShort(err), "exchange failed").Error()), nil
+		} else if err != nil {
+			return nil, err
+		}
+		if !b.tokenValid(exchangedTok.Token, expiryDelta) {
+			return logical.ErrorResponse("token expired"), nil
+		}
+
+		// copy into smaller struct for caching
+		tok = &oauth2.Token{
+			AccessToken: exchangedTok.Token.AccessToken,
+			TokenType:   exchangedTok.Token.TokenType,
+			Expiry:      exchangedTok.Token.Expiry,
+		}
+
+		if !tok.Expiry.IsZero() {
+			// Cache the token since it has an expiration time
+			err = b.storeExchangedToken(
+				ctx,
+				req.Storage,
+				keyer,
+				exchangeKey,
+				tok)
+			if err != nil {
+				return nil, err
+			}
+		}
 	}
 
 	rd := map[string]interface{}{
@@ -101,6 +138,12 @@ var stsFields = map[string]*framework.FieldSchema{
 	"resources": {
 		Type:        framework.TypeCommaStringSlice,
 		Description: "Specifies the target RFC 8707 resource indicators for the minted token.",
+		Query:       true,
+	},
+	"minimum_seconds": {
+		Type:        framework.TypeDurationSecond,
+		Description: "Minimum remaining seconds to allow when reusing exchanged access token.",
+		Default:     0,
 		Query:       true,
 	},
 }
