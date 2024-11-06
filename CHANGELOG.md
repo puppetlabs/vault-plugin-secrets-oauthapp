@@ -10,6 +10,9 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [3.1.1] - 2023-02-02
 
+### Added
+- Added Okta provider support with private key JWT authentication
+
 ### Fixed
 
 * The `sts/:name` endpoint should have been seal-wrapped like the corresponding
